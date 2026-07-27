@@ -72,12 +72,10 @@ export async function signInWithGoogle(): Promise<void> {
   if (!GOOGLE_IOS_CLIENT_ID) {
     throw new Error("Set EXPO_PUBLIC_GOOGLE_IOS_CLIENT_ID in app/.env first");
   }
-  // Google iOS clients redirect via the reversed client id scheme.
-  const reversedScheme =
-    "com.googleusercontent.apps." + GOOGLE_IOS_CLIENT_ID.split(".")[0];
+  // Custom scheme registered in the OAuth client's allowed_redirect_uris.
   const redirectUri = AuthSession.makeRedirectUri({
-    scheme: reversedScheme,
-    path: "oauthredirect",
+    scheme: "peard",
+    path: "auth/google",
   });
 
   const request = new AuthSession.AuthRequest({
