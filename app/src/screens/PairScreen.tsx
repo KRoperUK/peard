@@ -69,6 +69,22 @@ export function PairScreen({ onPaired }: { onPaired: () => void }) {
       role: "member",
     });
 
+    // Seed a few demo events from the partner so the HomeScreen has data.
+    await pb.collection("posts").create({
+      pair: pair.id,
+      author: partner.id,
+      type: "event",
+      event_kind: "beer",
+      note: "Welcome to Pear'd! 🍐",
+    });
+    await pb.collection("posts").create({
+      pair: pair.id,
+      author: partner.id,
+      type: "event",
+      event_kind: "coffee",
+      note: "Good morning!",
+    });
+
     // Restore the user session.
     pb.authStore.save(userToken, userRecord);
   };

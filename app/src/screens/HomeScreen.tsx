@@ -1,25 +1,15 @@
 import React, { useCallback, useEffect, useState } from "react";
 import {
-  ActivityIndicator,
-  Alert,
-  Image,
-  Pressable,
-  StyleSheet,
-  Text,
-  View,
+  ActivityIndicator, Alert, Image, Pressable, RefreshControl, ScrollView, StyleSheet, Text, View,
 } from "react-native";
 import * as ImagePicker from "expo-image-picker";
 import { pb } from "../lib/pb";
 import { leavePair } from "../lib/pairApi";
+import { EVENT_KINDS, Post } from "../types";
 
 let PearSharedReload: (() => void) | null = null;
-try {
-  const m = require("../../modules/pear-shared/src");
-  PearSharedReload = () => m.PearShared.reloadTimelines();
-} catch {}
-
+try { const m = require("../../modules/pear-shared/src"); PearSharedReload = () => m.PearShared.reloadTimelines(); } catch {}
 function reloadWidget() { try { PearSharedReload?.(); } catch {} }
-import { EVENT_KINDS, Post } from "../types";
 
 type Member = {
   user: string;
@@ -30,7 +20,9 @@ export function HomeScreen({ pairId, onUnpaired }: { pairId: string; onUnpaired:
   const me = pb.authStore.record?.id ?? "";
   const [partnerName, setPartnerName] = useState("Partner");
   const [latest, setLatest] = useState<Post | null>(null);
+  const [latestAuthor, setLatestAuthor] = useState("");
   const [busy, setBusy] = useState(false);
+  const [refreshing, setRefreshing] = useState(false);
   const [toast, setToast] = useState<string | null>(null);
   const [stats, setStats] = useState({ today: 0, week: 0, month: 0, all: 0 });
 
@@ -65,12 +57,17 @@ export function HomeScreen({ pairId, onUnpaired }: { pairId: string; onUnpaired:
       const other = members.find((m) => m.user !== me);
       const u = other?.expand?.user;
       setPartnerName(u?.display_name || u?.email?.split("@")[0] || "Partner");
-      if (other) {
-        const posts = await pb.collection("posts").getList<Post>(1, 1, {
-          filter: `pair = "${pairId}" && author = "${other.user}"`,
-          sort: "-created",
-        });
-        setLatest(posts.items[0] ?? null);
+
+      // Latest post from either user in this pair.
+      const posts = await pb.collection("posts").getList<Post>(1, 1, {
+        filter: `pair = "${pairId}"`,
+        sort: "-created",
+      });
+      const latestPost = posts.items[0] ?? null;
+      setLatest(latestPost);
+      if (latestPost) {
+        const isMe = latestPost.author === me;
+        setLatestAuthor(isMe ? "You" : (u?.display_name || u?.email?.split("@")[0] || "Partner"));
       }
     } catch {
       // offline / server down — keep last known state
@@ -135,13 +132,24 @@ export function HomeScreen({ pairId, onUnpaired }: { pairId: string; onUnpaired:
       },
     ]);
 
+  const handleRefresh = async () => {
+    setRefreshing(true);
+    await refresh();
+    await fetchStats();
+    setRefreshing(false);
+  };
+
   const mediaUrl =
     latest?.type === "photo" && latest.media
       ? `${pb.baseURL}/api/files/posts/${latest.id}/${latest.media}?thumb=512x512`
       : null;
 
   return (
-    <View style={styles.container}>
+    <ScrollView
+      style={styles.container}
+      contentContainerStyle={styles.content}
+      refreshControl={<RefreshControl refreshing={refreshing} onRefresh={handleRefresh} tintColor="#6B8E23" />}
+    >
       <Text style={styles.header}>Pear'd 🍐</Text>
 
       <View style={styles.card}>
@@ -154,8 +162,8 @@ export function HomeScreen({ pairId, onUnpaired }: { pairId: string; onUnpaired:
         )}
         <Text style={styles.cardCaption}>
           {latest
-            ? `${partnerName} · ${latest.type === "event" ? latest.event_kind : "shared a moment"}`
-            : `Nothing from ${partnerName} yet`}
+            ? `${latestAuthor} · ${latest.type === "event" ? latest.event_kind : "shared a moment"}`
+            : "No moments yet — send a pear!"}
         </Text>
       </View>
 
@@ -189,7 +197,7 @@ export function HomeScreen({ pairId, onUnpaired }: { pairId: string; onUnpaired:
           <Text style={[styles.footerText, styles.leave]}>Un-pear</Text>
         </Pressable>
       </View>
-    </View>
+    </ScrollView>
   );
 }
 
@@ -203,7 +211,8 @@ function emojiFor(kind?: string) {
 }
 
 const styles = StyleSheet.create({
-  container: { flex: 1, padding: 20, paddingTop: 64, backgroundColor: "#FBF7EC" },
+  container: { flex: 1, backgroundColor: "#FBF7EC" },
+  content: { padding: 20, paddingTop: 64 },
   header: { fontSize: 26, fontWeight: "800", color: "#3B2E1A", marginBottom: 16 },
   card: { backgroundColor: "#fff", borderRadius: 16, padding: 16, alignItems: "center", marginBottom: 20 },
   photo: { width: "100%", aspectRatio: 1, borderRadius: 12 },
