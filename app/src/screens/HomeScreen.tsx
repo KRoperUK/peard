@@ -7,6 +7,10 @@ import { pb } from "../lib/pb";
 import { leavePair } from "../lib/pairApi";
 import { EVENT_KINDS, Post } from "../types";
 
+// Wire PocketBase real-time for React Native (no browser EventSource in Hermes).
+import EventSource from "react-native-sse";
+(pb.realtime as any).EventSource = EventSource as any;
+
 let PearSharedReload: (() => void) | null = null;
 try { const m = require("../../modules/pear-shared/src"); PearSharedReload = () => m.PearShared.reloadTimelines(); } catch {}
 function reloadWidget() { try { PearSharedReload?.(); } catch {} }
@@ -86,6 +90,17 @@ export function HomeScreen({ pairId, onUnpaired }: { pairId: string; onUnpaired:
   }, [pairId, me]);
 
   useEffect(() => { refresh(); fetchStats(); }, [refresh, fetchStats]);
+
+  // Subscribe to real-time post changes so stats and feed update instantly
+  // whenever either user logs an event or shares a photo.
+  useEffect(() => {
+    if (!pairId) return;
+    const unsub = pb.collection("posts").subscribe("*", () => {
+      refresh();
+      fetchStats();
+    }, { filter: `pair = "${pairId}"` });
+    return () => { unsub(); };
+  }, [pairId, refresh, fetchStats]);
 
   const logEvent = async (kind: string, note?: string) => {
     setBusyKind(kind);
