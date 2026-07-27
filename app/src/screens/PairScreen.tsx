@@ -39,9 +39,6 @@ export function PairScreen({ userId, onPaired }: { userId: string; onPaired: () 
   const fakePair = async () => {
     const userToken = await AsyncStorage.getItem("peard_token");
 
-    // Create partner account (idempotent via raw fetch)
-    try { await apiCreate("users", { email: "partner@peard.local", password: "test1234", passwordConfirm: "test1234", display_name: "Test Partner" }); } catch {}
-
     // Auth as superuser for pair/member creation
     const adminRes = await fetch(`${PB_URL}/api/collections/_superusers/auth-with-password`, {
       method: "POST", headers: { "Content-Type": "application/json" },
@@ -53,7 +50,12 @@ export function PairScreen({ userId, onPaired }: { userId: string; onPaired: () 
     const h = (token: string) => ({ "Content-Type": "application/json", Authorization: token });
 
     const pair = await (await fetch(`${PB_URL}/api/collections/pairs/records`, { method: "POST", headers: h(adminToken), body: "{}" })).json();
-    const partner = await apiGetFirst("users", 'email = "partner@peard.local"');
+    // Fetch or create the partner.
+    let partner = await apiGetFirst("users", 'email = "partner@peard.local"');
+    if (!partner) {
+      const r = await fetch(`${PB_URL}/api/collections/users/records`, { method: "POST", headers: h(adminToken), body: JSON.stringify({ email: "partner@peard.local", password: "test1234", passwordConfirm: "test1234", display_name: "Test Partner" }) });
+      partner = await r.json();
+    }
 
     await fetch(`${PB_URL}/api/collections/pair_members/records`, { method: "POST", headers: h(adminToken), body: JSON.stringify({ pair: pair.id, user: userId, role: "owner" }) });
     await fetch(`${PB_URL}/api/collections/pair_members/records`, { method: "POST", headers: h(adminToken), body: JSON.stringify({ pair: pair.id, user: partner.id, role: "member" }) });

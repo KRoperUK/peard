@@ -1,5 +1,6 @@
 import { Platform } from "react-native";
-import { pb, PB_URL } from "./pb";
+import { PB_URL } from "./pb";
+import AsyncStorage from "@react-native-async-storage/async-storage";
 
 /**
  * Best-effort bridge to the iOS native module (PearShared).
@@ -22,9 +23,10 @@ try {
 export async function syncWidgetCredentials(): Promise<void> {
   if (Platform.OS !== "ios") return;
   try {
+    const token = await AsyncStorage.getItem("peard_token");
     const res = await fetch(`${PB_URL}/api/peard/widget/token`, {
       method: "POST",
-      headers: { Authorization: pb.authStore.token },
+      headers: { Authorization: token ?? "" },
     });
     if (!res.ok) return;
     const data = (await res.json()) as { token: string };

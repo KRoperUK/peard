@@ -3,8 +3,9 @@ import {
   ActivityIndicator, Alert, Image, Pressable, RefreshControl, ScrollView, StyleSheet, Text, TextInput, View,
 } from "react-native";
 import * as ImagePicker from "expo-image-picker";
-import { pb, PB_URL } from "../lib/pb";
+import { PB_URL } from "../lib/pb";
 import { leavePair } from "../lib/pairApi";
+import AsyncStorage from "@react-native-async-storage/async-storage";
 import { apiCreate, apiGetFirst, apiGetFullList, apiGetList } from "../lib/api";
 import { EVENT_KINDS, Post } from "../types";
 
@@ -127,7 +128,12 @@ export function HomeScreen({ pairId, userId, onLogout, onUnpaired }: { pairId: s
       form.append("author", me);
       form.append("type", "photo");
       form.append("media", { uri: asset.uri, name: "pear.jpg", type: "image/jpeg" } as any);
-      await pb.collection("posts").create(form);
+      const token = await AsyncStorage.getItem("peard_token");
+      await fetch(`${PB_URL}/api/collections/posts/records`, {
+        method: "POST",
+        headers: { Authorization: token ?? "" },
+        body: form,
+      });
       reloadWidget();
     } catch (e) {
       Alert.alert("Upload failed", String(e));
@@ -157,7 +163,7 @@ export function HomeScreen({ pairId, userId, onLogout, onUnpaired }: { pairId: s
 
   const mediaUrl =
     latest?.type === "photo" && latest.media
-      ? `${pb.baseURL}/api/files/posts/${latest.id}/${latest.media}?thumb=512x512`
+      ? `${PB_URL}/api/files/posts/${latest.id}/${latest.media}?thumb=512x512`
       : null;
 
   return (
