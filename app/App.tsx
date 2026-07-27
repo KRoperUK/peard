@@ -32,15 +32,18 @@ export default function App() {
 
   // eslint-disable-next-line react-hooks/exhaustive-deps
   useEffect(() => {
-    if (pb.authStore.isValid) {
-      syncWidgetCredentials();
-      refreshPair();
-    } else {
-      setPhase("auth");
-    }
+    const boot = async () => {
+      if (pb.authStore.isValid) {
+        await syncWidgetCredentials().catch(() => {});
+        await refreshPair();
+      } else {
+        setPhase("auth");
+      }
+    };
+    boot();
     pb.authStore.onChange(() => {
       if (pb.authStore.isValid) {
-        syncWidgetCredentials();
+        syncWidgetCredentials().catch(() => {});
         refreshPair();
       } else {
         clearWidgetCredentials();
