@@ -1,12 +1,15 @@
 import React, { useState } from "react";
 import { ActivityIndicator, Pressable, StyleSheet, Text, View } from "react-native";
-import { signInWithApple, signInWithGoogle } from "../lib/auth";
+import { signInAsTestUser, signInWithApple, signInWithGoogle } from "../lib/auth";
 
 export function AuthScreen() {
-  const [busy, setBusy] = useState<"apple" | "google" | null>(null);
+  const [busy, setBusy] = useState<"apple" | "google" | "test" | null>(null);
   const [error, setError] = useState<string | null>(null);
 
-  const run = async (which: "apple" | "google", fn: () => Promise<void>) => {
+  const run = async (
+    which: "apple" | "google" | "test",
+    fn: () => Promise<void>
+  ) => {
     setBusy(which);
     setError(null);
     try {
@@ -52,6 +55,21 @@ export function AuthScreen() {
         )}
       </Pressable>
 
+      {__DEV__ && (
+        <Pressable
+          style={[styles.button, styles.test]}
+          accessibilityRole="button"
+          disabled={busy !== null}
+          onPress={() => run("test", signInAsTestUser)}
+        >
+          {busy === "test" ? (
+            <ActivityIndicator color="#6B8E23" />
+          ) : (
+            <Text style={styles.testText}>🔧 Login Test User</Text>
+          )}
+        </Pressable>
+      )}
+
       {error && <Text style={styles.error}>{error}</Text>}
     </View>
   );
@@ -85,5 +103,12 @@ const styles = StyleSheet.create({
   appleText: { color: "#fff", fontSize: 16, fontWeight: "600" },
   google: { backgroundColor: "#fff", borderWidth: 1, borderColor: "#ddd" },
   googleText: { color: "#333", fontSize: 16, fontWeight: "600" },
+  test: {
+    backgroundColor: "transparent",
+    borderWidth: 1,
+    borderColor: "#6B8E23",
+    borderStyle: "dashed",
+  },
+  testText: { color: "#6B8E23", fontSize: 14, fontWeight: "600" },
   error: { color: "#B23A2E", marginTop: 16, textAlign: "center" },
 });

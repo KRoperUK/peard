@@ -101,3 +101,27 @@ export async function signInWithGoogle(): Promise<void> {
       redirectUri
     );
 }
+
+// ---------------------------------------------------------------------------
+// Debug-only: password-authenticate a fixed test user.
+// Only compiled into __DEV__ builds — the AuthScreen button is gated too.
+// ---------------------------------------------------------------------------
+
+const TEST_EMAIL = "test@peard.local";
+const TEST_PASSWORD = "test1234";
+
+export async function signInAsTestUser(): Promise<void> {
+  try {
+    // Register the test user (may already exist — PocketBase returns 400
+    // on duplicate email, which we ignore).
+    await pb.collection("users").create({
+      email: TEST_EMAIL,
+      password: TEST_PASSWORD,
+      passwordConfirm: TEST_PASSWORD,
+      display_name: "Test User",
+    });
+  } catch {
+    // user already exists — that's fine
+  }
+  await pb.collection("users").authWithPassword(TEST_EMAIL, TEST_PASSWORD);
+}
