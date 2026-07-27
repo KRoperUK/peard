@@ -8,17 +8,34 @@ import RNEventSource from "react-native-sse";
 // ---------------------------------------------------------------------------
 class NativeEventSource {
   private es: RNEventSource;
+  private listeners: Record<string, Array<(e: any) => void>> = {};
   onopen: (() => void) | null = null;
   onmessage: ((e: { data: string }) => void) | null = null;
   onerror: (() => void) | null = null;
 
-  constructor(url: string) {
+  constructor(url: string, _opts?: any) {
     this.es = new RNEventSource(url);
     this.es.addEventListener("open", () => this.onopen?.());
-    this.es.addEventListener("message", (e: any) => this.onmessage?.(e));
-    this.es.addEventListener("error", () => this.onerror?.());
+    this.es.addEventListener("message", (e: any) => {
+      this.onmessage?.(e);
+      (this.listeners["message"] || []).forEach((cb) => cb(e));
+    });
+    this.es.addEventListener("error", () => {
+      this.onerror?.();
+      (this.listeners["error"] || []).forEach((cb) => cb({}));
+    });
+  }
+  addEventListener(type: string, cb: (e: any) => void) {
+    (this.listeners[type] = this.listeners[type] || []).push(cb);
+  }
+  removeEventListener(type: string, cb: (e: any) => void) {
+    this.listeners[type] = (this.listeners[type] || []).filter((c) => c !== cb);
   }
   close() { this.es.close(); }
+  get readyState() { return 1; } // OPEN
+  static readonly OPEN = 1;
+  static readonly CONNECTING = 0;
+  static readonly CLOSED = 2;
 }
 (globalThis as any).EventSource = NativeEventSource;
 
