@@ -15,3 +15,11 @@ const store = new AsyncAuthStore({
 });
 
 export const pb = new PocketBase(PB_URL, store);
+
+// Canary: verify the server is reachable on launch.
+if (__DEV__) {
+  fetch(`${PB_URL}/api/health`)
+    .then((r) => r.json())
+    .then((d) => console.log("[peard] server reachable:", d?.code))
+    .catch((e) => console.warn("[peard] server unreachable:", String(e)));
+}

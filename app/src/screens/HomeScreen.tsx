@@ -3,7 +3,7 @@ import {
   ActivityIndicator, Alert, Image, Pressable, RefreshControl, ScrollView, StyleSheet, Text, TextInput, View,
 } from "react-native";
 import * as ImagePicker from "expo-image-picker";
-import { pb } from "../lib/pb";
+import { pb, PB_URL } from "../lib/pb";
 import { leavePair } from "../lib/pairApi";
 import { EVENT_KINDS, Post } from "../types";
 
@@ -95,13 +95,20 @@ export function HomeScreen({ pairId, onUnpaired }: { pairId: string; onUnpaired:
   }, [pairId, refresh, fetchStats]);
 
   const logEvent = async (kind: string, note?: string) => {
+    console.log("[peard] logEvent", kind, "pairId:", pairId?.slice(0, 8), "me:", me?.slice(0, 8));
     setBusyKind(kind);
     setPendingKind(null);
     setNoteInput("");
     try {
-      await pb
-        .collection("posts")
-        .create({ pair: pairId, author: me, type: "event", event_kind: kind, note: note || "" });
+      const body = { pair: pairId, author: me, type: "event", event_kind: kind, note: note || "" };
+      console.log("[peard] posting event:", JSON.stringify(body));
+      const r = await fetch(`${PB_URL}/api/collections/posts/records`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json", Authorization: pb.authStore.token },
+        body: JSON.stringify(body),
+      });
+      const d = await r.json();
+      console.log("[peard] post response:", r.status, JSON.stringify(d).slice(0, 200));
       const emoji = EVENT_KINDS.find((e) => e.kind === kind)?.emoji ?? "🍐";
       setToast(`${emoji} logged!`);
       setTimeout(() => setToast(null), 1500);

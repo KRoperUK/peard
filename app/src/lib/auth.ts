@@ -109,17 +109,35 @@ const TEST_EMAIL = "test@peard.local";
 const TEST_PASSWORD = "test1234";
 
 export async function signInAsTestUser(): Promise<void> {
+  console.log("[peard] signInAsTestUser start, PB_URL:", PB_URL);
+  // Raw-fetch canary: does a direct fetch work?
   try {
-    // Register the test user (may already exist — PocketBase returns 400
-    // on duplicate email, which we ignore).
+    const r = await fetch(`${PB_URL}/api/collections/users/auth-with-password`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ identity: TEST_EMAIL, password: TEST_PASSWORD }),
+    });
+    const d = await r.json();
+    console.log("[peard] raw auth status:", r.status, "token:", (d as any).token?.slice(0, 16));
+    pb.authStore.save((d as any).token, (d as any).record);
+    console.log("[peard] raw auth saved, isValid:", pb.authStore.isValid);
+    return;
+  } catch (e) {
+    console.warn("[peard] raw auth FAILED:", String(e));
+  }
+
+  // Fallback to PocketBase SDK
+  try {
     await pb.collection("users").create({
       email: TEST_EMAIL,
       password: TEST_PASSWORD,
       passwordConfirm: TEST_PASSWORD,
       display_name: "Test User",
     });
-  } catch {
-    // user already exists — that's fine
+    console.log("[peard] test user created or already exists");
+  } catch (e) {
+    console.log("[peard] create test user skipped:", String(e).slice(0, 80));
   }
   await pb.collection("users").authWithPassword(TEST_EMAIL, TEST_PASSWORD);
+  console.log("[peard] authWithPassword done, isValid:", pb.authStore.isValid, "id:", pb.authStore.record?.id?.slice(0, 8));
 }
