@@ -6,6 +6,10 @@ import { pb, PB_URL } from "./pb";
 
 WebBrowser.maybeCompleteAuthSession();
 
+// Module-level auth callback — set by App.tsx.
+let onAuthGlobal: ((token: string, record: { id: string; [key: string]: any }) => void) | null = null;
+export function setOnAuth(fn: typeof onAuthGlobal) { onAuthGlobal = fn; }
+
 // ---------------------------------------------------------------------------
 // Sign in with Apple (native) -> custom server endpoint that verifies the
 // identity token against Apple's JWKS and links/creates the user by email.
@@ -50,6 +54,7 @@ export async function signInWithApple(): Promise<void> {
     throw new Error((data as any)?.message ?? `Apple sign-in failed (${res.status})`);
   }
   pb.authStore.save(data.token, data.record);
+  onAuthGlobal?.(data.token, data.record);
 }
 
 // ---------------------------------------------------------------------------
@@ -118,9 +123,8 @@ export async function signInAsTestUser(): Promise<void> {
       body: JSON.stringify({ identity: TEST_EMAIL, password: TEST_PASSWORD }),
     });
     const d = await r.json();
-    console.log("[peard] raw auth status:", r.status, "token:", (d as any).token?.slice(0, 16));
-    pb.authStore.save((d as any).token, (d as any).record);
-    console.log("[peard] raw auth saved, isValid:", pb.authStore.isValid);
+    console.log("[peard] raw auth status:", r.status, "record id:", (d as any).record?.id?.slice(0, 8));
+    onAuthGlobal?.((d as any).token, (d as any).record);
     return;
   } catch (e) {
     console.warn("[peard] raw auth FAILED:", String(e));

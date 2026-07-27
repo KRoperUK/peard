@@ -1,12 +1,14 @@
-import { pb, PB_URL } from "./pb";
+import { PB_URL } from "./pb";
+import AsyncStorage from "@react-native-async-storage/async-storage";
 import type { PairInvite } from "../types";
 
 async function post<T>(path: string, body?: unknown): Promise<T> {
+  const token = await AsyncStorage.getItem("peard_token");
   const res = await fetch(`${PB_URL}${path}`, {
     method: "POST",
     headers: {
       "Content-Type": "application/json",
-      Authorization: pb.authStore.token,
+      Authorization: token ?? "",
     },
     body: body ? JSON.stringify(body) : undefined,
   });

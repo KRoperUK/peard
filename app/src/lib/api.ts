@@ -1,15 +1,19 @@
 import { pb, PB_URL } from "./pb";
 
+import AsyncStorage from "@react-native-async-storage/async-storage";
+import { PB_URL } from "./pb";
+
 /** Raw-fetch API helpers — PocketBase JS SDK v0.27 doesn't issue HTTP in Hermes. */
 
-function authHeader() {
-  return { Authorization: pb.authStore.token };
+async function authHeader() {
+  const token = await AsyncStorage.getItem("peard_token");
+  return { Authorization: token ?? "" };
 }
 
 export async function apiGetList(collection: string, filter: string, sort = "-created", limit = 100) {
   const params = new URLSearchParams({ filter, sort, perPage: String(limit) });
   const r = await fetch(`${PB_URL}/api/collections/${collection}/records?${params}`, {
-    headers: authHeader(),
+    headers: await authHeader(),
   });
   if (!r.ok) throw new Error(`${r.status}`);
   return (await r.json()).items ?? [];
@@ -23,7 +27,7 @@ export async function apiGetFirst(collection: string, filter: string) {
 export async function apiCreate(collection: string, body: Record<string, unknown>) {
   const r = await fetch(`${PB_URL}/api/collections/${collection}/records`, {
     method: "POST",
-    headers: { "Content-Type": "application/json", ...authHeader() },
+    headers: { "Content-Type": "application/json", ...(await authHeader()) },
     body: JSON.stringify(body),
   });
   if (!r.ok) {

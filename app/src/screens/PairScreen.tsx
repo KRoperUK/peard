@@ -9,11 +9,12 @@ import {
   View,
 } from "react-native";
 import { acceptInvite, createInvite } from "../lib/pairApi";
-import { pb, PB_URL } from "../lib/pb";
+import { PB_URL } from "../lib/pb";
 import { apiCreate, apiGetFirst, apiGetFullList } from "../lib/api";
+import AsyncStorage from "@react-native-async-storage/async-storage";
 import type { PairInvite } from "../types";
 
-export function PairScreen({ onPaired }: { onPaired: () => void }) {
+export function PairScreen({ userId, onPaired }: { userId: string; onPaired: () => void }) {
   const [invite, setInvite] = useState<PairInvite | null>(null);
   const [code, setCode] = useState("");
   const [busy, setBusy] = useState(false);
@@ -36,8 +37,7 @@ export function PairScreen({ onPaired }: { onPaired: () => void }) {
    * directly — no second device needed. Only compiled in __DEV__.
    */
   const fakePair = async () => {
-    const userToken = pb.authStore.token;
-    const userRecord = pb.authStore.record;
+    const userToken = await AsyncStorage.getItem("peard_token");
 
     // Create partner account (idempotent via raw fetch)
     try { await apiCreate("users", { email: "partner@peard.local", password: "test1234", passwordConfirm: "test1234", display_name: "Test Partner" }); } catch {}
@@ -55,14 +55,14 @@ export function PairScreen({ onPaired }: { onPaired: () => void }) {
     const pair = await (await fetch(`${PB_URL}/api/collections/pairs/records`, { method: "POST", headers: h(adminToken), body: "{}" })).json();
     const partner = await apiGetFirst("users", 'email = "partner@peard.local"');
 
-    await fetch(`${PB_URL}/api/collections/pair_members/records`, { method: "POST", headers: h(adminToken), body: JSON.stringify({ pair: pair.id, user: userRecord?.id, role: "owner" }) });
+    await fetch(`${PB_URL}/api/collections/pair_members/records`, { method: "POST", headers: h(adminToken), body: JSON.stringify({ pair: pair.id, user: userId, role: "owner" }) });
     await fetch(`${PB_URL}/api/collections/pair_members/records`, { method: "POST", headers: h(adminToken), body: JSON.stringify({ pair: pair.id, user: partner.id, role: "member" }) });
 
     // Seed demo posts
     await fetch(`${PB_URL}/api/collections/posts/records`, { method: "POST", headers: h(adminToken), body: JSON.stringify({ pair: pair.id, author: partner.id, type: "event", event_kind: "beer", note: "Welcome to Pear'd! 🍐" }) });
     await fetch(`${PB_URL}/api/collections/posts/records`, { method: "POST", headers: h(adminToken), body: JSON.stringify({ pair: pair.id, author: partner.id, type: "event", event_kind: "coffee", note: "Good morning!" }) });
 
-    pb.authStore.save(userToken, userRecord);
+    // Restore user auth is handled by App.tsx's onAuth.
   };
 
   const accept = async () => {

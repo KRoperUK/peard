@@ -33,8 +33,8 @@ function countPeriods(events: Post[]) {
   return { today: todayCount, week: weekCount, month: monthCount, all: events.length };
 }
 
-export function HomeScreen({ pairId, onUnpaired }: { pairId: string; onUnpaired: () => void }) {
-  const me = pb.authStore.record?.id ?? "";
+export function HomeScreen({ pairId, userId, onLogout, onUnpaired }: { pairId: string; userId: string; onLogout: () => void; onUnpaired: () => void }) {
+  const me = userId;
   const [partnerName, setPartnerName] = useState("Partner");
   const [latest, setLatest] = useState<Post | null>(null);
   const [latestAuthor, setLatestAuthor] = useState("");
@@ -249,7 +249,7 @@ export function HomeScreen({ pairId, onUnpaired }: { pairId: string; onUnpaired:
       </Pressable>
 
       <View style={styles.footer}>
-        <Pressable onPress={() => pb.authStore.clear()}>
+        <Pressable onPress={onLogout}>
           <Text style={styles.footerText}>Sign out</Text>
         </Pressable>
         <Pressable onPress={confirmLeave}>
