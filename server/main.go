@@ -1,0 +1,51 @@
+// Pear'd server — PocketBase used as a Go framework.
+//
+// Everything custom lives under internal/:
+//   - auth:   native Sign in with Apple (JWKS verify + email identity linking)
+//   - pairs:  invite / accept / leave pairing routes
+//   - widget: token-authenticated feed for the WidgetKit extension
+//   - push:   APNs delivery triggered by record hooks
+package main
+
+import (
+	"log"
+	"os"
+	"strings"
+
+	"github.com/pocketbase/pocketbase"
+	"github.com/pocketbase/pocketbase/core"
+	"github.com/pocketbase/pocketbase/plugins/migratecmd"
+
+	peardauth "peard/internal/auth"
+	"peard/internal/pairs"
+	"peard/internal/push"
+	"peard/internal/widget"
+	_ "peard/migrations"
+)
+
+func main() {
+	app := pocketbase.New()
+
+	// Enable `migrate` cmd + automigrations when running via `go run`.
+	isGoRun := strings.HasPrefix(os.Args[0], os.TempDir())
+	migratecmd.MustRegister(app, app.RootCmd, migratecmd.Config{
+		Automigrate: isGoRun,
+	})
+
+	// Allow overriding the public app URL (used to build media URLs for the widget).
+	app.OnBootstrap().BindFunc(func(e *core.BootstrapEvent) error {
+		if u := os.Getenv("PEARD_APP_URL"); u != "" {
+			e.App.Settings().Meta.AppURL = strings.TrimRight(u, "/")
+		}
+		return e.Next()
+	})
+
+	peardauth.Register(app)
+	pairs.Register(app)
+	widget.Register(app)
+	push.Register(app)
+
+	if err := app.Start(); err != nil {
+		log.Fatal(err)
+	}
+}

@@ -1,0 +1,45 @@
+{
+  "expo": {
+    "name": "Pear'd",
+    "slug": "peard",
+    "version": "0.1.0",
+    "orientation": "portrait",
+    "icon": "./assets/icon.png",
+    "scheme": "peard",
+    "userInterfaceStyle": "automatic",
+    "newArchEnabled": true,
+    "ios": {
+      "supportsTablet": true,
+      "bundleIdentifier": "com.peard.app",
+      "usesAppleSignIn": true,
+      "infoPlist": {
+        "UIBackgroundModes": ["remote-notification", "fetch"],
+        "NSCameraUsageDescription": "Take a photo to share a moment with your partner.",
+        "NSPhotoLibraryUsageDescription": "Pick a photo to share with your partner."
+      },
+      "entitlements": {
+        "aps-environment": "development",
+        "com.apple.security.application-groups": ["group.com.peard.app"]
+      }
+    },
+    "android": {
+      "package": "com.peard.app",
+      "adaptiveIcon": {
+        "backgroundColor": "#D7E8B4",
+        "foregroundImage": "./assets/android-icon-foreground.png",
+        "backgroundImage": "./assets/android-icon-background.png",
+        "monochromeImage": "./assets/android-icon-monochrome.png"
+      },
+      "predictiveBackGestureEnabled": false
+    },
+    "web": {
+      "favicon": "./assets/favicon.png"
+    },
+    "plugins": [
+      "expo-apple-authentication",
+      "expo-secure-store",
+      "expo-notifications",
+      "@bacons/apple-targets"
+    ]
+  }
+}

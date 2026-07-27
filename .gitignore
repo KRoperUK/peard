@@ -1,0 +1,25 @@
+# OS
+.DS_Store
+
+# Env / secrets
+.env
+*.p8
+
+# --- server ---
+server/pb_data/
+server/peard-server
+server/server
+
+# --- app ---
+app/node_modules/
+app/.expo/
+app/dist/
+app/ios/
+app/android/
+*.jks
+*.p12
+*.key
+*.mobileprovision
+
+# Logs
+*.log
