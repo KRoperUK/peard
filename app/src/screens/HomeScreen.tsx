@@ -16,6 +16,22 @@ type Member = {
   expand?: { user?: { display_name?: string; email?: string } };
 };
 
+function countPeriods(events: Post[]) {
+  const now = new Date();
+  const today = new Date(now.getFullYear(), now.getMonth(), now.getDate());
+  const weekStart = new Date(today);
+  weekStart.setDate(today.getDate() - ((today.getDay() + 6) % 7));
+  const monthStart = new Date(now.getFullYear(), now.getMonth(), 1);
+  let todayCount = 0, weekCount = 0, monthCount = 0;
+  for (const e of events) {
+    const d = new Date(e.created);
+    if (d >= today) { todayCount++; weekCount++; monthCount++; }
+    else if (d >= weekStart) { weekCount++; monthCount++; }
+    else if (d >= monthStart) monthCount++;
+  }
+  return { today: todayCount, week: weekCount, month: monthCount, all: events.length };
+}
+
 export function HomeScreen({ pairId, onUnpaired }: { pairId: string; onUnpaired: () => void }) {
   const me = pb.authStore.record?.id ?? "";
   const [partnerName, setPartnerName] = useState("Partner");
@@ -25,27 +41,18 @@ export function HomeScreen({ pairId, onUnpaired }: { pairId: string; onUnpaired:
   const [refreshing, setRefreshing] = useState(false);
   const [toast, setToast] = useState<string | null>(null);
   const [stats, setStats] = useState({ today: 0, week: 0, month: 0, all: 0 });
+  const [partnerStats, setPartnerStats] = useState({ today: 0, week: 0, month: 0, all: 0 });
+  const [recentPosts, setRecentPosts] = useState<Post[]>([]);
 
   const fetchStats = useCallback(async () => {
     if (!me || !pairId) return;
     try {
-      const events = await pb.collection("posts").getFullList<Post>({
-        filter: `pair = "${pairId}" && author = "${me}" && type = "event"`,
+      const allEvents = await pb.collection("posts").getFullList<Post>({
+        filter: `pair = "${pairId}" && type = "event"`,
         sort: "-created",
       });
-      const now = new Date();
-      const today = new Date(now.getFullYear(), now.getMonth(), now.getDate());
-      const weekStart = new Date(today);
-      weekStart.setDate(today.getDate() - ((today.getDay() + 6) % 7));
-      const monthStart = new Date(now.getFullYear(), now.getMonth(), 1);
-      let todayCount = 0, weekCount = 0, monthCount = 0;
-      for (const e of events) {
-        const d = new Date(e.created);
-        if (d >= today) { todayCount++; weekCount++; monthCount++; }
-        else if (d >= weekStart) { weekCount++; monthCount++; }
-        else if (d >= monthStart) monthCount++;
-      }
-      setStats({ today: todayCount, week: weekCount, month: monthCount, all: events.length });
+      setStats(countPeriods(allEvents.filter((e) => e.author === me)));
+      setPartnerStats(countPeriods(allEvents.filter((e) => e.author !== me)));
     } catch {}
   }, [me, pairId]);
 
@@ -58,11 +65,12 @@ export function HomeScreen({ pairId, onUnpaired }: { pairId: string; onUnpaired:
       const u = other?.expand?.user;
       setPartnerName(u?.display_name || u?.email?.split("@")[0] || "Partner");
 
-      // Latest post from either user in this pair.
-      const posts = await pb.collection("posts").getList<Post>(1, 1, {
+      // Latest posts from either user.
+      const posts = await pb.collection("posts").getList<Post>(1, 5, {
         filter: `pair = "${pairId}"`,
         sort: "-created",
       });
+      setRecentPosts(posts.items);
       const latestPost = posts.items[0] ?? null;
       setLatest(latestPost);
       if (latestPost) {
@@ -177,11 +185,30 @@ export function HomeScreen({ pairId, onUnpaired }: { pairId: string; onUnpaired:
       </View>
 
       <View style={styles.statsRow}>
-        <Text style={styles.stat}>Today {stats.today}</Text>
-        <Text style={styles.stat}>Week {stats.week}</Text>
-        <Text style={styles.stat}>Month {stats.month}</Text>
+        <Text style={styles.statLabel}>You</Text>
+        <Text style={styles.stat}>T {stats.today}</Text>
+        <Text style={styles.stat}>W {stats.week}</Text>
+        <Text style={styles.stat}>M {stats.month}</Text>
         <Text style={styles.stat}>All {stats.all}</Text>
       </View>
+      <View style={styles.statsRow}>
+        <Text style={styles.statLabel}>{shortName(partnerName)}</Text>
+        <Text style={styles.stat}>T {partnerStats.today}</Text>
+        <Text style={styles.stat}>W {partnerStats.week}</Text>
+        <Text style={styles.stat}>M {partnerStats.month}</Text>
+        <Text style={styles.stat}>All {partnerStats.all}</Text>
+      </View>
+
+      {recentPosts.length > 1 && (
+        <View style={styles.history}>
+          {recentPosts.slice(1, 4).map((p) => (
+            <Text key={p.id} style={styles.historyItem}>
+              {p.author === me ? "You" : shortName(partnerName)} · {emojiFor(p.event_kind)}{" "}
+              {p.note || p.event_kind || "shared a moment"}
+            </Text>
+          ))}
+        </View>
+      )}
 
       {toast && <Text style={styles.toast}>{toast}</Text>}
 
@@ -210,6 +237,11 @@ function emojiFor(kind?: string) {
   }
 }
 
+function shortName(name: string) {
+  if (name.length <= 8) return name;
+  return name.slice(0, 7) + "…";
+}
+
 const styles = StyleSheet.create({
   container: { flex: 1, backgroundColor: "#FBF7EC" },
   content: { padding: 20, paddingTop: 64 },
@@ -222,8 +254,11 @@ const styles = StyleSheet.create({
   eventBtn: { flex: 1, backgroundColor: "#fff", borderRadius: 12, paddingVertical: 14, alignItems: "center", marginHorizontal: 4 },
   eventEmoji: { fontSize: 28 },
   eventLabel: { marginTop: 4, fontSize: 12, color: "#7A6A53", fontWeight: "600" },
-  statsRow: { flexDirection: "row", justifyContent: "space-around", backgroundColor: "#fff", borderRadius: 12, padding: 12, marginBottom: 12 },
-  stat: { fontSize: 13, fontWeight: "700", color: "#3B2E1A" },
+  statsRow: { flexDirection: "row", alignItems: "center", gap: 8, backgroundColor: "#fff", borderRadius: 12, padding: 10, marginBottom: 6 },
+  statLabel: { fontSize: 12, fontWeight: "800", color: "#6B8E23", width: 56 },
+  stat: { fontSize: 12, fontWeight: "600", color: "#3B2E1A" },
+  history: { backgroundColor: "#fff", borderRadius: 12, padding: 12, marginBottom: 12 },
+  historyItem: { fontSize: 13, color: "#7A6A53", paddingVertical: 3 },
   toast: { textAlign: "center", fontSize: 16, fontWeight: "700", color: "#6B8E23", marginBottom: 12 },
   camera: { backgroundColor: "#6B8E23", borderRadius: 12, paddingVertical: 14, alignItems: "center" },
   cameraText: { color: "#fff", fontSize: 16, fontWeight: "700" },
