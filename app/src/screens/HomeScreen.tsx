@@ -37,7 +37,7 @@ export function HomeScreen({ pairId, onUnpaired }: { pairId: string; onUnpaired:
   const [partnerName, setPartnerName] = useState("Partner");
   const [latest, setLatest] = useState<Post | null>(null);
   const [latestAuthor, setLatestAuthor] = useState("");
-  const [busy, setBusy] = useState(false);
+  const [busyKind, setBusyKind] = useState<string | null>(null);
   const [refreshing, setRefreshing] = useState(false);
   const [toast, setToast] = useState<string | null>(null);
   const [noteInput, setNoteInput] = useState("");
@@ -88,7 +88,7 @@ export function HomeScreen({ pairId, onUnpaired }: { pairId: string; onUnpaired:
   useEffect(() => { refresh(); fetchStats(); }, [refresh, fetchStats]);
 
   const logEvent = async (kind: string, note?: string) => {
-    setBusy(true);
+    setBusyKind(kind);
     setPendingKind(null);
     setNoteInput("");
     try {
@@ -104,7 +104,7 @@ export function HomeScreen({ pairId, onUnpaired }: { pairId: string; onUnpaired:
     } catch (e) {
       Alert.alert("Couldn't log it", String(e));
     } finally {
-      setBusy(false);
+      setBusyKind(null);
     }
   };
 
@@ -123,7 +123,7 @@ export function HomeScreen({ pairId, onUnpaired }: { pairId: string; onUnpaired:
     const shot = await ImagePicker.launchCameraAsync({ quality: 0.6, allowsEditing: true, aspect: [1, 1] });
     const asset = shot.assets?.[0];
     if (shot.canceled || !asset) return;
-    setBusy(true);
+    setBusyKind("camera");
     try {
       const form = new FormData();
       form.append("pair", pairId);
@@ -135,7 +135,7 @@ export function HomeScreen({ pairId, onUnpaired }: { pairId: string; onUnpaired:
     } catch (e) {
       Alert.alert("Upload failed", String(e));
     } finally {
-      setBusy(false);
+      setBusyKind(null);
     }
   };
 
@@ -189,7 +189,7 @@ export function HomeScreen({ pairId, onUnpaired }: { pairId: string; onUnpaired:
 
       <View style={styles.row}>
         {EVENT_KINDS.map((e) => (
-          <Pressable key={e.kind} style={styles.eventBtn} disabled={busy} onPress={() => startLog(e.kind)}>
+          <Pressable key={e.kind} style={styles.eventBtn} disabled={busyKind !== null} onPress={() => startLog(e.kind)}>
             <Text style={styles.eventEmoji}>{e.emoji}</Text>
             <Text style={styles.eventLabel}>{e.label}</Text>
           </Pressable>
@@ -210,6 +210,9 @@ export function HomeScreen({ pairId, onUnpaired }: { pairId: string; onUnpaired:
           />
           <Pressable style={styles.noteSubmit} onPress={() => logEvent(pendingKind, noteInput)}>
             <Text style={styles.noteSubmitText}>Send</Text>
+          </Pressable>
+          <Pressable onPress={() => { setPendingKind(null); setNoteInput(""); }}>
+            <Text style={styles.noteCancel}>✕</Text>
           </Pressable>
         </View>
       )}
@@ -233,8 +236,8 @@ export function HomeScreen({ pairId, onUnpaired }: { pairId: string; onUnpaired:
         <View style={styles.history}>
           {recentPosts.slice(1, 4).map((p) => (
             <Text key={p.id} style={styles.historyItem}>
-              {p.author === me ? "You" : shortName(partnerName)} · {emojiFor(p.event_kind)}{" "}
-              {p.note || p.event_kind || "shared a moment"}
+              {p.author === me ? "You" : shortName(partnerName)} · {p.type === "photo" ? "📸" : emojiFor(p.event_kind)}{" "}
+                {p.note || (p.type === "photo" ? "photo" : p.event_kind) || "shared a moment"}
               {"  "}
               <Text style={styles.timeAgo}>{timeAgo(p.created)}</Text>
             </Text>
@@ -244,8 +247,8 @@ export function HomeScreen({ pairId, onUnpaired }: { pairId: string; onUnpaired:
 
       {toast && <Text style={styles.toast}>{toast}</Text>}
 
-      <Pressable style={styles.camera} disabled={busy} onPress={sharePhoto}>
-        {busy ? <ActivityIndicator color="#fff" /> : <Text style={styles.cameraText}>📸 Share a moment</Text>}
+      <Pressable style={styles.camera} disabled={busyKind !== null} onPress={sharePhoto}>
+        {busyKind === "camera" ? <ActivityIndicator color="#fff" /> : <Text style={styles.cameraText}>📸 Share a moment</Text>}
       </Pressable>
 
       <View style={styles.footer}>
@@ -301,6 +304,7 @@ const styles = StyleSheet.create({
   noteInput: { flex: 1, backgroundColor: "#fff", borderRadius: 12, padding: 12, fontSize: 14, color: "#3B2E1A" },
   noteSubmit: { backgroundColor: "#6B8E23", borderRadius: 12, paddingHorizontal: 20, justifyContent: "center" },
   noteSubmitText: { color: "#fff", fontWeight: "700", fontSize: 14 },
+  noteCancel: { fontSize: 18, color: "#B3A78F", paddingHorizontal: 4 },
   statsRow: { flexDirection: "row", alignItems: "center", gap: 8, backgroundColor: "#fff", borderRadius: 12, padding: 10, marginBottom: 6 },
   statLabel: { fontSize: 12, fontWeight: "800", color: "#6B8E23", width: 56 },
   stat: { fontSize: 12, fontWeight: "600", color: "#3B2E1A" },
