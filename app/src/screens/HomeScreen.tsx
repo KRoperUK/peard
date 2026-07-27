@@ -32,6 +32,30 @@ export function HomeScreen({ pairId, onUnpaired }: { pairId: string; onUnpaired:
   const [latest, setLatest] = useState<Post | null>(null);
   const [busy, setBusy] = useState(false);
   const [toast, setToast] = useState<string | null>(null);
+  const [stats, setStats] = useState({ today: 0, week: 0, month: 0, all: 0 });
+
+  const fetchStats = useCallback(async () => {
+    if (!me || !pairId) return;
+    try {
+      const events = await pb.collection("posts").getFullList<Post>({
+        filter: `pair = "${pairId}" && author = "${me}" && type = "event"`,
+        sort: "-created",
+      });
+      const now = new Date();
+      const today = new Date(now.getFullYear(), now.getMonth(), now.getDate());
+      const weekStart = new Date(today);
+      weekStart.setDate(today.getDate() - ((today.getDay() + 6) % 7));
+      const monthStart = new Date(now.getFullYear(), now.getMonth(), 1);
+      let todayCount = 0, weekCount = 0, monthCount = 0;
+      for (const e of events) {
+        const d = new Date(e.created);
+        if (d >= today) { todayCount++; weekCount++; monthCount++; }
+        else if (d >= weekStart) { weekCount++; monthCount++; }
+        else if (d >= monthStart) monthCount++;
+      }
+      setStats({ today: todayCount, week: weekCount, month: monthCount, all: events.length });
+    } catch {}
+  }, [me, pairId]);
 
   const refresh = useCallback(async () => {
     try {
@@ -53,7 +77,7 @@ export function HomeScreen({ pairId, onUnpaired }: { pairId: string; onUnpaired:
     }
   }, [pairId, me]);
 
-  useEffect(() => { refresh(); }, [refresh]);
+  useEffect(() => { refresh(); fetchStats(); }, [refresh, fetchStats]);
 
   const logEvent = async (kind: string) => {
     setBusy(true);
@@ -66,6 +90,7 @@ export function HomeScreen({ pairId, onUnpaired }: { pairId: string; onUnpaired:
       setTimeout(() => setToast(null), 1500);
       reloadWidget();
       refresh();
+      fetchStats();
     } catch (e) {
       Alert.alert("Couldn't log it", String(e));
     } finally {
@@ -143,6 +168,13 @@ export function HomeScreen({ pairId, onUnpaired }: { pairId: string; onUnpaired:
         ))}
       </View>
 
+      <View style={styles.statsRow}>
+        <Text style={styles.stat}>Today {stats.today}</Text>
+        <Text style={styles.stat}>Week {stats.week}</Text>
+        <Text style={styles.stat}>Month {stats.month}</Text>
+        <Text style={styles.stat}>All {stats.all}</Text>
+      </View>
+
       {toast && <Text style={styles.toast}>{toast}</Text>}
 
       <Pressable style={styles.camera} disabled={busy} onPress={sharePhoto}>
@@ -181,6 +213,8 @@ const styles = StyleSheet.create({
   eventBtn: { flex: 1, backgroundColor: "#fff", borderRadius: 12, paddingVertical: 14, alignItems: "center", marginHorizontal: 4 },
   eventEmoji: { fontSize: 28 },
   eventLabel: { marginTop: 4, fontSize: 12, color: "#7A6A53", fontWeight: "600" },
+  statsRow: { flexDirection: "row", justifyContent: "space-around", backgroundColor: "#fff", borderRadius: 12, padding: 12, marginBottom: 12 },
+  stat: { fontSize: 13, fontWeight: "700", color: "#3B2E1A" },
   toast: { textAlign: "center", fontSize: 16, fontWeight: "700", color: "#6B8E23", marginBottom: 12 },
   camera: { backgroundColor: "#6B8E23", borderRadius: 12, paddingVertical: 14, alignItems: "center" },
   cameraText: { color: "#fff", fontSize: 16, fontWeight: "700" },
