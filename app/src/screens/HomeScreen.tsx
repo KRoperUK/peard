@@ -5,6 +5,7 @@ import {
 import * as ImagePicker from "expo-image-picker";
 import { pb, PB_URL } from "../lib/pb";
 import { leavePair } from "../lib/pairApi";
+import { apiCreate, apiGetFirst, apiGetFullList, apiGetList } from "../lib/api";
 import { EVENT_KINDS, Post } from "../types";
 
 let PearSharedReload: (() => void) | null = null;
@@ -50,39 +51,27 @@ export function HomeScreen({ pairId, onUnpaired }: { pairId: string; onUnpaired:
   const fetchStats = useCallback(async () => {
     if (!me || !pairId) return;
     try {
-      const allEvents = await pb.collection("posts").getFullList<Post>({
-        filter: `pair = "${pairId}" && type = "event"`,
-        sort: "-created",
-      });
+      const allEvents = await apiGetFullList("posts", `pair = "${pairId}" && type = "event"`) as Post[];
       setStats(countPeriods(allEvents.filter((e) => e.author === me)));
       setPartnerStats(countPeriods(allEvents.filter((e) => e.author !== me)));
     } catch {}
   }, [me, pairId]);
 
   const refresh = useCallback(async () => {
+    console.log("[peard] refresh called, pairId:", pairId?.slice(0, 8));
     try {
-      const members = await pb
-        .collection("pair_members")
-        .getFullList<Member>({ filter: `pair = "${pairId}"`, expand: "user" });
-      const other = members.find((m) => m.user !== me);
-      const u = other?.expand?.user;
+      const members = await apiGetFullList("pair_members", `pair = "${pairId}"`, "") as any[];
+      const u = members.find((m: any) => m.user !== me)?.expand?.user;
       setPartnerName(u?.display_name || u?.email?.split("@")[0] || "Partner");
 
-      // Latest posts from either user.
-      const posts = await pb.collection("posts").getList<Post>(1, 5, {
-        filter: `pair = "${pairId}"`,
-        sort: "-created",
-      });
-      setRecentPosts(posts.items);
-      const latestPost = posts.items[0] ?? null;
+      const posts = await apiGetList("posts", `pair = "${pairId}"`, "-created", 5) as Post[];
+      setRecentPosts(posts);
+      const latestPost = posts[0] ?? null;
       setLatest(latestPost);
       if (latestPost) {
-        const isMe = latestPost.author === me;
-        setLatestAuthor(isMe ? "You" : (u?.display_name || u?.email?.split("@")[0] || "Partner"));
+        setLatestAuthor(latestPost.author === me ? "You" : (u?.display_name || u?.email?.split("@")[0] || "Partner"));
       }
-    } catch {
-      // offline / server down — keep last known state
-    }
+    } catch (e) { console.warn("[peard] refresh failed:", String(e)); }
   }, [pairId, me]);
 
   useEffect(() => { refresh(); fetchStats(); }, [refresh, fetchStats]);
@@ -101,14 +90,7 @@ export function HomeScreen({ pairId, onUnpaired }: { pairId: string; onUnpaired:
     setNoteInput("");
     try {
       const body = { pair: pairId, author: me, type: "event", event_kind: kind, note: note || "" };
-      console.log("[peard] posting event:", JSON.stringify(body));
-      const r = await fetch(`${PB_URL}/api/collections/posts/records`, {
-        method: "POST",
-        headers: { "Content-Type": "application/json", Authorization: pb.authStore.token },
-        body: JSON.stringify(body),
-      });
-      const d = await r.json();
-      console.log("[peard] post response:", r.status, JSON.stringify(d).slice(0, 200));
+      await apiCreate("posts", body);
       const emoji = EVENT_KINDS.find((e) => e.kind === kind)?.emoji ?? "🍐";
       setToast(`${emoji} logged!`);
       setTimeout(() => setToast(null), 1500);
@@ -123,6 +105,7 @@ export function HomeScreen({ pairId, onUnpaired }: { pairId: string; onUnpaired:
   };
 
   const startLog = (kind: string) => {
+    console.log("[peard] startLog", kind);
     setPendingKind(kind);
     setNoteInput("");
     setTimeout(() => noteRef.current?.focus(), 100);

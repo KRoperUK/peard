@@ -2,6 +2,7 @@ import React, { useCallback, useEffect, useState } from "react";
 import { ActivityIndicator, StyleSheet, View } from "react-native";
 import { StatusBar } from "expo-status-bar";
 import { pb } from "./src/lib/pb";
+import { apiGetFirst } from "./src/lib/api";
 import { syncWidgetCredentials, clearWidgetCredentials } from "./src/lib/widgetSync";
 import { AuthScreen } from "./src/screens/AuthScreen";
 import { PairScreen } from "./src/screens/PairScreen";
@@ -19,9 +20,7 @@ export default function App() {
       return;
     }
     try {
-      const mem = await pb
-        .collection("pair_members")
-        .getFirstListItem(`user = "${pb.authStore.record?.id}"`);
+      const mem = await apiGetFirst("pair_members", `user = "${pb.authStore.record?.id}"`);
       setPairId(mem.pair);
       setPhase("home");
     } catch {

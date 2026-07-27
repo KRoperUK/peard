@@ -9,7 +9,8 @@ import {
   View,
 } from "react-native";
 import { acceptInvite, createInvite } from "../lib/pairApi";
-import { pb } from "../lib/pb";
+import { pb, PB_URL } from "../lib/pb";
+import { apiCreate, apiGetFirst, apiGetFullList } from "../lib/api";
 import type { PairInvite } from "../types";
 
 export function PairScreen({ onPaired }: { onPaired: () => void }) {
@@ -35,57 +36,32 @@ export function PairScreen({ onPaired }: { onPaired: () => void }) {
    * directly — no second device needed. Only compiled in __DEV__.
    */
   const fakePair = async () => {
-    // Save the current auth so we can restore it after using the admin session.
     const userToken = pb.authStore.token;
     const userRecord = pb.authStore.record;
 
-    // Create a partner account (idempotent).
-    try {
-      await pb.collection("users").create({
-        email: "partner@peard.local",
-        password: "test1234",
-        passwordConfirm: "test1234",
-        display_name: "Test Partner",
-      });
-    } catch {}
+    // Create partner account (idempotent via raw fetch)
+    try { await apiCreate("users", { email: "partner@peard.local", password: "test1234", passwordConfirm: "test1234", display_name: "Test Partner" }); } catch {}
 
-    // Switch to superuser so we can create pairs / members (those collections
-    // are locked to superuser-only create).
-    await pb.admins.authWithPassword("admin@peard.app", "Password123!");
-
-    const pair = await pb.collection("pairs").create({});
-    const partner = await pb
-      .collection("users")
-      .getFirstListItem('email = "partner@peard.local"');
-
-    await pb.collection("pair_members").create({
-      pair: pair.id,
-      user: userRecord?.id,
-      role: "owner",
+    // Auth as superuser for pair/member creation
+    const adminRes = await fetch(`${PB_URL}/api/collections/_superusers/auth-with-password`, {
+      method: "POST", headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ identity: "admin@peard.app", password: "Password123!" }),
     });
-    await pb.collection("pair_members").create({
-      pair: pair.id,
-      user: partner.id,
-      role: "member",
-    });
+    const adminData = await adminRes.json();
+    const adminToken = (adminData as any).token;
 
-    // Seed a few demo events from the partner so the HomeScreen has data.
-    await pb.collection("posts").create({
-      pair: pair.id,
-      author: partner.id,
-      type: "event",
-      event_kind: "beer",
-      note: "Welcome to Pear'd! 🍐",
-    });
-    await pb.collection("posts").create({
-      pair: pair.id,
-      author: partner.id,
-      type: "event",
-      event_kind: "coffee",
-      note: "Good morning!",
-    });
+    const h = (token: string) => ({ "Content-Type": "application/json", Authorization: token });
 
-    // Restore the user session.
+    const pair = await (await fetch(`${PB_URL}/api/collections/pairs/records`, { method: "POST", headers: h(adminToken), body: "{}" })).json();
+    const partner = await apiGetFirst("users", 'email = "partner@peard.local"');
+
+    await fetch(`${PB_URL}/api/collections/pair_members/records`, { method: "POST", headers: h(adminToken), body: JSON.stringify({ pair: pair.id, user: userRecord?.id, role: "owner" }) });
+    await fetch(`${PB_URL}/api/collections/pair_members/records`, { method: "POST", headers: h(adminToken), body: JSON.stringify({ pair: pair.id, user: partner.id, role: "member" }) });
+
+    // Seed demo posts
+    await fetch(`${PB_URL}/api/collections/posts/records`, { method: "POST", headers: h(adminToken), body: JSON.stringify({ pair: pair.id, author: partner.id, type: "event", event_kind: "beer", note: "Welcome to Pear'd! 🍐" }) });
+    await fetch(`${PB_URL}/api/collections/posts/records`, { method: "POST", headers: h(adminToken), body: JSON.stringify({ pair: pair.id, author: partner.id, type: "event", event_kind: "coffee", note: "Good morning!" }) });
+
     pb.authStore.save(userToken, userRecord);
   };
 
