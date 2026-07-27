@@ -1,5 +1,26 @@
 import AsyncStorage from "@react-native-async-storage/async-storage";
 import PocketBase, { AsyncAuthStore } from "pocketbase";
+import RNEventSource from "react-native-sse";
+
+// ---------------------------------------------------------------------------
+// React Native lacks the browser EventSource. Wrap react-native-sse so
+// PocketBase's real-time subscriptions work in Hermes.
+// ---------------------------------------------------------------------------
+class NativeEventSource {
+  private es: RNEventSource;
+  onopen: (() => void) | null = null;
+  onmessage: ((e: { data: string }) => void) | null = null;
+  onerror: (() => void) | null = null;
+
+  constructor(url: string) {
+    this.es = new RNEventSource(url);
+    this.es.addEventListener("open", () => this.onopen?.());
+    this.es.addEventListener("message", (e: any) => this.onmessage?.(e));
+    this.es.addEventListener("error", () => this.onerror?.());
+  }
+  close() { this.es.close(); }
+}
+(globalThis as any).EventSource = NativeEventSource;
 
 /**
  * Point the app at your Pear'd server.
