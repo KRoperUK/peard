@@ -206,6 +206,8 @@ export function HomeScreen({ pairId, onUnpaired }: { pairId: string; onUnpaired:
             <Text key={p.id} style={styles.historyItem}>
               {p.author === me ? "You" : shortName(partnerName)} · {emojiFor(p.event_kind)}{" "}
               {p.note || p.event_kind || "shared a moment"}
+              {"  "}
+              <Text style={styles.timeAgo}>{timeAgo(p.created)}</Text>
             </Text>
           ))}
         </View>
@@ -243,6 +245,16 @@ function shortName(name: string) {
   return name.slice(0, 7) + "…";
 }
 
+function timeAgo(iso: string) {
+  const diff = Date.now() - new Date(iso).getTime();
+  const mins = Math.floor(diff / 60000);
+  if (mins < 1) return "now";
+  if (mins < 60) return `${mins}m`;
+  const hours = Math.floor(mins / 60);
+  if (hours < 24) return `${hours}h`;
+  return `${Math.floor(hours / 24)}d`;
+}
+
 const styles = StyleSheet.create({
   container: { flex: 1, backgroundColor: "#FBF7EC" },
   content: { padding: 20, paddingTop: 64 },
@@ -261,6 +273,7 @@ const styles = StyleSheet.create({
   stat: { fontSize: 12, fontWeight: "600", color: "#3B2E1A" },
   history: { backgroundColor: "#fff", borderRadius: 12, padding: 12, marginBottom: 12 },
   historyItem: { fontSize: 13, color: "#7A6A53", paddingVertical: 3 },
+  timeAgo: { fontSize: 11, color: "#B3A78F" },
   toast: { textAlign: "center", fontSize: 16, fontWeight: "700", color: "#6B8E23", marginBottom: 12 },
   camera: { backgroundColor: "#6B8E23", borderRadius: 12, paddingVertical: 14, alignItems: "center" },
   cameraText: { color: "#fff", fontSize: 16, fontWeight: "700" },
