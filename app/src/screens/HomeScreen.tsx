@@ -1,6 +1,6 @@
-import React, { useCallback, useEffect, useState } from "react";
+import React, { useCallback, useEffect, useRef, useState } from "react";
 import {
-  ActivityIndicator, Alert, Image, Pressable, RefreshControl, ScrollView, StyleSheet, Text, View,
+  ActivityIndicator, Alert, Image, Pressable, RefreshControl, ScrollView, StyleSheet, Text, TextInput, View,
 } from "react-native";
 import * as ImagePicker from "expo-image-picker";
 import { pb } from "../lib/pb";
@@ -40,6 +40,9 @@ export function HomeScreen({ pairId, onUnpaired }: { pairId: string; onUnpaired:
   const [busy, setBusy] = useState(false);
   const [refreshing, setRefreshing] = useState(false);
   const [toast, setToast] = useState<string | null>(null);
+  const [noteInput, setNoteInput] = useState("");
+  const [pendingKind, setPendingKind] = useState<string | null>(null);
+  const noteRef = useRef<TextInput>(null);
   const [stats, setStats] = useState({ today: 0, week: 0, month: 0, all: 0 });
   const [partnerStats, setPartnerStats] = useState({ today: 0, week: 0, month: 0, all: 0 });
   const [recentPosts, setRecentPosts] = useState<Post[]>([]);
@@ -84,12 +87,14 @@ export function HomeScreen({ pairId, onUnpaired }: { pairId: string; onUnpaired:
 
   useEffect(() => { refresh(); fetchStats(); }, [refresh, fetchStats]);
 
-  const logEvent = async (kind: string) => {
+  const logEvent = async (kind: string, note?: string) => {
     setBusy(true);
+    setPendingKind(null);
+    setNoteInput("");
     try {
       await pb
         .collection("posts")
-        .create({ pair: pairId, author: me, type: "event", event_kind: kind });
+        .create({ pair: pairId, author: me, type: "event", event_kind: kind, note: note || "" });
       const emoji = EVENT_KINDS.find((e) => e.kind === kind)?.emoji ?? "🍐";
       setToast(`${emoji} logged!`);
       setTimeout(() => setToast(null), 1500);
@@ -101,6 +106,12 @@ export function HomeScreen({ pairId, onUnpaired }: { pairId: string; onUnpaired:
     } finally {
       setBusy(false);
     }
+  };
+
+  const startLog = (kind: string) => {
+    setPendingKind(kind);
+    setNoteInput("");
+    setTimeout(() => noteRef.current?.focus(), 100);
   };
 
   const sharePhoto = async () => {
@@ -178,12 +189,30 @@ export function HomeScreen({ pairId, onUnpaired }: { pairId: string; onUnpaired:
 
       <View style={styles.row}>
         {EVENT_KINDS.map((e) => (
-          <Pressable key={e.kind} style={styles.eventBtn} disabled={busy} onPress={() => logEvent(e.kind)}>
+          <Pressable key={e.kind} style={styles.eventBtn} disabled={busy} onPress={() => startLog(e.kind)}>
             <Text style={styles.eventEmoji}>{e.emoji}</Text>
             <Text style={styles.eventLabel}>{e.label}</Text>
           </Pressable>
         ))}
       </View>
+
+      {pendingKind && (
+        <View style={styles.noteRow}>
+          <TextInput
+            ref={noteRef}
+            style={styles.noteInput}
+            placeholder={`Add a note (optional)…`}
+            placeholderTextColor="#B3A78F"
+            value={noteInput}
+            onChangeText={setNoteInput}
+            onSubmitEditing={() => logEvent(pendingKind, noteInput)}
+            returnKeyType="send"
+          />
+          <Pressable style={styles.noteSubmit} onPress={() => logEvent(pendingKind, noteInput)}>
+            <Text style={styles.noteSubmitText}>Send</Text>
+          </Pressable>
+        </View>
+      )}
 
       <View style={styles.statsRow}>
         <Text style={styles.statLabel}>You</Text>
@@ -268,6 +297,10 @@ const styles = StyleSheet.create({
   eventBtn: { flex: 1, backgroundColor: "#fff", borderRadius: 12, paddingVertical: 14, alignItems: "center", marginHorizontal: 4 },
   eventEmoji: { fontSize: 28 },
   eventLabel: { marginTop: 4, fontSize: 12, color: "#7A6A53", fontWeight: "600" },
+  noteRow: { flexDirection: "row", gap: 8, marginBottom: 12 },
+  noteInput: { flex: 1, backgroundColor: "#fff", borderRadius: 12, padding: 12, fontSize: 14, color: "#3B2E1A" },
+  noteSubmit: { backgroundColor: "#6B8E23", borderRadius: 12, paddingHorizontal: 20, justifyContent: "center" },
+  noteSubmitText: { color: "#fff", fontWeight: "700", fontSize: 14 },
   statsRow: { flexDirection: "row", alignItems: "center", gap: 8, backgroundColor: "#fff", borderRadius: 12, padding: 10, marginBottom: 6 },
   statLabel: { fontSize: 12, fontWeight: "800", color: "#6B8E23", width: 56 },
   stat: { fontSize: 12, fontWeight: "600", color: "#3B2E1A" },
