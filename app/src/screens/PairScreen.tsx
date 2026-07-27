@@ -9,6 +9,7 @@ import {
   View,
 } from "react-native";
 import { acceptInvite, createInvite } from "../lib/pairApi";
+import { pb } from "../lib/pb";
 import type { PairInvite } from "../types";
 
 export function PairScreen({ onPaired }: { onPaired: () => void }) {
@@ -29,11 +30,58 @@ export function PairScreen({ onPaired }: { onPaired: () => void }) {
     }
   };
 
+  /**
+   * Debug shortcut: entering AAAAAA as the code creates a fake pair
+   * directly — no second device needed. Only compiled in __DEV__.
+   */
+  const fakePair = async () => {
+    // Save the current auth so we can restore it after using the admin session.
+    const userToken = pb.authStore.token;
+    const userRecord = pb.authStore.record;
+
+    // Create a partner account (idempotent).
+    try {
+      await pb.collection("users").create({
+        email: "partner@peard.local",
+        password: "test1234",
+        passwordConfirm: "test1234",
+        display_name: "Test Partner",
+      });
+    } catch {}
+
+    // Switch to superuser so we can create pairs / members (those collections
+    // are locked to superuser-only create).
+    await pb.admins.authWithPassword("admin@peard.app", "Password123!");
+
+    const pair = await pb.collection("pairs").create({});
+    const partner = await pb
+      .collection("users")
+      .getFirstListItem('email = "partner@peard.local"');
+
+    await pb.collection("pair_members").create({
+      pair: pair.id,
+      user: userRecord?.id,
+      role: "owner",
+    });
+    await pb.collection("pair_members").create({
+      pair: pair.id,
+      user: partner.id,
+      role: "member",
+    });
+
+    // Restore the user session.
+    pb.authStore.save(userToken, userRecord);
+  };
+
   const accept = async () => {
     setBusy(true);
     setError(null);
     try {
-      await acceptInvite(code);
+      if (__DEV__ && code === "AAAAAA") {
+        await fakePair();
+      } else {
+        await acceptInvite(code);
+      }
       onPaired();
     } catch (e) {
       setError(e instanceof Error ? e.message : "Couldn't accept invite");
@@ -79,6 +127,9 @@ export function PairScreen({ onPaired }: { onPaired: () => void }) {
         value={code}
         onChangeText={setCode}
       />
+      {__DEV__ && (
+        <Text style={styles.hint}>💡 Dev: type AAAAAA to skip pairing</Text>
+      )}
       <Pressable
         style={[styles.primary, (busy || code.length < 6) && styles.disabled]}
         onPress={accept}
@@ -120,5 +171,6 @@ const styles = StyleSheet.create({
     backgroundColor: "#fff",
   },
   disabled: { opacity: 0.5 },
+  hint: { color: "#B3A78F", fontSize: 11, marginBottom: 8, marginTop: -4 },
   error: { color: "#B23A2E", marginTop: 16, textAlign: "center" },
 });
