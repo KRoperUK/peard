@@ -31,6 +31,7 @@ export function HomeScreen({ pairId, onUnpaired }: { pairId: string; onUnpaired:
   const [partnerName, setPartnerName] = useState("Partner");
   const [latest, setLatest] = useState<Post | null>(null);
   const [busy, setBusy] = useState(false);
+  const [toast, setToast] = useState<string | null>(null);
 
   const refresh = useCallback(async () => {
     try {
@@ -60,7 +61,11 @@ export function HomeScreen({ pairId, onUnpaired }: { pairId: string; onUnpaired:
       await pb
         .collection("posts")
         .create({ pair: pairId, author: me, type: "event", event_kind: kind });
+      const emoji = EVENT_KINDS.find((e) => e.kind === kind)?.emoji ?? "🍐";
+      setToast(`${emoji} logged!`);
+      setTimeout(() => setToast(null), 1500);
       reloadWidget();
+      refresh();
     } catch (e) {
       Alert.alert("Couldn't log it", String(e));
     } finally {
@@ -138,6 +143,8 @@ export function HomeScreen({ pairId, onUnpaired }: { pairId: string; onUnpaired:
         ))}
       </View>
 
+      {toast && <Text style={styles.toast}>{toast}</Text>}
+
       <Pressable style={styles.camera} disabled={busy} onPress={sharePhoto}>
         {busy ? <ActivityIndicator color="#fff" /> : <Text style={styles.cameraText}>📸 Share a moment</Text>}
       </Pressable>
@@ -174,6 +181,7 @@ const styles = StyleSheet.create({
   eventBtn: { flex: 1, backgroundColor: "#fff", borderRadius: 12, paddingVertical: 14, alignItems: "center", marginHorizontal: 4 },
   eventEmoji: { fontSize: 28 },
   eventLabel: { marginTop: 4, fontSize: 12, color: "#7A6A53", fontWeight: "600" },
+  toast: { textAlign: "center", fontSize: 16, fontWeight: "700", color: "#6B8E23", marginBottom: 12 },
   camera: { backgroundColor: "#6B8E23", borderRadius: 12, paddingVertical: 14, alignItems: "center" },
   cameraText: { color: "#fff", fontSize: 16, fontWeight: "700" },
   footer: { flexDirection: "row", justifyContent: "space-between", marginTop: 28 },
