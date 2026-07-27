@@ -87,20 +87,7 @@ export function HomeScreen({ pairId, onUnpaired }: { pairId: string; onUnpaired:
 
   useEffect(() => { refresh(); fetchStats(); }, [refresh, fetchStats]);
 
-  // Subscribe to real-time post changes so stats and feed update instantly
-  // whenever either user logs an event or shares a photo.
-  useEffect(() => {
-    if (!pairId) return;
-    try {
-      const unsub = pb.collection("posts").subscribe("*", () => {
-        refresh();
-        fetchStats();
-      }, { filter: `pair = "${pairId}"` });
-      return () => { try { unsub(); } catch {} };
-    } catch { /* EventSource unavailable — polling fallback below */ }
-  }, [pairId, refresh, fetchStats]);
-
-  // Fallback polling every 30s in case real-time is unavailable.
+  // Poll for changes every 30s so partner activity shows up without a reload.
   useEffect(() => {
     if (!pairId) return;
     const id = setInterval(() => { refresh(); fetchStats(); }, 30000);
