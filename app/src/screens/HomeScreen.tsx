@@ -11,7 +11,14 @@ import {
 import * as ImagePicker from "expo-image-picker";
 import { pb } from "../lib/pb";
 import { leavePair } from "../lib/pairApi";
-import { PearShared } from "../../modules/pear-shared/src";
+
+let PearSharedReload: (() => void) | null = null;
+try {
+  const m = require("../../modules/pear-shared/src");
+  PearSharedReload = () => m.PearShared.reloadTimelines();
+} catch {}
+
+function reloadWidget() { try { PearSharedReload?.(); } catch {} }
 import { EVENT_KINDS, Post } from "../types";
 
 type Member = {
@@ -53,7 +60,7 @@ export function HomeScreen({ pairId, onUnpaired }: { pairId: string; onUnpaired:
       await pb
         .collection("posts")
         .create({ pair: pairId, author: me, type: "event", event_kind: kind });
-      PearShared.reloadTimelines();
+      reloadWidget();
     } catch (e) {
       Alert.alert("Couldn't log it", String(e));
     } finally {
@@ -78,7 +85,7 @@ export function HomeScreen({ pairId, onUnpaired }: { pairId: string; onUnpaired:
       form.append("type", "photo");
       form.append("media", { uri: asset.uri, name: "pear.jpg", type: "image/jpeg" } as any);
       await pb.collection("posts").create(form);
-      PearShared.reloadTimelines();
+      reloadWidget();
     } catch (e) {
       Alert.alert("Upload failed", String(e));
     } finally {

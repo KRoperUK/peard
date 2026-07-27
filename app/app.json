@@ -11,15 +11,21 @@
     "ios": {
       "supportsTablet": true,
       "bundleIdentifier": "com.peard.app",
+      "appleTeamId": "72Q6R744M4",
       "usesAppleSignIn": true,
       "infoPlist": {
-        "UIBackgroundModes": ["remote-notification", "fetch"],
+        "UIBackgroundModes": [
+          "remote-notification",
+          "fetch"
+        ],
         "NSCameraUsageDescription": "Take a photo to share a moment with your partner.",
         "NSPhotoLibraryUsageDescription": "Pick a photo to share with your partner."
       },
       "entitlements": {
         "aps-environment": "development",
-        "com.apple.security.application-groups": ["group.com.peard.app"]
+        "com.apple.security.application-groups": [
+          "group.com.peard.app"
+        ]
       }
     },
     "android": {
@@ -39,7 +45,8 @@
       "expo-apple-authentication",
       "expo-secure-store",
       "expo-notifications",
-      "@bacons/apple-targets"
+      "@bacons/apple-targets",
+      "expo-web-browser"
     ]
   }
 }

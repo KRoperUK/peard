@@ -28,6 +28,7 @@ export function AuthScreen() {
 
       <Pressable
         style={[styles.button, styles.apple]}
+        accessibilityRole="button"
         disabled={busy !== null}
         onPress={() => run("apple", signInWithApple)}
       >
@@ -40,6 +41,7 @@ export function AuthScreen() {
 
       <Pressable
         style={[styles.button, styles.google]}
+        accessibilityRole="button"
         disabled={busy !== null}
         onPress={() => run("google", signInWithGoogle)}
       >

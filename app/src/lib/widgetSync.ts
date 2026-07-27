@@ -1,6 +1,16 @@
 import { Platform } from "react-native";
 import { pb, PB_URL } from "./pb";
-import { PearShared } from "../../modules/pear-shared/src";
+
+/**
+ * Best-effort bridge to the iOS native module (PearShared).
+ * Falls back silently when the module isn't linked — the app is still fully
+ * functional without the widget.
+ */
+let PearShared: any = null;
+try {
+  PearShared = require("../../modules/pear-shared/src").PearShared;
+} catch {}
+
 
 /**
  * Issues a revocable widget token from the server and hands it (plus the API
