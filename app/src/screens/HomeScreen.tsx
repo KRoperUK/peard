@@ -173,6 +173,7 @@ export function HomeScreen({ pairId, onUnpaired }: { pairId: string; onUnpaired:
             ? `${latestAuthor} · ${latest.type === "event" ? latest.event_kind : "shared a moment"}`
             : "No moments yet — send a pear!"}
         </Text>
+        {latest?.note ? <Text style={styles.cardNote}>{latest.note}</Text> : null}
       </View>
 
       <View style={styles.row}>
@@ -250,6 +251,7 @@ const styles = StyleSheet.create({
   photo: { width: "100%", aspectRatio: 1, borderRadius: 12 },
   cardEmoji: { fontSize: 72, marginVertical: 24 },
   cardCaption: { marginTop: 12, color: "#7A6A53", fontSize: 14 },
+  cardNote: { marginTop: 4, color: "#3B2E1A", fontSize: 15, fontStyle: "italic", textAlign: "center" },
   row: { flexDirection: "row", marginBottom: 20 },
   eventBtn: { flex: 1, backgroundColor: "#fff", borderRadius: 12, paddingVertical: 14, alignItems: "center", marginHorizontal: 4 },
   eventEmoji: { fontSize: 28 },
