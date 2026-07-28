@@ -230,6 +230,218 @@ public struct Post: Codable, Hashable, Sendable, Identifiable {
     }
 }
 
+/// A record in the `pairs` collection. A pair with more than two members is a
+/// group; the collection kept its original name so no data migration was
+/// needed when groups arrived.
+public struct PairRecord: Codable, Hashable, Sendable, Identifiable {
+    public let id: String
+    /// Free text, set by any member. Empty for a 1:1 connection.
+    public let name: String?
+    public let created: Date
+
+    public init(id: String, name: String? = nil, created: Date = .distantPast) {
+        self.id = id
+        self.name = name
+        self.created = created
+    }
+
+    public init(from decoder: any Decoder) throws {
+        let container = try decoder.container(keyedBy: CodingKeys.self)
+        id = try container.decode(String.self, forKey: .id)
+        name = try container.decodeIfPresent(String.self, forKey: .name)
+        created = (try? container.decode(Date.self, forKey: .created)) ?? .distantPast
+    }
+
+    public var displayName: String? {
+        guard let name, !name.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else { return nil }
+        return name
+    }
+}
+
+/// A record in the `moment_kinds` collection: one custom moment, shared by every
+/// member of a connection so they all draw it the same way.
+public struct MomentKind: Codable, Hashable, Sendable, Identifiable {
+    public let id: String
+    public let pair: String
+    public let slug: EventKind
+    public let emoji: String
+    public let label: String
+    public let createdBy: String?
+    public let created: Date
+
+    enum CodingKeys: String, CodingKey {
+        case id, pair, slug, emoji, label, created
+        case createdBy = "created_by"
+    }
+
+    public init(
+        id: String,
+        pair: String,
+        slug: EventKind,
+        emoji: String,
+        label: String,
+        createdBy: String? = nil,
+        created: Date = .distantPast
+    ) {
+        self.id = id
+        self.pair = pair
+        self.slug = slug
+        self.emoji = emoji
+        self.label = label
+        self.createdBy = createdBy
+        self.created = created
+    }
+
+    public init(from decoder: any Decoder) throws {
+        let container = try decoder.container(keyedBy: CodingKeys.self)
+        id = try container.decode(String.self, forKey: .id)
+        pair = try container.decode(String.self, forKey: .pair)
+        slug = try container.decode(EventKind.self, forKey: .slug)
+        emoji = try container.decode(String.self, forKey: .emoji)
+        label = try container.decode(String.self, forKey: .label)
+        createdBy = try container.decodeIfPresent(String.self, forKey: .createdBy)
+        created = (try? container.decode(Date.self, forKey: .created)) ?? .distantPast
+    }
+
+    /// How the UI draws this kind.
+    public var moment: Moment {
+        Moment(
+            kind: slug,
+            emoji: emoji.isEmpty ? MomentCatalogue.fallbackEmoji : emoji,
+            label: label.isEmpty ? MomentSlug.humanised(slug) : label,
+            origin: .custom(recordID: id)
+        )
+    }
+
+    /// Oldest first, so the home screen's order is stable as kinds are added.
+    public static func byCreation(_ lhs: MomentKind, _ rhs: MomentKind) -> Bool {
+        lhs.created == rhs.created ? lhs.id < rhs.id : lhs.created < rhs.created
+    }
+}
+
+/// A connection as the app presents it: the `pairs` row, the signed-in user's
+/// role in it, and who else is in it.
+///
+/// Decoded from `GET /api/peard/connections`, which resolves the other members'
+/// display names server-side. The `users` view rule hides those records from the
+/// client, so without that route every unnamed connection would be titled
+/// "Partner" and a switcher with several of them would be unusable.
+public struct Connection: Codable, Hashable, Sendable, Identifiable {
+    public struct Member: Codable, Hashable, Sendable, Identifiable {
+        public let user: String
+        public let name: String
+        public let role: MemberRole
+        public let isYou: Bool
+
+        public var id: String { user }
+
+        enum CodingKeys: String, CodingKey {
+            case user, name, role
+            case isYou = "is_you"
+        }
+
+        public init(user: String, name: String, role: MemberRole = .member, isYou: Bool = false) {
+            self.user = user
+            self.name = name
+            self.role = role
+            self.isYou = isYou
+        }
+    }
+
+    /// The `pairs` record id.
+    public let pair: String
+    /// The name somebody gave the connection. Empty for an unnamed 1:1.
+    public let name: String?
+    public let created: Date
+    public let role: MemberRole
+    public let memberCount: Int
+    public let members: [Member]
+
+    public var id: String { pair }
+
+    enum CodingKeys: String, CodingKey {
+        case pair, name, created, role, members
+        case memberCount = "member_count"
+    }
+
+    public init(
+        pair: String,
+        name: String? = nil,
+        created: Date = .distantPast,
+        role: MemberRole = .member,
+        memberCount: Int? = nil,
+        members: [Member] = []
+    ) {
+        self.pair = pair
+        self.name = name
+        self.created = created
+        self.role = role
+        self.members = members
+        self.memberCount = memberCount ?? max(members.count, 1)
+    }
+
+    public init(from decoder: any Decoder) throws {
+        let container = try decoder.container(keyedBy: CodingKeys.self)
+        pair = try container.decode(String.self, forKey: .pair)
+        name = try container.decodeIfPresent(String.self, forKey: .name)
+        created = (try? container.decode(Date.self, forKey: .created)) ?? .distantPast
+        role = try container.decodeIfPresent(MemberRole.self, forKey: .role) ?? .member
+        members = try container.decodeIfPresent([Member].self, forKey: .members) ?? []
+        let count = try container.decodeIfPresent(Int.self, forKey: .memberCount)
+        // A connection always contains at least the signed-in user.
+        memberCount = max(count ?? members.count, 1)
+    }
+
+    /// More than two people makes it a group.
+    public var isGroup: Bool { memberCount > 2 }
+
+    /// The name somebody set, when they set one.
+    public var displayName: String? {
+        guard let name, !name.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else { return nil }
+        return name
+    }
+
+    /// Everybody except the signed-in user.
+    public var others: [Member] { members.filter { !$0.isYou } }
+
+    /// The other person's name in a 1:1, `nil` in a group or when unknown.
+    public var partnerName: String? {
+        guard !isGroup, others.count == 1 else { return nil }
+        return others[0].name
+    }
+
+    /// The connection's title, in precedence order: the name somebody set, the
+    /// other person's name for a 1:1, the other members for a small group, then
+    /// a description of its size.
+    public func title() -> String {
+        if let displayName { return displayName }
+        if let partnerName { return partnerName }
+        let names = others.map(\.name)
+        switch names.count {
+        case 0: return PartnerLabel.fallback
+        case 1: return names[0]
+        case 2: return "\(names[0]) & \(names[1])"
+        default: return "\(names[0]) +\(names.count - 1)"
+        }
+    }
+
+    /// Sub-label under the title in the connection switcher.
+    public var subtitle: String {
+        isGroup ? "\(memberCount) people" : "Just the two of you"
+    }
+
+    /// The display name for a post's author.
+    public func name(forUser userID: String) -> String? {
+        members.first { $0.user == userID }?.name
+    }
+}
+
+/// Response of `GET /api/peard/connections`.
+public struct ConnectionList: Codable, Hashable, Sendable {
+    public let connections: [Connection]
+    public init(connections: [Connection]) { self.connections = connections }
+}
+
 /// A record in the `pair_members` collection.
 public struct PairMember: Codable, Hashable, Sendable, Identifiable {
     public let id: String
@@ -314,21 +526,33 @@ public struct PairInvite: Codable, Hashable, Sendable {
     public let code: String
     public let expires: Date
     public let deepLink: String
+    /// Present when the invite adds the accepting user to an existing
+    /// connection rather than creating a new one.
+    public let pair: String?
 
     enum CodingKeys: String, CodingKey {
-        case code, expires
+        case code, expires, pair
         case deepLink = "deep_link"
     }
 
-    public init(code: String, expires: Date, deepLink: String) {
+    public init(code: String, expires: Date, deepLink: String, pair: String? = nil) {
         self.code = code
         self.expires = expires
         self.deepLink = deepLink
+        self.pair = pair
+    }
+
+    /// True when accepting joins an existing group.
+    public var isGroupInvite: Bool {
+        guard let pair else { return false }
+        return !pair.isEmpty
     }
 
     /// Text shared by the invite share action (Requirement 10.2).
     public var shareMessage: String {
-        "Pear up with me on Pear'd! Code: \(code)\n\(deepLink)"
+        isGroupInvite
+            ? "Join my group on Pear'd! Code: \(code)\n\(deepLink)"
+            : "Pear up with me on Pear'd! Code: \(code)\n\(deepLink)"
     }
 }
 
@@ -355,6 +579,53 @@ public struct WidgetFeed: Codable, Hashable, Sendable {
         public init(name: String) { self.name = name }
     }
 
+    /// Which connection the feed is showing. A user may belong to several, and
+    /// the server picks whichever somebody else posted in most recently.
+    public struct ConnectionInfo: Codable, Hashable, Sendable {
+        public let id: String?
+        public let name: String?
+        public let memberCount: Int?
+        public let isGroup: Bool?
+
+        enum CodingKeys: String, CodingKey {
+            case id, name
+            case memberCount = "member_count"
+            case isGroup = "is_group"
+        }
+
+        public init(id: String? = nil, name: String? = nil, memberCount: Int? = nil, isGroup: Bool? = nil) {
+            self.id = id
+            self.name = name
+            self.memberCount = memberCount
+            self.isGroup = isGroup
+        }
+
+        public var displayName: String? {
+            guard let name, !name.isEmpty else { return nil }
+            return name
+        }
+    }
+
+    /// One moment kind's count for today, with the emoji resolved server-side so
+    /// the widget does not need the connection's catalogue.
+    public struct Tally: Codable, Hashable, Sendable, Identifiable {
+        public let kind: EventKind
+        public let emoji: String
+        public let label: String
+        public let count: Int
+
+        public var id: String { kind.rawValue }
+
+        public init(kind: EventKind, emoji: String, label: String, count: Int) {
+            self.kind = kind
+            self.emoji = emoji
+            self.label = label
+            self.count = count
+        }
+    }
+
+    /// The original two-count shape, kept so a widget build that predates
+    /// generalised tallies keeps rendering.
     public struct Counts: Codable, Hashable, Sendable {
         public let beer: Int
         public let loo: Int
@@ -368,6 +639,9 @@ public struct WidgetFeed: Codable, Hashable, Sendable {
         public let id: String
         public let type: PostType
         public let eventKind: EventKind?
+        /// Resolved server-side, so a custom moment arrives ready to draw.
+        public let emoji: String?
+        public let label: String?
         public let note: String?
         /// Absent for records that predate the server's `created` field.
         public let created: Date?
@@ -375,7 +649,7 @@ public struct WidgetFeed: Codable, Hashable, Sendable {
         public let author: String?
 
         enum CodingKeys: String, CodingKey {
-            case id, type, note, created, author
+            case id, type, note, created, author, emoji, label
             case eventKind = "event_kind"
             case mediaURL = "media_url"
         }
@@ -384,6 +658,8 @@ public struct WidgetFeed: Codable, Hashable, Sendable {
             id: String,
             type: PostType,
             eventKind: EventKind? = nil,
+            emoji: String? = nil,
+            label: String? = nil,
             note: String? = nil,
             created: Date? = nil,
             mediaURL: String? = nil,
@@ -392,6 +668,8 @@ public struct WidgetFeed: Codable, Hashable, Sendable {
             self.id = id
             self.type = type
             self.eventKind = eventKind
+            self.emoji = emoji
+            self.label = label
             self.note = note
             self.created = created
             self.mediaURL = mediaURL
@@ -403,6 +681,8 @@ public struct WidgetFeed: Codable, Hashable, Sendable {
             id = try container.decode(String.self, forKey: .id)
             type = try container.decode(PostType.self, forKey: .type)
             eventKind = try container.decodeIfPresent(EventKind.self, forKey: .eventKind)
+            emoji = try container.decodeIfPresent(String.self, forKey: .emoji)
+            label = try container.decodeIfPresent(String.self, forKey: .label)
             note = try container.decodeIfPresent(String.self, forKey: .note)
             created = try? container.decode(Date.self, forKey: .created)
             mediaURL = try container.decodeIfPresent(String.self, forKey: .mediaURL)
@@ -418,23 +698,69 @@ public struct WidgetFeed: Codable, Hashable, Sendable {
             guard let note, !note.isEmpty else { return nil }
             return note
         }
+
+        /// The server's emoji when it sent one, else the local catalogue's.
+        public var displayEmoji: String {
+            if type == .photo { return "📸" }
+            if let emoji, !emoji.isEmpty { return emoji }
+            return MomentCatalogue.emoji(for: eventKind)
+        }
+
+        public var displayLabel: String {
+            if let label, !label.isEmpty { return label }
+            return MomentCatalogue.label(for: eventKind)
+        }
     }
 
     public let state: FeedState
     public let partner: Partner?
+    public let connection: ConnectionInfo?
     public let counts: Counts?
+    public let tallies: [Tally]?
     public let post: FeedPost?
 
-    public init(state: FeedState, partner: Partner? = nil, counts: Counts? = nil, post: FeedPost? = nil) {
+    public init(
+        state: FeedState,
+        partner: Partner? = nil,
+        connection: ConnectionInfo? = nil,
+        counts: Counts? = nil,
+        tallies: [Tally]? = nil,
+        post: FeedPost? = nil
+    ) {
         self.state = state
         self.partner = partner
+        self.connection = connection
         self.counts = counts
+        self.tallies = tallies
         self.post = post
     }
 
-    public var partnerName: String { partner?.name ?? "Partner" }
+    public var partnerName: String { partner?.name ?? PartnerLabel.fallback }
     public var beerCount: Int { counts?.beer ?? 0 }
     public var looCount: Int { counts?.loo ?? 0 }
+
+    /// True when the moment came from a group rather than a 1:1 connection.
+    public var isGroup: Bool { connection?.isGroup ?? false }
+
+    /// The group's name, only when it is a group that has been named.
+    public var groupName: String? {
+        guard isGroup else { return nil }
+        return connection?.displayName
+    }
+
+    /// Today's tallies, most frequent first, falling back to the legacy
+    /// beer/loo counts when the server predates the generalised field.
+    public var displayTallies: [Tally] {
+        if let tallies, !tallies.isEmpty { return tallies }
+        var legacy: [Tally] = []
+        if beerCount > 0 {
+            legacy.append(Tally(kind: .beer, emoji: "🍺", label: "Beer", count: beerCount))
+        }
+        if looCount > 0 {
+            legacy.append(Tally(kind: .loo, emoji: "💩", label: "Loo", count: looCount))
+        }
+        return legacy
+    }
 }
 
 /// Response of the auth endpoints (`/api/peard/auth/apple`,

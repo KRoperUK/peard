@@ -224,16 +224,60 @@ final class ModelRoundTripTests: XCTestCase {
         XCTAssertEqual(response.record.displayName, "Ada")
     }
 
-    func testEventKindCatalogueOrderAndEmoji() {
-        XCTAssertEqual(EventKindCatalogue.all.map(\.kind.rawValue), ["beer", "loo", "coffee"])
-        XCTAssertEqual(EventKindCatalogue.all.map(\.emoji), ["🍺", "💩", "☕"])
-        XCTAssertEqual(EventKindCatalogue.all.map(\.label), ["Beer", "Loo", "Coffee"])
+    func testWidgetFeedDecodesConnectionContextAndGeneralisedTallies() throws {
+        let json = Data("""
+        {"state":"ok","partner":{"name":"Sam"},
+         "connection":{"id":"pair1","name":"Flatmates","member_count":4,"is_group":true},
+         "counts":{"beer":2,"loo":1},
+         "tallies":[{"kind":"beer","emoji":"🍺","label":"Beer","count":2},
+                    {"kind":"dog_walk","emoji":"🐕","label":"Dog walk","count":1}],
+         "post":{"id":"p1","type":"event","event_kind":"dog_walk","emoji":"🐕","label":"Dog walk",
+                 "note":"round the park","created":"2026-07-28 10:00:00.000Z","media_url":"","author":"Sam"}}
+        """.utf8)
 
-        XCTAssertEqual(EventKindCatalogue.emoji(for: .loo), "💩")
-        XCTAssertEqual(EventKindCatalogue.emoji(for: EventKind(rawValue: "wine")), "🍐")
-        XCTAssertEqual(EventKindCatalogue.emoji(for: nil), "🍐")
+        let feed = try decoder.decode(WidgetFeed.self, from: json)
 
-        let photo = Post(id: "p", pair: "p", author: "u", type: .photo, created: Date())
-        XCTAssertEqual(EventKindCatalogue.emoji(for: photo), "📸")
+        XCTAssertTrue(feed.isGroup)
+        XCTAssertEqual(feed.groupName, "Flatmates")
+        XCTAssertEqual(feed.connection?.memberCount, 4)
+        XCTAssertEqual(feed.displayTallies.map(\.kind.rawValue), ["beer", "dog_walk"])
+        XCTAssertEqual(feed.displayTallies.last?.emoji, "🐕")
+        // A custom kind the client has no catalogue for still draws correctly,
+        // because the server resolved it.
+        XCTAssertEqual(feed.post?.displayEmoji, "🐕")
+        XCTAssertEqual(feed.post?.displayLabel, "Dog walk")
+        XCTAssertFalse(feed.post?.hasMedia ?? true)
+    }
+
+    func testWidgetFeedFallsBackToLegacyCountsWhenTalliesAreAbsent() throws {
+        let json = Data("""
+        {"state":"ok","partner":{"name":"Sam"},"counts":{"beer":3,"loo":0},
+         "post":{"id":"p1","type":"event","event_kind":"beer","created":"2026-07-28 10:00:00.000Z"}}
+        """.utf8)
+
+        let feed = try decoder.decode(WidgetFeed.self, from: json)
+
+        XCTAssertFalse(feed.isGroup)
+        XCTAssertNil(feed.groupName)
+        XCTAssertEqual(feed.displayTallies.map(\.kind.rawValue), ["beer"], "zero counts are omitted")
+        XCTAssertEqual(feed.displayTallies.first?.count, 3)
+        // No server-side emoji: the local catalogue supplies it.
+        XCTAssertEqual(feed.post?.displayEmoji, "🍺")
+        XCTAssertEqual(feed.post?.displayLabel, "Beer")
+    }
+
+    func testPairInviteDistinguishesAGroupInviteFromANewConnection() throws {
+        let group = try decoder.decode(PairInvite.self, from: Data("""
+        {"code":"ABC123","expires":"2026-08-04 10:00:00.000Z","deep_link":"peard://pair/ABC123","pair":"pair1"}
+        """.utf8))
+        let fresh = try decoder.decode(PairInvite.self, from: Data("""
+        {"code":"ABC123","expires":"2026-08-04 10:00:00.000Z","deep_link":"peard://pair/ABC123"}
+        """.utf8))
+
+        XCTAssertTrue(group.isGroupInvite)
+        XCTAssertTrue(group.shareMessage.contains("Join my group"))
+        XCTAssertFalse(fresh.isGroupInvite)
+        XCTAssertTrue(fresh.shareMessage.contains("Pear up with me"))
+        XCTAssertTrue(fresh.shareMessage.contains("ABC123"))
     }
 }

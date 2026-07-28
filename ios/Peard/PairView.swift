@@ -18,10 +18,24 @@ struct PairView: View {
 
     var body: some View {
         VStack(spacing: 0) {
-            Text("Pear up 🍐")
+            if app.canReturnHome {
+                HStack {
+                    Button("Back") { app.returnHome() }
+                        .font(.subheadline.bold())
+                        .foregroundStyle(PearColor.accent)
+                    Spacer()
+                }
+                .padding(.bottom, 16)
+            }
+
+            Text(app.canReturnHome ? "Another connection 🍐" : "Pear up 🍐")
                 .font(.title.bold())
                 .foregroundStyle(PearColor.textPrimary)
-            Text("Share a code with your partner, or enter theirs.")
+            Text(
+                app.canReturnHome
+                    ? "Start a second connection, or join a friend's group with their code."
+                    : "Share a code with your partner, or enter theirs."
+            )
                 .font(.subheadline)
                 .foregroundStyle(PearColor.textSecondary)
                 .multilineTextAlignment(.center)
@@ -122,7 +136,7 @@ struct PairView: View {
                 }
 
             #if DEBUG
-            Text("💡 Dev: type AAAAAA to skip pairing")
+            Text("💡 Dev: AAAAAA seeds a pair, BBBBBB seeds a group")
                 .font(.caption2)
                 .foregroundStyle(PearColor.textTertiary)
             #endif
@@ -130,7 +144,7 @@ struct PairView: View {
             Button {
                 accept()
             } label: {
-                primaryLabel(title: "Accept & pear up", isBusy: busy == .accept)
+                primaryLabel(title: app.canReturnHome ? "Accept & join" : "Accept & pear up", isBusy: busy == .accept)
             }
             .buttonStyle(.plain)
             .disabled(!canAccept)
@@ -180,6 +194,11 @@ struct PairView: View {
                 if code == DebugSupport.fakePairCode {
                     try await DebugSupport.createFakePair(app: app)
                     await app.resolveMembership()
+                    return
+                }
+                if code == DebugSupport.fakeGroupCode {
+                    try await DebugSupport.createFakeGroup(app: app)
+                    await app.refreshConnections()
                     return
                 }
                 #endif

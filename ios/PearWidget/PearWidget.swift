@@ -5,16 +5,23 @@ import WidgetKit
 // Ported from app/targets/pear-widget/index.swift (Requirement 22.7), now
 // decoding with PeardCore's WidgetFeed and reading the App Group through
 // SharedStore.
+//
+// A user may belong to several connections and the widget has room for one, so
+// the server picks whichever somebody else posted in most recently and says which
+// it chose. Emoji and labels arrive resolved, so a custom moment renders here
+// without the widget needing the connection's catalogue.
 
 struct PearEntry: TimelineEntry {
     let date: Date
     let state: FeedState
     let partnerName: String
+    /// Set only when the moment came from a named group.
+    let groupName: String?
     let note: String
-    let eventKind: EventKind?
+    let emoji: String
+    let momentLabel: String
     let created: Date?
-    let beer: Int
-    let loo: Int
+    let tallies: [WidgetFeed.Tally]
     let image: UIImage?
 
     /// Rendered when the credentials are missing or the request fails
@@ -23,11 +30,12 @@ struct PearEntry: TimelineEntry {
         date: Date(),
         state: .empty,
         partnerName: PartnerLabel.fallback,
+        groupName: nil,
         note: "",
-        eventKind: nil,
+        emoji: MomentCatalogue.fallbackEmoji,
+        momentLabel: "",
         created: nil,
-        beer: 0,
-        loo: 0,
+        tallies: [],
         image: nil
     )
 }
@@ -66,11 +74,12 @@ struct PearTimelineProvider: TimelineProvider {
                 date: Date(),
                 state: feed.state,
                 partnerName: feed.partnerName,
+                groupName: feed.groupName,
                 note: feed.post?.displayNote ?? "",
-                eventKind: feed.post?.eventKind,
+                emoji: feed.post?.displayEmoji ?? MomentCatalogue.fallbackEmoji,
+                momentLabel: feed.post?.displayLabel ?? "",
                 created: feed.post?.created ?? nil,
-                beer: feed.beerCount,
-                loo: feed.looCount,
+                tallies: feed.displayTallies,
                 image: await image(for: feed)
             )
         } catch {
@@ -91,6 +100,12 @@ struct PearTimelineProvider: TimelineProvider {
 
 struct PearWidgetEntryView: View {
     let entry: PearEntry
+
+    /// In a group the name matters as much as the person, so both are shown.
+    private var attribution: String {
+        guard let groupName = entry.groupName else { return entry.partnerName }
+        return "\(entry.partnerName) · \(groupName)"
+    }
 
     var body: some View {
         Group {
@@ -122,10 +137,10 @@ struct PearWidgetEntryView: View {
                     .scaledToFill()
                     .frame(maxWidth: .infinity, maxHeight: .infinity)
                     .clipped()
-                    .accessibilityLabel("Latest photo from \(entry.partnerName)")
+                    .accessibilityLabel("Latest photo from \(attribution)")
                 VStack(alignment: .leading, spacing: 2) {
-                    Text(entry.partnerName).font(.caption).bold()
-                    countsRow
+                    Text(attribution).font(.caption).bold().lineLimit(1)
+                    talliesRow
                 }
                 .padding(8)
                 .background(.ultraThinMaterial, in: RoundedRectangle(cornerRadius: 10))
@@ -133,13 +148,19 @@ struct PearWidgetEntryView: View {
             }
         } else {
             VStack(spacing: 6) {
-                Text(EventKindCatalogue.emoji(for: entry.eventKind))
+                Text(entry.emoji)
                     .font(.largeTitle)
-                    .accessibilityLabel(EventKindCatalogue.label(for: entry.eventKind))
+                    .accessibilityLabel(entry.momentLabel)
                 if !entry.note.isEmpty {
                     Text(entry.note).font(.caption).lineLimit(2)
                 }
-                countsRow
+                if entry.groupName != nil {
+                    Text(attribution)
+                        .font(.caption2)
+                        .foregroundStyle(PearColor.textSecondary)
+                        .lineLimit(1)
+                }
+                talliesRow
                 if let created = entry.created {
                     Text(created, style: .relative)
                         .font(.caption2)
@@ -150,12 +171,20 @@ struct PearWidgetEntryView: View {
         }
     }
 
-    /// Requirement 17.10.
-    private var countsRow: some View {
-        Text("🍺 \(entry.beer)   💩 \(entry.loo)")
-            .font(.caption2)
-            .foregroundStyle(PearColor.textSecondary)
-            .accessibilityLabel("\(entry.beer) beers, \(entry.loo) loo visits today")
+    /// Requirement 17.10 — today's tallies, whichever kinds they turned out to
+    /// be. Capped so a connection with a long catalogue cannot overflow the
+    /// small family.
+    @ViewBuilder
+    private var talliesRow: some View {
+        let shown = entry.tallies.prefix(3)
+        if !shown.isEmpty {
+            Text(shown.map { "\($0.emoji) \($0.count)" }.joined(separator: "   "))
+                .font(.caption2)
+                .foregroundStyle(PearColor.textSecondary)
+                .accessibilityLabel(
+                    shown.map { "\($0.count) \($0.label)" }.joined(separator: ", ") + " today"
+                )
+        }
     }
 }
 
@@ -167,7 +196,7 @@ struct PearWidget: Widget {
             PearWidgetEntryView(entry: entry)
         }
         .configurationDisplayName("Pear'd")
-        .description("Your partner's latest moment and today's tallies.")
+        .description("The latest moment from your people, and today's tallies.")
         .supportedFamilies([.systemSmall, .systemMedium])
     }
 }

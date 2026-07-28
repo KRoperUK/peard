@@ -1,7 +1,17 @@
 # Pear'd 🍐
 
-Moments and tallies shared with your favourite person — like a locket for photos,
+Moments and tallies shared with your favourite people — like a locket for photos,
 a counter for the beers, and a nod for the loo.
+
+A **connection** is a shared timeline. Two people is a pair; more than two is a
+group. You can be in several at once (up to 20, each holding up to 12 people) and
+switch between them from the home screen's header.
+
+**Moments** are the one-tap things worth saying: `beer`, `loo` and `coffee` are
+built in, and any connection can invent its own — pick from a recommended list or
+type a label and choose an emoji. Tapping a moment sends it on its own after
+**three seconds**; the window is there only so you can add a note, and typing one
+holds the send until you tap it yourself.
 
 ## Structure
 
@@ -69,6 +79,9 @@ Debug builds only (compiled out of Release entirely):
 - **🔧 Login Test User** — password sign-in as `test@peard.local`.
 - **Type `AAAAAA`** on the pairing screen — creates a pair with a seeded test
   partner and two seeded tally posts, so one device is enough.
+- **Type `BBBBBB`** — creates a named three-person group ("Flatmates", with Ari
+  and Bo) carrying a published custom moment, so groups, the connection switcher
+  and the shared catalogue can be checked from one device.
 - The reachability of `GET /api/health` is logged at launch under the
   `com.peard.app` subsystem.
 
@@ -106,9 +119,11 @@ PocketBase's `auth-with-oauth2`. PocketBase links by verified email.
 
 ## WidgetKit
 
-The home-screen widget fetches your partner's latest photo/tally via
+The home-screen widget fetches the latest moment somebody else shared via
 `GET /api/peard/widget/feed` using a revocable widget token stored in the App
-Group container (`group.com.peard.app`).
+Group container (`group.com.peard.app`). It has room for one connection, so the
+server picks whichever one somebody else posted in most recently and captions a
+group by name.
 
 - After sign-in the app issues a token and writes it to the App Group through
   `PeardCore`'s `SharedStore` (which replaced the `PearShared` Expo native
@@ -131,11 +146,15 @@ receive live pushes.
 | Method | Path | Auth | Description |
 |--------|------|------|-------------|
 | POST | `/api/peard/auth/apple` | none | Verify Apple identity token, return PB token |
-| POST | `/api/peard/pairs/invite` | user | Generate a 6-char invite code |
+| GET  | `/api/peard/connections` | user | Your connections, with members' display names |
+| POST | `/api/peard/pairs/invite` | user | Generate a 6-char invite code; optional `{"pair":"X"}` invites into an existing connection |
 | POST | `/api/peard/pairs/accept` | user | Accept an invite code (body `{"code":"X"}`) |
-| POST | `/api/peard/pairs/leave` | user | Leave the current pair |
-| GET  | `/api/peard/widget/feed?token=` | widget | Partner's latest post + tallies |
+| POST | `/api/peard/pairs/leave` | user | Leave a connection; optional `{"pair":"X"}`, required when you're in more than one |
+| GET  | `/api/peard/widget/feed?token=` | widget | Latest moment + today's tallies for the liveliest connection |
 | POST | `/api/peard/widget/token` | user | Issue a widget token |
+
+Custom moments are plain collection access rather than a custom route: the app
+lists and creates `moment_kinds` rows scoped to a connection.
 
 ## Android
 
@@ -150,10 +169,13 @@ or can be omitted.
 
 ## Roadmap
 
-- [ ] Let pair members read each other's `users` record, so the partner's name
-      does not depend on the widget feed
+- [x] Groups — `pair_members` was already many-to-many; invites can now target an
+      existing connection, and the home screen switches between them
+- [x] Members' display names, via `GET /api/peard/connections` rather than a
+      `users` view-rule change (the rule stays `id = @request.auth.id`, so no
+      email is ever exposed)
 - [ ] Live Activity for "instant photo drop" moments (ActivityKit push-to-update)
 - [ ] Interactive widget buttons (iOS 17+ App Intents)
 - [ ] Android widget (Jetpack Glance) — blocked on the Android client decision above
-- [ ] Groups (the `pair_members` join table is already many-to-many)
+- [ ] Per-connection notification muting, now that a user can be in 20 of them
 - [ ] Media storage (S3 compatible via PB filesystem settings)

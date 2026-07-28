@@ -27,11 +27,12 @@ final class AppModel {
     let sharedStore: SharedStore
     let widgetSync: WidgetSync
     let push: PushCoordinator
-    let partners: PartnerDirectory
 
     // MARK: State
 
     private(set) var phase: Phase = .loading
+    /// Every connection the signed-in user belongs to, oldest first.
+    private(set) var connections: [Connection] = []
     /// Drives the retry control shown when membership resolution failed
     /// (Requirement 9.6).
     private(set) var membershipFailed = false
@@ -54,7 +55,6 @@ final class AppModel {
         self.api = api
         self.widgetSync = WidgetSync(api: api, store: sharedStore, baseURL: config.serverURL)
         self.push = PushCoordinator(api: api, session: sessionStore, store: sharedStore)
-        self.partners = PartnerDirectory(api: api, store: sharedStore)
 
         push.onOpenPost = { [weak self] postID in
             self?.openPost(postID)
@@ -106,20 +106,23 @@ final class AppModel {
         await resolveMembership()
     }
 
-    /// Requirement 9.3 – 9.6.
+    /// Requirement 9.3 – 9.6. A user may belong to several connections, so this
+    /// loads all of them and lands on the remembered one.
     func resolveMembership() async {
-        guard sessionStore.hasSession, let userID = sessionStore.userID else {
+        guard sessionStore.hasSession, sessionStore.userID != nil else {
             phase = .auth
             return
         }
         membershipFailed = false
         do {
-            if let membership = try await api.membership(forUser: userID) {
-                phase = .home(pairID: membership.pair)
-                await requestPushIfFirstHomeOfSession()
-            } else {
+            connections = try await api.connections()
+            guard let selected = resolvedSelection() else {
                 phase = .pair(prefilledCode: nil)
+                return
             }
+            sharedStore.selectedConnectionID = selected.id
+            phase = .home(pairID: selected.id)
+            await requestPushIfFirstHomeOfSession()
         } catch let error as APIError {
             if case .unauthorized = error {
                 await clearSessionAndReturnToAuth()
@@ -137,10 +140,91 @@ final class AppModel {
         }
     }
 
+    /// The connection the home screen should show: the remembered one while it
+    /// still exists, otherwise the first.
+    private func resolvedSelection() -> Connection? {
+        if let remembered = sharedStore.selectedConnectionID,
+           let match = connections.first(where: { $0.id == remembered }) {
+            return match
+        }
+        return connections.first
+    }
+
+    /// The connection currently on screen.
+    var selectedConnection: Connection? {
+        guard case .home(let pairID) = phase else { return nil }
+        return connections.first { $0.id == pairID }
+    }
+
+    /// Switches the home screen to another connection and remembers it.
+    func select(connectionID: String) {
+        guard connections.contains(where: { $0.id == connectionID }) else { return }
+        sharedStore.selectedConnectionID = connectionID
+        focusedPostID = nil
+        banner = nil
+        phase = .home(pairID: connectionID)
+    }
+
+    /// Opens the pairing screen to add another connection. Unlike the first
+    /// visit this one is escapable, because there is a home to go back to.
+    func startAddingConnection() {
+        banner = nil
+        phase = .pair(prefilledCode: nil)
+    }
+
+    /// True when the pairing screen was reached from an existing connection, so
+    /// it can offer a way back.
+    var canReturnHome: Bool { !connections.isEmpty }
+
+    /// Returns to the last selected connection after adding was abandoned.
+    func returnHome() {
+        guard let selected = resolvedSelection() else { return }
+        phase = .home(pairID: selected.id)
+    }
+
+    /// Re-reads the connection list without changing which one is on screen,
+    /// unless the current one has gone.
+    func refreshConnections() async {
+        guard let userID = sessionStore.userID, !userID.isEmpty else { return }
+        do {
+            connections = try await api.connections()
+        } catch {
+            await handleIfUnauthorized(error)
+            return
+        }
+        if case .home(let pairID) = phase, connections.contains(where: { $0.id == pairID }) {
+            return
+        }
+        if let selected = resolvedSelection() {
+            sharedStore.selectedConnectionID = selected.id
+            phase = .home(pairID: selected.id)
+        } else {
+            sharedStore.selectedConnectionID = nil
+            phase = .pair(prefilledCode: nil)
+        }
+    }
+
+    /// Requirement 15.2, 15.3 — leaves one connection, keeping the others.
+    func leave(connectionID: String) async {
+        do {
+            try await api.leave(pairID: connectionID)
+        } catch {
+            if await handleIfUnauthorized(error) { return }
+            banner = (error as? APIError)?.localizedDescription ?? error.localizedDescription
+        }
+        if sharedStore.selectedConnectionID == connectionID {
+            sharedStore.selectedConnectionID = nil
+        }
+        await refreshConnections()
+        await widgetSync.sync()
+    }
+
     /// Requirement 8.4 — a 401 clears the session and forces re-authentication.
     func clearSessionAndReturnToAuth() async {
         sessionStore.clear()
         widgetSync.clear()
+        connections = []
+        sharedStore.selectedConnectionID = nil
         focusedPostID = nil
         hasRequestedPushThisSession = false
         phase = .auth
@@ -162,6 +246,8 @@ final class AppModel {
         await push.deleteRegistration()
         sessionStore.clear()
         widgetSync.clear()
+        connections = []
+        sharedStore.selectedConnectionID = nil
         focusedPostID = nil
         hasRequestedPushThisSession = false
         phase = .auth

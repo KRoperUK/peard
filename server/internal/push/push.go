@@ -16,6 +16,8 @@ import (
 	"os"
 	"strings"
 
+	"peard/internal/moments"
+
 	"github.com/pocketbase/dbx"
 	"github.com/pocketbase/pocketbase/core"
 	"github.com/sideshow/apns2"
@@ -96,7 +98,7 @@ func notifyPairMembers(app core.App, post *core.Record) {
 	if err != nil {
 		return
 	}
-	title, body := copyFor(name, post)
+	title, body := copyFor(app, name, post)
 	for _, m := range members {
 		devices, err := app.FindRecordsByFilter("devices",
 			"user = {:user}", "", 20, 0, dbx.Params{"user": m.GetString("user")})
@@ -173,22 +175,56 @@ func (nt *notifier) send(deviceToken string, p *payload.Payload, pushType apns2.
 	}
 }
 
-func copyFor(name string, post *core.Record) (title, body string) {
+// copyFor writes the alert for a new post. Built-in kinds keep their hand-written
+// copy; anything else is described from the connection's moment catalogue, so a
+// custom moment arrives with its own emoji and label rather than "something".
+func copyFor(app core.App, name string, post *core.Record) (title, body string) {
+	pairID := post.GetString("pair")
+	suffix := groupSuffix(app, pairID)
+
 	if post.GetString("type") == "event" {
-		switch post.GetString("event_kind") {
+		kind := post.GetString("event_kind")
+		switch kind {
 		case "beer":
-			return "🍺 " + name + " cracked a cold one", "Cheers them back?"
+			return "🍺 " + name + " cracked a cold one" + suffix, "Cheers them back?"
 		case "loo":
-			return "💩 " + name + " has gone to the loo", "Nature called."
-		default:
-			return "🍐 " + name + " logged something", post.GetString("note")
+			return "💩 " + name + " has gone to the loo" + suffix, "Nature called."
 		}
+		d := moments.Resolve(app, pairID, kind)
+		if d.Label != "" {
+			title = d.Emoji + " " + name + ": " + d.Label + suffix
+		} else {
+			title = moments.FallbackEmoji + " " + name + " logged something" + suffix
+		}
+		return title, post.GetString("note")
 	}
+
 	body = post.GetString("note")
 	if body == "" {
 		body = "Tap to see the moment"
 	}
-	return "🍐 Fresh pear from " + name, body
+	return "🍐 Fresh pear from " + name + suffix, body
+}
+
+// groupSuffix names the connection when it holds more than two people, so a
+// member of several groups can tell where a moment came from.
+func groupSuffix(app core.App, pairID string) string {
+	if pairID == "" {
+		return ""
+	}
+	members, err := app.FindRecordsByFilter("pair_members",
+		"pair = {:pair}", "", 13, 0, dbx.Params{"pair": pairID})
+	if err != nil || len(members) <= 2 {
+		return ""
+	}
+	pair, err := app.FindRecordById("pairs", pairID)
+	if err != nil {
+		return ""
+	}
+	if name := pair.GetString("name"); name != "" {
+		return " in " + name
+	}
+	return ""
 }
 
 func reactionEmoji(kind string) string {

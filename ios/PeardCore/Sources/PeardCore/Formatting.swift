@@ -18,6 +18,13 @@ public enum ElapsedTime {
 public enum PartnerLabel {
     public static let fallback = "Partner"
 
+    /// Used where "Partner" would be wrong: an author who is not a current
+    /// member of the connection, which happens once somebody leaves but their
+    /// moments stay in the shared timeline. Mirrors the server's own fallback in
+    /// `internal/pairs`, and reads correctly in a group, where there is no
+    /// single "partner" to speak of.
+    public static let unknown = "Someone"
+
     /// `display_name`, else the local part of the email, else "Partner".
     public static func resolve(displayName: String?, email: String?) -> String {
         if let displayName, !displayName.isEmpty { return displayName }

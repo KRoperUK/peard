@@ -73,6 +73,14 @@ final class PartnerLabelTests: XCTestCase {
         XCTAssertEqual(PartnerLabel.short("123456789"), "1234567…")
     }
 
+    /// A former member's moments stay in the timeline after they leave, and in a
+    /// group there is no "partner" to attribute them to.
+    func testUnknownAuthorFallbackIsNotPartner() {
+        XCTAssertEqual(PartnerLabel.unknown, "Someone")
+        XCTAssertNotEqual(PartnerLabel.unknown, PartnerLabel.fallback)
+        XCTAssertEqual(PartnerLabel.short(PartnerLabel.unknown), "Someone")
+    }
+
     func testTruncationCountsCharactersNotBytes() {
         XCTAssertEqual(PartnerLabel.short("🍐🍐🍐🍐🍐🍐🍐🍐🍐"), "🍐🍐🍐🍐🍐🍐🍐…")
     }

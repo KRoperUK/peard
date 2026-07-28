@@ -191,6 +191,15 @@ public final class APIClient: Sendable {
 
     // MARK: Custom routes
 
+    /// `GET` an arbitrary path (the `/api/peard/*` routes).
+    public func get<Item: Codable & Hashable & Sendable>(
+        path: String,
+        of _: Item.Type = Item.self,
+        query: [String: String] = [:]
+    ) async throws -> Item {
+        try await send(method: "GET", path: path, query: query)
+    }
+
     /// `POST` to an arbitrary path (the `/api/peard/*` routes).
     @discardableResult
     public func post<Item: Codable & Hashable & Sendable>(

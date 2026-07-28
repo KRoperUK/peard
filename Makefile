@@ -17,13 +17,16 @@ migrate:
 # --- iOS app ---
 
 # Builds Peard.app + the PearWidget extension for the simulator.
+# Code signing is left ON: the simulator signs ad-hoc (no team or provisioning
+# profile needed), and disabling it would drop the entitlements, which takes
+# the Keychain and the App Group with it — an app that cannot sign in.
 app:
 	$(XCODEBUILD) -configuration Debug -destination 'generic/platform=iOS Simulator' \
-		-derivedDataPath ios/build CODE_SIGNING_ALLOWED=NO build
+		-derivedDataPath ios/build build
 
 app-release:
 	$(XCODEBUILD) -configuration Release -destination 'generic/platform=iOS Simulator' \
-		-derivedDataPath ios/build CODE_SIGNING_ALLOWED=NO build
+		-derivedDataPath ios/build build
 
 # Boots the simulator, installs and launches the app.
 run:

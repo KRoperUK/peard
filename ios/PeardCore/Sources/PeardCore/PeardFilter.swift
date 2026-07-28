@@ -43,4 +43,21 @@ public enum PeardFilter {
     public static func and(_ clauses: [String]) -> String {
         clauses.filter { !$0.isEmpty }.joined(separator: " && ")
     }
+
+    /// Joins clauses with `||`, parenthesised so the group survives being
+    /// combined with `and`.
+    public static func or(_ clauses: String...) -> String {
+        or(clauses)
+    }
+
+    public static func or(_ clauses: [String]) -> String {
+        let kept = clauses.filter { !$0.isEmpty }
+        guard kept.count > 1 else { return kept.first ?? "" }
+        return "(" + kept.joined(separator: " || ") + ")"
+    }
+
+    /// `(field = "a" || field = "b" || …)` — one query for several ids.
+    public static func anyEquals(_ field: String, _ values: [String]) -> String {
+        or(values.map { equals(field, $0) })
+    }
 }

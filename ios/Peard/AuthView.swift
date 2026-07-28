@@ -24,7 +24,7 @@ struct AuthView: View {
             Text("Pear'd")
                 .font(.largeTitle.bold())
                 .foregroundStyle(PearColor.textPrimary)
-            Text("Moments & tallies, shared with your favourite person.")
+            Text("Moments & tallies, shared with your favourite people.")
                 .font(.subheadline)
                 .foregroundStyle(PearColor.textSecondary)
                 .multilineTextAlignment(.center)

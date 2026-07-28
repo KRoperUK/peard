@@ -8,6 +8,11 @@
 // The widget token is deliberately NOT the user's PocketBase auth token:
 // it lives in the App Group container readable by the extension, and can be
 // revoked independently.
+//
+// A user may belong to several connections, and the widget has room for one, so
+// the feed picks the connection somebody else posted in most recently. That
+// keeps a single-connection user's behaviour identical to before while making
+// the widget follow whichever group is currently alive.
 package widget
 
 import (
@@ -16,8 +21,11 @@ import (
 	"fmt"
 	"net/http"
 	"net/url"
+	"sort"
 	"strings"
 	"time"
+
+	"peard/internal/moments"
 
 	"github.com/pocketbase/dbx"
 	"github.com/pocketbase/pocketbase/apis"
@@ -56,9 +64,9 @@ func issueTokenHandler(app core.App) func(e *core.RequestEvent) error {
 	}
 }
 
-// feedHandler returns everything the home-screen widget needs in one call:
-// the partner's latest post (with a ready-to-fetch thumbnail URL) and their
-// event tallies for today.
+// feedHandler returns everything the home-screen widget needs in one call: the
+// latest moment somebody else shared, who shared it, which connection it came
+// from, and today's tallies for that connection.
 func feedHandler(app core.App) func(e *core.RequestEvent) error {
 	return func(e *core.RequestEvent) error {
 		token := e.Request.URL.Query().Get("token")
@@ -75,68 +83,174 @@ func feedHandler(app core.App) func(e *core.RequestEvent) error {
 		}
 		userID := wt.GetString("user")
 
-		// MVP: one pair per user, so the first membership is the pair.
-		mem, err := app.FindFirstRecordByFilter("pair_members",
-			"user = {:user}", dbx.Params{"user": userID})
-		if err != nil || mem == nil {
+		memberships, err := app.FindRecordsByFilter("pair_members",
+			"user = {:user}", "-created", 50, 0, dbx.Params{"user": userID})
+		if err != nil || len(memberships) == 0 {
 			return e.JSON(http.StatusOK, map[string]any{"state": "unpaired"})
 		}
-		pairID := mem.GetString("pair")
 
-		partnerMem, err := app.FindFirstRecordByFilter("pair_members",
-			"pair = {:pair} && user != {:user}", dbx.Params{"pair": pairID, "user": userID})
-		if err != nil || partnerMem == nil {
-			return e.JSON(http.StatusOK, map[string]any{"state": "unpaired"})
+		// The connection somebody else posted in most recently, falling back to
+		// the first membership when nobody else has posted anywhere yet.
+		var chosenPair string
+		var latest *core.Record
+		for _, mem := range memberships {
+			pairID := mem.GetString("pair")
+			posts, _ := app.FindRecordsByFilter("posts",
+				"pair = {:pair} && author != {:user}",
+				"-created", 1, 0,
+				dbx.Params{"pair": pairID, "user": userID})
+			if len(posts) == 0 {
+				continue
+			}
+			if latest == nil || posts[0].GetDateTime("created").Time().After(latest.GetDateTime("created").Time()) {
+				latest = posts[0]
+				chosenPair = pairID
+			}
 		}
-		partner, _ := app.FindRecordById("users", partnerMem.GetString("user"))
-		partnerName := displayName(partner)
+		if chosenPair == "" {
+			chosenPair = memberships[0].GetString("pair")
+		}
 
-		posts, _ := app.FindRecordsByFilter("posts",
-			"pair = {:pair} && author = {:author}",
-			"-created", 1, 0,
-			dbx.Params{"pair": pairID, "author": partnerMem.GetString("user")})
-
-		today := time.Now().Format("2006-01-02 00:00:00")
-		countToday := func(kind string) int {
-			recs, _ := app.FindRecordsByFilter("posts",
-				"pair = {:pair} && author = {:author} && type = 'event' && event_kind = {:kind} && created >= {:today}",
-				"", 500, 0,
-				dbx.Params{
-					"pair":   pairID,
-					"author": partnerMem.GetString("user"),
-					"kind":   kind,
-					"today":  today,
-				})
-			return len(recs)
+		others, err := app.FindRecordsByFilter("pair_members",
+			"pair = {:pair} && user != {:user}", "", 50, 0,
+			dbx.Params{"pair": chosenPair, "user": userID})
+		if err != nil || len(others) == 0 {
+			// A connection the user is alone in has nothing to show.
+			return e.JSON(http.StatusOK, map[string]any{"state": "unpaired"})
 		}
 
 		res := map[string]any{
-			"state":   "ok",
-			"partner": map[string]any{"name": partnerName},
-			"counts":  map[string]int{"beer": countToday("beer"), "loo": countToday("loo")},
+			"state":      "ok",
+			"connection": connectionInfo(app, chosenPair, len(others)+1),
+			"counts":     todayCounts(app, chosenPair, userID),
+			"tallies":    todayTallies(app, chosenPair, userID),
 		}
-		if len(posts) == 0 {
+
+		// Who the moment is "from": in a 1:1 that is the other member, in a
+		// group it is whoever posted.
+		var attributed *core.Record
+		if latest != nil && chosenPair == latest.GetString("pair") {
+			attributed, _ = app.FindRecordById("users", latest.GetString("author"))
+		} else {
+			latest = nil
+			attributed, _ = app.FindRecordById("users", others[0].GetString("user"))
+		}
+		partnerName := displayName(attributed)
+		res["partner"] = map[string]any{"name": partnerName}
+
+		if latest == nil {
 			res["state"] = "empty"
 			return e.JSON(http.StatusOK, res)
 		}
 
-		post := posts[0]
 		mediaURL := ""
-		if media := post.GetString("media"); media != "" {
+		if media := latest.GetString("media"); media != "" {
 			mediaURL = fmt.Sprintf("%s/api/files/%s/%s/%s?thumb=512x512",
-				baseURL(app, e), post.Collection().Id, post.Id, url.PathEscape(media))
+				baseURL(app, e), latest.Collection().Id, latest.Id, url.PathEscape(media))
 		}
+		kind := latest.GetString("event_kind")
+		descriptor := moments.Resolve(app, chosenPair, kind)
 		res["post"] = map[string]any{
-			"id":         post.Id,
-			"type":       post.GetString("type"),
-			"event_kind": post.GetString("event_kind"),
-			"note":       post.GetString("note"),
-			"created":    post.GetString("created"),
+			"id":         latest.Id,
+			"type":       latest.GetString("type"),
+			"event_kind": kind,
+			"emoji":      descriptor.Emoji,
+			"label":      descriptor.Label,
+			"note":       latest.GetString("note"),
+			"created":    latest.GetString("created"),
 			"media_url":  mediaURL,
 			"author":     partnerName,
 		}
 		return e.JSON(http.StatusOK, res)
 	}
+}
+
+// connectionInfo describes the connection the feed is showing, so the widget can
+// caption a group rather than implying a single partner.
+func connectionInfo(app core.App, pairID string, memberCount int) map[string]any {
+	name := ""
+	if pair, err := app.FindRecordById("pairs", pairID); err == nil {
+		name = pair.GetString("name")
+	}
+	return map[string]any{
+		"id":           pairID,
+		"name":         name,
+		"member_count": memberCount,
+		"is_group":     memberCount > 2,
+	}
+}
+
+// todayCounts keeps the original beer/loo shape so a widget build that predates
+// generalised tallies keeps working.
+func todayCounts(app core.App, pairID, userID string) map[string]int {
+	return map[string]int{
+		"beer": len(todayPosts(app, pairID, userID, "beer")),
+		"loo":  len(todayPosts(app, pairID, userID, "loo")),
+	}
+}
+
+// todayTallies counts every kind anybody else logged in this connection today,
+// most frequent first.
+func todayTallies(app core.App, pairID, userID string) []map[string]any {
+	posts, err := app.FindRecordsByFilter("posts",
+		"pair = {:pair} && author != {:user} && type = 'event' && created >= {:today}",
+		"", 500, 0,
+		dbx.Params{"pair": pairID, "user": userID, "today": startOfToday()})
+	if err != nil {
+		return []map[string]any{}
+	}
+
+	counts := map[string]int{}
+	order := []string{}
+	for _, post := range posts {
+		kind := post.GetString("event_kind")
+		if kind == "" {
+			continue
+		}
+		if _, seen := counts[kind]; !seen {
+			order = append(order, kind)
+		}
+		counts[kind]++
+	}
+
+	descriptors := moments.ResolveAll(app, pairID, order)
+	sort.SliceStable(order, func(i, j int) bool { return counts[order[i]] > counts[order[j]] })
+
+	out := make([]map[string]any, 0, len(order))
+	for _, kind := range order {
+		d := descriptors[kind]
+		out = append(out, map[string]any{
+			"kind":  kind,
+			"emoji": d.Emoji,
+			"label": d.Label,
+			"count": counts[kind],
+		})
+	}
+	return out
+}
+
+func todayPosts(app core.App, pairID, userID, kind string) []*core.Record {
+	recs, _ := app.FindRecordsByFilter("posts",
+		"pair = {:pair} && author != {:user} && type = 'event' && event_kind = {:kind} && created >= {:today}",
+		"", 500, 0,
+		dbx.Params{
+			"pair":  pairID,
+			"user":  userID,
+			"kind":  kind,
+			"today": startOfToday(),
+		})
+	return recs
+}
+
+// startOfToday is local midnight, expressed the way PocketBase stores
+// timestamps. Formatting the local date directly (the original behaviour) built
+// a naive string that was then compared against UTC values, so "today" was off
+// by the UTC offset — an hour of moments landed in the wrong day in BST, and a
+// whole evening of them further east.
+func startOfToday() string {
+	now := time.Now()
+	midnight := time.Date(now.Year(), now.Month(), now.Day(), 0, 0, 0, 0, now.Location())
+	return midnight.UTC().Format("2006-01-02 15:04:05.000Z")
 }
 
 func displayName(user *core.Record) string {

@@ -1,8 +1,12 @@
 import PeardCore
 import SwiftUI
 
-/// Shared timeline, tallies, photo capture and reactions
+/// Shared timeline, tallies, moments, photo capture and reactions
 /// (Requirements 11–15).
+///
+/// The title, the connection switcher and the latest-moment hero are pinned:
+/// they are the answer to "what is happening with us right now", so they stay on
+/// screen while the tallies and history scroll underneath.
 struct HomeView: View {
     @Environment(AppModel.self) private var app
     @Environment(\.scenePhase) private var scenePhase
@@ -10,6 +14,10 @@ struct HomeView: View {
     @State private var model: HomeModel
     @State private var showCamera = false
     @State private var showLeaveConfirmation = false
+    @State private var showMomentSheet = false
+    @State private var showInviteSheet = false
+    @State private var isRenaming = false
+    @State private var renameText = ""
     @FocusState private var noteFocused: Bool
 
     init(model: HomeModel) {
@@ -18,46 +26,18 @@ struct HomeView: View {
 
     var body: some View {
         ScrollView {
-            VStack(alignment: .leading, spacing: 20) {
-                Text("Pear'd 🍐")
-                    .font(.title2.bold())
-                    .foregroundStyle(PearColor.textPrimary)
-
-                latestCard
-                tallyButtons
-
-                if model.pendingKind != nil {
-                    noteRow.pearTransition()
-                }
-
-                tallyRows
-
-                if !model.historyPosts.isEmpty {
-                    historyList
-                }
-
-                if let toast = model.toast {
-                    Text(toast)
-                        .font(.headline)
-                        .foregroundStyle(PearColor.accent)
-                        .frame(maxWidth: .infinity)
-                        .pearTransition()
-                }
-
-                if let banner = model.banner {
-                    Text(banner)
-                        .font(.footnote)
-                        .foregroundStyle(PearColor.error)
-                        .frame(maxWidth: .infinity, alignment: .leading)
-                }
-
-                cameraButton
-                footer
-            }
-            .padding(20)
-            .padding(.top, 32)
+            scrollingContent
         }
         .background(PearColor.background)
+        // The title, switcher and hero are held outside the scrolling content
+        // rather than pinned inside it. As a pinned section header they stopped
+        // at the safe-area inset, which left the status-bar band part of the
+        // scrolling viewport and let the tallies slide up behind the clock. As a
+        // safe-area inset the header owns that band, and its background extends
+        // through it.
+        .safeAreaInset(edge: .top, spacing: 20) {
+            pinnedHeader
+        }
         .refreshable { await model.refreshAll() }
         .task { await model.load() }
         .task(id: app.focusedPostID) { await model.focus(postID: app.focusedPostID) }
@@ -67,22 +47,45 @@ struct HomeView: View {
             guard phase == .active else { return }
             Task { await model.refreshAll() }
         }
-        .onChange(of: model.pendingKind) { _, kind in
+        .onChange(of: model.quickSend?.moment.kind) { _, kind in
             noteFocused = kind != nil
+        }
+        .onChange(of: model.noteText) { _, _ in
+            model.noteDidChange()
         }
         .pearAnimation(value: model.toast ?? "")
         .alert(item: $model.alert)
+        .alert("Name this connection", isPresented: $isRenaming) {
+            TextField("Flatmates", text: $renameText)
+                .textInputAutocapitalization(.words)
+            Button("Save") {
+                Task { await model.rename(to: renameText) }
+            }
+            Button("Cancel", role: .cancel) {}
+        } message: {
+            Text("Everyone in the connection sees this name.")
+        }
         .confirmationDialog(
-            "Un-pear?",
+            model.isGroup ? "Leave this group?" : "Un-pear?",
             isPresented: $showLeaveConfirmation,
             titleVisibility: .visible
         ) {
             Button("Leave", role: .destructive) {
-                Task { await model.leavePair() }
+                Task { await model.leaveConnection() }
             }
             Button("Cancel", role: .cancel) {}
         } message: {
-            Text("You'll both lose the shared timeline.")
+            Text(
+                model.isGroup
+                    ? "You'll lose this group's shared timeline."
+                    : "You'll both lose the shared timeline."
+            )
+        }
+        .sheet(isPresented: $showMomentSheet) {
+            MomentSheet(model: model)
+        }
+        .sheet(isPresented: $showInviteSheet) {
+            InviteSheet(pairID: model.pairID, connectionTitle: model.connectionTitle)
         }
         .fullScreenCover(isPresented: $showCamera) {
             CameraPicker { image in
@@ -94,61 +97,161 @@ struct HomeView: View {
         }
     }
 
-    // MARK: Latest card
+    // MARK: Pinned header
 
-    private var latestCard: some View {
-        VStack(spacing: 12) {
-            if let post = model.displayedPost {
-                if post.type == .photo, let path = post.mediaThumbnailPath() {
-                    AsyncImage(url: URL(string: model.serverURL.absoluteString + path)) { phase in
-                        switch phase {
-                        case .success(let image):
-                            image.resizable().scaledToFill()
-                        case .failure:
-                            Text("📷").font(.system(size: 64)).accessibilityHidden(true)
-                        default:
-                            ProgressView()
+    private var pinnedHeader: some View {
+        VStack(alignment: .leading, spacing: 12) {
+            HStack(alignment: .firstTextBaseline) {
+                Text("Pear'd 🍐")
+                    .font(.title2.bold())
+                    .foregroundStyle(PearColor.textPrimary)
+                Spacer(minLength: 8)
+                connectionMenu
+            }
+            heroCard
+        }
+        .padding(.horizontal, 20)
+        .padding(.top, 12)
+        .padding(.bottom, 12)
+        // Held above the scrolling content, so it must be opaque — and the fill
+        // has to reach through the top safe area, or the status-bar band shows
+        // whatever is scrolling underneath.
+        .background(PearColor.background.ignoresSafeArea(edges: .top))
+    }
+
+    private var connectionMenu: some View {
+        Menu {
+            if app.connections.count > 1 {
+                Section("Connections") {
+                    ForEach(app.connections) { connection in
+                        Button {
+                            app.select(connectionID: connection.id)
+                        } label: {
+                            if connection.id == model.pairID {
+                                Label(connection.title(), systemImage: "checkmark")
+                            } else {
+                                Text(connection.title())
+                            }
                         }
                     }
-                    .frame(maxWidth: .infinity)
-                    .aspectRatio(1, contentMode: .fit)
-                    .clipShape(RoundedRectangle(cornerRadius: 12))
-                    .accessibilityLabel("Photo from \(model.authorLabel(for: post))")
-                } else {
-                    Text(EventKindCatalogue.emoji(for: post.eventKind))
-                        .font(.system(size: 72))
-                        .padding(.vertical, 24)
-                        .accessibilityLabel(EventKindCatalogue.label(for: post.eventKind))
                 }
+            }
 
-                Text("\(model.authorLabel(for: post)) · \(caption(for: post))")
-                    .font(.subheadline)
-                    .foregroundStyle(PearColor.textSecondary)
+            Section {
+                Button {
+                    renameText = model.connection?.displayName ?? ""
+                    isRenaming = true
+                } label: {
+                    Label("Name this connection", systemImage: "pencil")
+                }
+                Button {
+                    showInviteSheet = true
+                } label: {
+                    Label(model.isGroup ? "Invite to this group" : "Add someone here", systemImage: "person.badge.plus")
+                }
+                Button {
+                    app.startAddingConnection()
+                } label: {
+                    Label("New connection", systemImage: "plus.circle")
+                }
+            }
 
-                if let note = post.displayNote {
-                    Text(note)
-                        .font(.callout.italic())
+            Section {
+                Button(role: .destructive) {
+                    showLeaveConfirmation = true
+                } label: {
+                    Label(model.isGroup ? "Leave group" : "Un-pear", systemImage: "person.badge.minus")
+                }
+            }
+        } label: {
+            HStack(spacing: 4) {
+                Text(model.connectionTitle)
+                    .font(.subheadline.bold())
+                    .lineLimit(1)
+                Image(systemName: "chevron.down")
+                    .font(.caption2.bold())
+            }
+            .foregroundStyle(PearColor.accent)
+            .padding(.horizontal, 12)
+            .padding(.vertical, 7)
+            .background(PearColor.surface, in: Capsule())
+        }
+        .accessibilityLabel("Connection: \(model.connectionTitle)")
+        .accessibilityHint("Switch connection, invite someone, or leave")
+    }
+
+    private func title(for connection: Connection) -> String {
+        connection.title()
+    }
+
+    /// The hero: whatever landed most recently, kept compact enough to stay
+    /// pinned without crowding out the content below it.
+    private var heroCard: some View {
+        HStack(spacing: 14) {
+            if let post = model.displayedPost {
+                heroThumbnail(for: post)
+
+                VStack(alignment: .leading, spacing: 4) {
+                    Text("\(model.authorLabel(for: post)) · \(caption(for: post))")
+                        .font(.subheadline.bold())
                         .foregroundStyle(PearColor.textPrimary)
-                        .multilineTextAlignment(.center)
-                }
+                        .lineLimit(1)
 
-                reactionRow
+                    Text(ElapsedTime.label(for: post.created))
+                        .font(.caption)
+                        .foregroundStyle(PearColor.textTertiary)
+
+                    if let note = post.displayNote {
+                        Text(note)
+                            .font(.callout.italic())
+                            .foregroundStyle(PearColor.textSecondary)
+                            .lineLimit(2)
+                    }
+
+                    reactionRow
+                }
+                Spacer(minLength: 0)
             } else {
-                Text("🍐").font(.system(size: 72)).accessibilityHidden(true)
+                Text("🍐").font(.system(size: 44)).accessibilityHidden(true)
                 Text("No moments yet — send a pear!")
                     .font(.subheadline)
                     .foregroundStyle(PearColor.textSecondary)
+                Spacer(minLength: 0)
             }
         }
-        .frame(maxWidth: .infinity)
-        .padding(16)
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .padding(14)
         .background(PearColor.surface, in: RoundedRectangle(cornerRadius: 16))
+    }
+
+    @ViewBuilder
+    private func heroThumbnail(for post: Post) -> some View {
+        if post.type == .photo, let path = post.mediaThumbnailPath() {
+            AsyncImage(url: URL(string: model.serverURL.absoluteString + path)) { phase in
+                switch phase {
+                case .success(let image):
+                    image.resizable().scaledToFill()
+                case .failure:
+                    Text("📷").font(.system(size: 32)).accessibilityHidden(true)
+                default:
+                    ProgressView()
+                }
+            }
+            .frame(width: 72, height: 72)
+            .clipShape(RoundedRectangle(cornerRadius: 12))
+            .accessibilityLabel("Photo from \(model.authorLabel(for: post))")
+        } else {
+            Text(model.emoji(for: post))
+                .font(.system(size: 44))
+                .frame(width: 72, height: 72)
+                .accessibilityLabel(model.label(for: post.eventKind))
+        }
     }
 
     private func caption(for post: Post) -> String {
         switch post.type {
         case .event:
-            return EventKindCatalogue.label(for: post.eventKind)
+            return model.label(for: post.eventKind)
         case .photo:
             return "shared a moment"
         case .unknown(let value):
@@ -159,15 +262,15 @@ struct HomeView: View {
     @ViewBuilder
     private var reactionRow: some View {
         if model.canReactToDisplayedPost || !model.displayedReactionKinds.isEmpty {
-            HStack(spacing: 12) {
+            HStack(spacing: 8) {
                 if model.canReactToDisplayedPost {
                     ForEach(ReactionKind.allCases, id: \.rawValue) { kind in
                         Button {
                             Task { await model.react(kind: kind) }
                         } label: {
                             Text(kind.emoji)
-                                .font(.title3)
-                                .padding(8)
+                                .font(.footnote)
+                                .padding(6)
                                 .background(PearColor.background, in: Circle())
                         }
                         .buttonStyle(.plain)
@@ -176,82 +279,194 @@ struct HomeView: View {
                 }
 
                 if !model.displayedReactionKinds.isEmpty {
-                    Divider().frame(height: 20)
-                    HStack(spacing: 4) {
+                    if model.canReactToDisplayedPost {
+                        Divider().frame(height: 16)
+                    }
+                    HStack(spacing: 2) {
                         ForEach(model.displayedReactionKinds, id: \.rawValue) { kind in
                             Text(kind.emoji)
-                                .font(.footnote)
+                                .font(.caption2)
                                 .accessibilityLabel("\(kind.accessibilityLabel) recorded")
                         }
                     }
                 }
             }
-            .padding(.top, 4)
+            .padding(.top, 2)
         }
     }
 
-    // MARK: Tallies
+    // MARK: Scrolling content
 
-    private var tallyButtons: some View {
-        HStack(spacing: 8) {
-            ForEach(EventKindCatalogue.all) { descriptor in
-                Button {
-                    model.startTally(kind: descriptor.kind)
-                } label: {
-                    VStack(spacing: 4) {
-                        Text(descriptor.emoji).font(.largeTitle)
-                        Text(descriptor.label)
-                            .font(.caption.bold())
-                            .foregroundStyle(PearColor.textSecondary)
-                    }
-                    .frame(maxWidth: .infinity)
-                    .padding(.vertical, 14)
-                    .background(PearColor.surface, in: RoundedRectangle(cornerRadius: 12))
-                }
-                .buttonStyle(.plain)
-                // Requirement 12.10.
-                .disabled(model.isBusy)
-                .accessibilityLabel("Log \(descriptor.label)")
+    private var scrollingContent: some View {
+        VStack(alignment: .leading, spacing: 20) {
+            momentStrip
+
+            if model.quickSend != nil {
+                quickSendRow.pearTransition()
             }
+
+            tallyRows
+
+            if !model.historyPosts.isEmpty {
+                historyList
+            }
+
+            if let toast = model.toast {
+                Text(toast)
+                    .font(.headline)
+                    .foregroundStyle(PearColor.accent)
+                    .frame(maxWidth: .infinity)
+                    .pearTransition()
+            }
+
+            if let banner = model.banner {
+                Text(banner)
+                    .font(.footnote)
+                    .foregroundStyle(PearColor.error)
+                    .frame(maxWidth: .infinity, alignment: .leading)
+            }
+
+            cameraButton
+            footer
+        }
+        .padding(.horizontal, 20)
+        .padding(.bottom, 20)
+    }
+
+    // MARK: Moments
+
+    /// One tap logs a moment; the strip scrolls once a connection has invented
+    /// enough of its own.
+    ///
+    /// The "More" button is pinned outside the scroll view rather than sitting at
+    /// the end of the strip: four tiles already overflow the screen, so as the
+    /// last scroll item it started off-screen with nothing to hint at it, which
+    /// hid the only way to invent a moment.
+    private var momentStrip: some View {
+        HStack(spacing: 8) {
+            ScrollView(.horizontal, showsIndicators: false) {
+                HStack(spacing: 8) {
+                    ForEach(model.moments) { moment in
+                        Button {
+                            model.tap(moment: moment)
+                        } label: {
+                            VStack(spacing: 4) {
+                                Text(moment.emoji).font(.largeTitle)
+                                Text(moment.label)
+                                    .font(.caption.bold())
+                                    .foregroundStyle(PearColor.textSecondary)
+                                    .lineLimit(1)
+                            }
+                            .frame(width: 88)
+                            .padding(.vertical, 14)
+                            .background(
+                                model.quickSend?.moment.kind == moment.kind
+                                    ? PearColor.accent.opacity(0.18)
+                                    : PearColor.surface,
+                                in: RoundedRectangle(cornerRadius: 12)
+                            )
+                        }
+                        .buttonStyle(.plain)
+                        // Requirement 12.10.
+                        .disabled(model.isBusy)
+                        .accessibilityLabel("Log \(moment.label)")
+                        .accessibilityHint("Sends in \(Int(QuickSend.delay)) seconds unless you add a note")
+                    }
+                }
+            }
+
+            Button {
+                showMomentSheet = true
+            } label: {
+                VStack(spacing: 4) {
+                    Image(systemName: "plus")
+                        .font(.title.bold())
+                        .foregroundStyle(PearColor.accent)
+                    Text("More")
+                        .font(.caption.bold())
+                        .foregroundStyle(PearColor.textSecondary)
+                }
+                .frame(width: 60)
+                .padding(.vertical, 14)
+                .background(PearColor.surface, in: RoundedRectangle(cornerRadius: 12))
+                .overlay(
+                    RoundedRectangle(cornerRadius: 12)
+                        .strokeBorder(PearColor.divider, style: StrokeStyle(lineWidth: 1, dash: [4]))
+                )
+            }
+            .buttonStyle(.plain)
+            .disabled(model.isBusy)
+            .accessibilityLabel("More moments")
         }
         .opacity(model.isBusy ? 0.6 : 1)
     }
 
-    private var noteRow: some View {
-        HStack(spacing: 8) {
-            TextField("", text: $model.noteText, prompt: Text("Add a note (optional)…"))
-                .focused($noteFocused)
-                .submitLabel(.send)
-                .onSubmit { Task { await model.submitTally() } }
-                .padding(12)
-                .background(PearColor.surface, in: RoundedRectangle(cornerRadius: 12))
-                .accessibilityLabel("Tally note")
+    /// The undo/annotate window. It says what is about to happen and by when, so
+    /// the automatic send is never a surprise.
+    private var quickSendRow: some View {
+        VStack(alignment: .leading, spacing: 10) {
+            HStack(spacing: 8) {
+                if let send = model.quickSend {
+                    ZStack {
+                        Circle()
+                            .strokeBorder(PearColor.divider, lineWidth: 3)
+                        Circle()
+                            .trim(from: 0, to: model.quickSendProgress)
+                            .stroke(PearColor.accent, style: StrokeStyle(lineWidth: 3, lineCap: .round))
+                            .rotationEffect(.degrees(-90))
+                        Text(send.moment.emoji).font(.footnote)
+                    }
+                    .frame(width: 28, height: 28)
+                    .animation(.linear(duration: 0.1), value: model.quickSendProgress)
+                    .accessibilityHidden(true)
 
-            Button("Send") {
-                Task { await model.submitTally() }
+                    Text(model.quickSendCaption)
+                        .font(.footnote.bold())
+                        .foregroundStyle(PearColor.textSecondary)
+                        .accessibilityLabel("\(send.moment.label): \(model.quickSendCaption)")
+                }
+                Spacer(minLength: 0)
             }
-            .font(.subheadline.bold())
-            .foregroundStyle(.white)
-            .padding(.horizontal, 20)
-            .padding(.vertical, 12)
-            .background(PearColor.accent, in: RoundedRectangle(cornerRadius: 12))
-            .buttonStyle(.plain)
 
-            Button {
-                model.cancelTally()
-            } label: {
-                Image(systemName: "xmark")
-                    .foregroundStyle(PearColor.textTertiary)
+            HStack(spacing: 8) {
+                TextField("", text: $model.noteText, prompt: Text("Add a note (optional)…"))
+                    .focused($noteFocused)
+                    .submitLabel(.send)
+                    .onSubmit { Task { await model.sendNow() } }
+                    .padding(12)
+                    .background(PearColor.surface, in: RoundedRectangle(cornerRadius: 12))
+                    .accessibilityLabel("Moment note")
+
+                Button("Send") {
+                    Task { await model.sendNow() }
+                }
+                .font(.subheadline.bold())
+                .foregroundStyle(.white)
+                .padding(.horizontal, 20)
+                .padding(.vertical, 12)
+                .background(PearColor.accent, in: RoundedRectangle(cornerRadius: 12))
+                .buttonStyle(.plain)
+
+                Button {
+                    model.cancelQuickSend()
+                } label: {
+                    Image(systemName: "xmark")
+                        .foregroundStyle(PearColor.textTertiary)
+                }
+                .buttonStyle(.plain)
+                .accessibilityLabel("Cancel this moment")
             }
-            .buttonStyle(.plain)
-            .accessibilityLabel("Discard note")
         }
+        .padding(12)
+        .background(PearColor.accent.opacity(0.08), in: RoundedRectangle(cornerRadius: 14))
     }
+
+    // MARK: Tallies
 
     private var tallyRows: some View {
         VStack(spacing: 6) {
             tallyRow(label: "You", tallies: model.myTallies)
-            tallyRow(label: model.shortPartnerName, tallies: model.partnerTallies)
+            tallyRow(label: model.othersLabel, tallies: model.partnerTallies)
         }
     }
 
@@ -285,7 +500,7 @@ struct HomeView: View {
         VStack(alignment: .leading, spacing: 6) {
             ForEach(model.historyPosts) { post in
                 HStack(alignment: .firstTextBaseline, spacing: 6) {
-                    Text("\(model.authorLabel(for: post)) · \(EventKindCatalogue.emoji(for: post))")
+                    Text("\(model.authorLabel(for: post)) · \(model.emoji(for: post))")
                     Text(historyDetail(for: post))
                         .lineLimit(1)
                     Spacer(minLength: 4)
@@ -306,7 +521,7 @@ struct HomeView: View {
         if let note = post.displayNote { return note }
         switch post.type {
         case .photo: return "photo"
-        case .event: return EventKindCatalogue.label(for: post.eventKind)
+        case .event: return model.label(for: post.eventKind)
         case .unknown: return "shared a moment"
         }
     }
@@ -345,7 +560,7 @@ struct HomeView: View {
 
             Spacer()
 
-            Button("Un-pear") {
+            Button(model.isGroup ? "Leave group" : "Un-pear") {
                 showLeaveConfirmation = true
             }
             .foregroundStyle(PearColor.error)

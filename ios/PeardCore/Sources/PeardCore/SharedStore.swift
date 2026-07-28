@@ -11,6 +11,7 @@ public final class SharedStore: @unchecked Sendable {
         public static let apiBaseURL = "apiBaseUrl"
         public static let notificationAuthorizationRequested = "notificationAuthorizationRequested"
         public static let devicePushToken = "devicePushToken"
+        public static let selectedConnectionID = "selectedConnectionId"
     }
 
     public static let appGroupIdentifier = "group.com.peard.app"
@@ -58,6 +59,15 @@ public final class SharedStore: @unchecked Sendable {
     /// Removes the token but keeps the base URL (Requirement 16.4).
     public func removeWidgetToken() {
         defaults?.removeObject(forKey: Key.widgetToken)
+    }
+
+    // MARK: Connections
+
+    /// The connection the home screen last showed, so a user in several lands
+    /// back where they left off. Not auth material.
+    public var selectedConnectionID: String? {
+        get { defaults?.string(forKey: Key.selectedConnectionID) }
+        set { set(newValue, forKey: Key.selectedConnectionID) }
     }
 
     // MARK: Push

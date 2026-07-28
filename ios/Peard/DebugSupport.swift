@@ -13,6 +13,9 @@ enum DebugSupport {
     static let testPassword = "test1234"
     static let partnerEmail = "partner@peard.local"
     static let fakePairCode = "AAAAAA"
+    /// Seeds a three-person group, so groups and custom moments can be checked
+    /// without a second and third device.
+    static let fakeGroupCode = "BBBBBB"
 
     /// Superuser credentials used only by `createFakePair`, overridable from
     /// the build configuration.
@@ -79,6 +82,46 @@ enum DebugSupport {
         try await superuser.seedEvent(pairID: pairID, authorID: partnerID, kind: "beer", note: "Welcome to Pear'd! 🍐")
         try await superuser.seedEvent(pairID: pairID, authorID: partnerID, kind: "coffee", note: "Good morning!")
     }
+
+    /// A three-person group with a name and a published custom moment, so the
+    /// switcher, the group copy and the custom catalogue all have something real
+    /// to render.
+    @MainActor
+    static func createFakeGroup(app: AppModel) async throws {
+        let userID = app.signedInUserID
+        guard !userID.isEmpty else { throw APIError.unauthorized(message: "Sign in first.") }
+
+        let superuser = SuperuserClient(baseURL: app.config.serverURL)
+        try await superuser.authenticate(identity: superuserIdentity, password: superuserPassword)
+
+        let pairID = try await superuser.createPair(name: "Flatmates")
+        try await superuser.addMember(pairID: pairID, userID: userID, role: "owner")
+
+        var seeded: [String] = []
+        for (email, name) in [("flat1@peard.local", "Ari"), ("flat2@peard.local", "Bo")] {
+            let id = try await superuser.findOrCreatePartner(
+                email: email,
+                password: testPassword,
+                displayName: name
+            )
+            try await superuser.addMember(pairID: pairID, userID: id, role: "member")
+            seeded.append(id)
+        }
+
+        try await superuser.seedMomentKind(
+            pairID: pairID,
+            slug: "dog_walk",
+            emoji: "🐕",
+            label: "Dog walk",
+            createdBy: seeded.first ?? userID
+        )
+        if let first = seeded.first {
+            try await superuser.seedEvent(pairID: pairID, authorID: first, kind: "dog_walk", note: "Round the park")
+        }
+        if let second = seeded.last {
+            try await superuser.seedEvent(pairID: pairID, authorID: second, kind: "beer", note: "Fridge raid")
+        }
+    }
 }
 
 /// A separate client holding the superuser token, so the user's own session in
@@ -105,9 +148,19 @@ private final class SuperuserClient {
         tokenBox.set(response.token)
     }
 
-    func createPair() async throws -> String {
-        let pair: Identified = try await authenticatedAPI.create("pairs", fields: [:])
+    func createPair(name: String = "") async throws -> String {
+        let pair: Identified = try await authenticatedAPI.create("pairs", fields: name.isEmpty ? [:] : ["name": name])
         return pair.id
+    }
+
+    func seedMomentKind(pairID: String, slug: String, emoji: String, label: String, createdBy: String) async throws {
+        let _: Identified = try await authenticatedAPI.create("moment_kinds", fields: [
+            "pair": pairID,
+            "slug": slug,
+            "emoji": emoji,
+            "label": label,
+            "created_by": createdBy,
+        ])
     }
 
     func findOrCreatePartner(email: String, password: String, displayName: String) async throws -> String {
