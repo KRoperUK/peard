@@ -2,7 +2,7 @@ SIMULATOR ?= iPhone 17 Pro
 XCODEBUILD = xcodebuild -project ios/Peard.xcodeproj -scheme Peard
 BUILT_APP = ios/build/Build/Products/Debug-iphonesimulator/Peard.app
 
-.PHONY: server migrate app app-release run test test-integration clean
+.PHONY: server migrate app app-release run test test-integration icons clean
 
 # --- server ---
 
@@ -33,6 +33,14 @@ run:
 		-derivedDataPath ios/build build
 	xcrun simctl install "$(SIMULATOR)" $(BUILT_APP)
 	xcrun simctl launch "$(SIMULATOR)" com.peard.app
+
+# --- assets ---
+
+# Redraws the app icon (light, dark and tinted) into AppIcon.appiconset.
+# Only needed after editing ios/Tools/GenerateAppIcon.swift; the PNGs are
+# committed.
+icons:
+	swift ios/Tools/GenerateAppIcon.swift
 
 # --- tests ---
 
