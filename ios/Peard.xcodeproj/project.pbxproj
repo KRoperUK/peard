@@ -1,0 +1,543 @@
+// !$*UTF8*$!
+{
+	archiveVersion = 1;
+	classes = {
+	};
+	objectVersion = 56;
+	objects = {
+
+/* Begin PBXBuildFile section */
+		BF0000000000000000000003 /* PeardApp.swift in Sources */ = {isa = PBXBuildFile; fileRef = FE0000000000000000000003 /* PeardApp.swift */; };
+		BF0000000000000000000004 /* AppModel.swift in Sources */ = {isa = PBXBuildFile; fileRef = FE0000000000000000000004 /* AppModel.swift */; };
+		BF0000000000000000000005 /* AuthCoordinator.swift in Sources */ = {isa = PBXBuildFile; fileRef = FE0000000000000000000005 /* AuthCoordinator.swift */; };
+		BF0000000000000000000006 /* AuthView.swift in Sources */ = {isa = PBXBuildFile; fileRef = FE0000000000000000000006 /* AuthView.swift */; };
+		BF0000000000000000000007 /* CameraPicker.swift in Sources */ = {isa = PBXBuildFile; fileRef = FE0000000000000000000007 /* CameraPicker.swift */; };
+		BF0000000000000000000008 /* DebugSupport.swift in Sources */ = {isa = PBXBuildFile; fileRef = FE0000000000000000000008 /* DebugSupport.swift */; };
+		BF000000000000000000000A /* HomeModel.swift in Sources */ = {isa = PBXBuildFile; fileRef = FE000000000000000000000A /* HomeModel.swift */; };
+		BF000000000000000000000B /* HomeView.swift in Sources */ = {isa = PBXBuildFile; fileRef = FE000000000000000000000B /* HomeView.swift */; };
+		BF000000000000000000000C /* KeychainSessionStore.swift in Sources */ = {isa = PBXBuildFile; fileRef = FE000000000000000000000C /* KeychainSessionStore.swift */; };
+		BF000000000000000000000D /* PairView.swift in Sources */ = {isa = PBXBuildFile; fileRef = FE000000000000000000000D /* PairView.swift */; };
+		BF000000000000000000000E /* PartnerDirectory.swift in Sources */ = {isa = PBXBuildFile; fileRef = FE000000000000000000000E /* PartnerDirectory.swift */; };
+		BF000000000000000000000F /* PeardConfig.swift in Sources */ = {isa = PBXBuildFile; fileRef = FE000000000000000000000F /* PeardConfig.swift */; };
+		BF0000000000000000000010 /* PushCoordinator.swift in Sources */ = {isa = PBXBuildFile; fileRef = FE0000000000000000000010 /* PushCoordinator.swift */; };
+		BF0000000000000000000011 /* WidgetSync.swift in Sources */ = {isa = PBXBuildFile; fileRef = FE0000000000000000000011 /* WidgetSync.swift */; };
+		BF0000000000000000000016 /* PrivacyInfo.xcprivacy in Resources */ = {isa = PBXBuildFile; fileRef = FE0000000000000000000016 /* PrivacyInfo.xcprivacy */; };
+		BF0000000000000000000017 /* Assets.xcassets in Resources */ = {isa = PBXBuildFile; fileRef = FE0000000000000000000017 /* Assets.xcassets */; };
+		BF0000000000000000000018 /* Colors.xcassets in Resources */ = {isa = PBXBuildFile; fileRef = FE0000000000000000000018 /* Colors.xcassets */; };
+		BF0000000000000000000019 /* PearWidget.swift in Sources */ = {isa = PBXBuildFile; fileRef = FE0000000000000000000019 /* PearWidget.swift */; };
+		BF0000000000000000000118 /* Colors.xcassets in Resources */ = {isa = PBXBuildFile; fileRef = FE0000000000000000000018 /* Colors.xcassets */; };
+		BF0000000000000000000201 /* PeardCore in Frameworks */ = {isa = PBXBuildFile; productRef = PD0000000000000000000001 /* PeardCore */; };
+		BF0000000000000000000202 /* PeardCore in Frameworks */ = {isa = PBXBuildFile; productRef = PD0000000000000000000002 /* PeardCore */; };
+		BF0000000000000000000301 /* PearWidgetExtension.appex in Embed Foundation Extensions */ = {isa = PBXBuildFile; fileRef = FE0000000000000000000002 /* PearWidgetExtension.appex */; settings = {ATTRIBUTES = (RemoveHeadersOnCopy, ); }; };
+/* End PBXBuildFile section */
+
+/* Begin PBXContainerItemProxy section */
+		PX0000000000000000000001 /* PBXContainerItemProxy */ = {
+			isa = PBXContainerItemProxy;
+			containerPortal = PJ0000000000000000000001 /* Project object */;
+			proxyType = 1;
+			remoteGlobalIDString = TG0000000000000000000002;
+			remoteInfo = PearWidgetExtension;
+		};
+/* End PBXContainerItemProxy section */
+
+/* Begin PBXCopyFilesBuildPhase section */
+		BP0000000000000000000004 /* Embed Foundation Extensions */ = {
+			isa = PBXCopyFilesBuildPhase;
+			buildActionMask = 2147483647;
+			dstPath = "";
+			dstSubfolderSpec = 13;
+			files = (
+				BF0000000000000000000301 /* PearWidgetExtension.appex in Embed Foundation Extensions */,
+			);
+			name = "Embed Foundation Extensions";
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+/* End PBXCopyFilesBuildPhase section */
+
+/* Begin PBXFileReference section */
+		FE0000000000000000000001 /* Peard.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = Peard.app; sourceTree = BUILT_PRODUCTS_DIR; };
+		FE0000000000000000000002 /* PearWidgetExtension.appex */ = {isa = PBXFileReference; explicitFileType = "wrapper.app-extension"; includeInIndex = 0; path = PearWidgetExtension.appex; sourceTree = BUILT_PRODUCTS_DIR; };
+		FE0000000000000000000003 /* PeardApp.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PeardApp.swift; sourceTree = "<group>"; };
+		FE0000000000000000000004 /* AppModel.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AppModel.swift; sourceTree = "<group>"; };
+		FE0000000000000000000005 /* AuthCoordinator.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AuthCoordinator.swift; sourceTree = "<group>"; };
+		FE0000000000000000000006 /* AuthView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AuthView.swift; sourceTree = "<group>"; };
+		FE0000000000000000000007 /* CameraPicker.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CameraPicker.swift; sourceTree = "<group>"; };
+		FE0000000000000000000008 /* DebugSupport.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = DebugSupport.swift; sourceTree = "<group>"; };
+		FE000000000000000000000A /* HomeModel.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = HomeModel.swift; sourceTree = "<group>"; };
+		FE000000000000000000000B /* HomeView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = HomeView.swift; sourceTree = "<group>"; };
+		FE000000000000000000000C /* KeychainSessionStore.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = KeychainSessionStore.swift; sourceTree = "<group>"; };
+		FE000000000000000000000D /* PairView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PairView.swift; sourceTree = "<group>"; };
+		FE000000000000000000000E /* PartnerDirectory.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PartnerDirectory.swift; sourceTree = "<group>"; };
+		FE000000000000000000000F /* PeardConfig.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PeardConfig.swift; sourceTree = "<group>"; };
+		FE0000000000000000000010 /* PushCoordinator.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PushCoordinator.swift; sourceTree = "<group>"; };
+		FE0000000000000000000011 /* WidgetSync.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = WidgetSync.swift; sourceTree = "<group>"; };
+		FE0000000000000000000012 /* Info.plist */ = {isa = PBXFileReference; lastKnownFileType = text.plist.xml; path = Info.plist; sourceTree = "<group>"; };
+		FE0000000000000000000013 /* Info-Debug.plist */ = {isa = PBXFileReference; lastKnownFileType = text.plist.xml; path = "Info-Debug.plist"; sourceTree = "<group>"; };
+		FE0000000000000000000014 /* Peard-Debug.entitlements */ = {isa = PBXFileReference; lastKnownFileType = text.plist.entitlements; path = "Peard-Debug.entitlements"; sourceTree = "<group>"; };
+		FE0000000000000000000015 /* Peard-Release.entitlements */ = {isa = PBXFileReference; lastKnownFileType = text.plist.entitlements; path = "Peard-Release.entitlements"; sourceTree = "<group>"; };
+		FE0000000000000000000016 /* PrivacyInfo.xcprivacy */ = {isa = PBXFileReference; lastKnownFileType = text.xml; path = PrivacyInfo.xcprivacy; sourceTree = "<group>"; };
+		FE0000000000000000000017 /* Assets.xcassets */ = {isa = PBXFileReference; lastKnownFileType = folder.assetcatalog; path = Assets.xcassets; sourceTree = "<group>"; };
+		FE0000000000000000000018 /* Colors.xcassets */ = {isa = PBXFileReference; lastKnownFileType = folder.assetcatalog; path = Colors.xcassets; sourceTree = "<group>"; };
+		FE0000000000000000000019 /* PearWidget.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PearWidget.swift; sourceTree = "<group>"; };
+		FE000000000000000000001A /* Info.plist */ = {isa = PBXFileReference; lastKnownFileType = text.plist.xml; path = Info.plist; sourceTree = "<group>"; };
+		FE000000000000000000001B /* PearWidget.entitlements */ = {isa = PBXFileReference; lastKnownFileType = text.plist.entitlements; path = PearWidget.entitlements; sourceTree = "<group>"; };
+		FE000000000000000000001C /* Config.example.xcconfig */ = {isa = PBXFileReference; lastKnownFileType = text.xcconfig; path = Config.example.xcconfig; sourceTree = "<group>"; };
+		FE000000000000000000001E /* PeardCore */ = {isa = PBXFileReference; lastKnownFileType = wrapper; path = PeardCore; sourceTree = "<group>"; };
+/* End PBXFileReference section */
+
+/* Begin PBXFrameworksBuildPhase section */
+		BP0000000000000000000002 /* Frameworks */ = {
+			isa = PBXFrameworksBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+				BF0000000000000000000201 /* PeardCore in Frameworks */,
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+		BP0000000000000000000006 /* Frameworks */ = {
+			isa = PBXFrameworksBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+				BF0000000000000000000202 /* PeardCore in Frameworks */,
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+/* End PBXFrameworksBuildPhase section */
+
+/* Begin PBXGroup section */
+		GR0000000000000000000001 = {
+			isa = PBXGroup;
+			children = (
+				FE000000000000000000001C /* Config.example.xcconfig */,
+				FE000000000000000000001E /* PeardCore */,
+				GR0000000000000000000002 /* Peard */,
+				GR0000000000000000000003 /* PearWidget */,
+				GR0000000000000000000004 /* Shared */,
+				GR0000000000000000000005 /* Products */,
+			);
+			sourceTree = "<group>";
+		};
+		GR0000000000000000000002 /* Peard */ = {
+			isa = PBXGroup;
+			children = (
+				FE0000000000000000000003 /* PeardApp.swift */,
+				FE0000000000000000000004 /* AppModel.swift */,
+				FE000000000000000000000F /* PeardConfig.swift */,
+				FE000000000000000000000C /* KeychainSessionStore.swift */,
+				FE0000000000000000000005 /* AuthCoordinator.swift */,
+				FE0000000000000000000006 /* AuthView.swift */,
+				FE000000000000000000000D /* PairView.swift */,
+				FE000000000000000000000A /* HomeModel.swift */,
+				FE000000000000000000000B /* HomeView.swift */,
+				FE0000000000000000000007 /* CameraPicker.swift */,
+				FE000000000000000000000E /* PartnerDirectory.swift */,
+				FE0000000000000000000010 /* PushCoordinator.swift */,
+				FE0000000000000000000011 /* WidgetSync.swift */,
+				FE0000000000000000000008 /* DebugSupport.swift */,
+				FE0000000000000000000017 /* Assets.xcassets */,
+				FE0000000000000000000012 /* Info.plist */,
+				FE0000000000000000000013 /* Info-Debug.plist */,
+				FE0000000000000000000014 /* Peard-Debug.entitlements */,
+				FE0000000000000000000015 /* Peard-Release.entitlements */,
+				FE0000000000000000000016 /* PrivacyInfo.xcprivacy */,
+			);
+			path = Peard;
+			sourceTree = "<group>";
+		};
+		GR0000000000000000000003 /* PearWidget */ = {
+			isa = PBXGroup;
+			children = (
+				FE0000000000000000000019 /* PearWidget.swift */,
+				FE000000000000000000001A /* Info.plist */,
+				FE000000000000000000001B /* PearWidget.entitlements */,
+			);
+			path = PearWidget;
+			sourceTree = "<group>";
+		};
+		GR0000000000000000000004 /* Shared */ = {
+			isa = PBXGroup;
+			children = (
+				FE0000000000000000000018 /* Colors.xcassets */,
+			);
+			path = Shared;
+			sourceTree = "<group>";
+		};
+		GR0000000000000000000005 /* Products */ = {
+			isa = PBXGroup;
+			children = (
+				FE0000000000000000000001 /* Peard.app */,
+				FE0000000000000000000002 /* PearWidgetExtension.appex */,
+			);
+			name = Products;
+			sourceTree = "<group>";
+		};
+/* End PBXGroup section */
+
+/* Begin PBXNativeTarget section */
+		TG0000000000000000000001 /* Peard */ = {
+			isa = PBXNativeTarget;
+			buildConfigurationList = CL0000000000000000000002 /* Build configuration list for PBXNativeTarget "Peard" */;
+			buildPhases = (
+				BP0000000000000000000001 /* Sources */,
+				BP0000000000000000000002 /* Frameworks */,
+				BP0000000000000000000003 /* Resources */,
+				BP0000000000000000000004 /* Embed Foundation Extensions */,
+			);
+			buildRules = (
+			);
+			dependencies = (
+				DP0000000000000000000001 /* PBXTargetDependency */,
+			);
+			name = Peard;
+			packageProductDependencies = (
+				PD0000000000000000000001 /* PeardCore */,
+			);
+			productName = Peard;
+			productReference = FE0000000000000000000001 /* Peard.app */;
+			productType = "com.apple.product-type.application";
+		};
+		TG0000000000000000000002 /* PearWidgetExtension */ = {
+			isa = PBXNativeTarget;
+			buildConfigurationList = CL0000000000000000000003 /* Build configuration list for PBXNativeTarget "PearWidgetExtension" */;
+			buildPhases = (
+				BP0000000000000000000005 /* Sources */,
+				BP0000000000000000000006 /* Frameworks */,
+				BP0000000000000000000007 /* Resources */,
+			);
+			buildRules = (
+			);
+			dependencies = (
+			);
+			name = PearWidgetExtension;
+			packageProductDependencies = (
+				PD0000000000000000000002 /* PeardCore */,
+			);
+			productName = PearWidgetExtension;
+			productReference = FE0000000000000000000002 /* PearWidgetExtension.appex */;
+			productType = "com.apple.product-type.app-extension";
+		};
+/* End PBXNativeTarget section */
+
+/* Begin PBXProject section */
+		PJ0000000000000000000001 /* Project object */ = {
+			isa = PBXProject;
+			attributes = {
+				BuildIndependentTargetsInParallel = 1;
+				LastSwiftUpdateCheck = 2600;
+				LastUpgradeCheck = 2600;
+				TargetAttributes = {
+					TG0000000000000000000001 = {
+						CreatedOnToolsVersion = 26.0;
+					};
+					TG0000000000000000000002 = {
+						CreatedOnToolsVersion = 26.0;
+					};
+				};
+			};
+			buildConfigurationList = CL0000000000000000000001 /* Build configuration list for PBXProject "Peard" */;
+			compatibilityVersion = "Xcode 14.0";
+			developmentRegion = en;
+			hasScannedForEncodings = 0;
+			knownRegions = (
+				en,
+				Base,
+			);
+			mainGroup = GR0000000000000000000001;
+			packageReferences = (
+				PK0000000000000000000001 /* XCLocalSwiftPackageReference "PeardCore" */,
+			);
+			productRefGroup = GR0000000000000000000005 /* Products */;
+			projectDirPath = "";
+			projectRoot = "";
+			targets = (
+				TG0000000000000000000001 /* Peard */,
+				TG0000000000000000000002 /* PearWidgetExtension */,
+			);
+		};
+/* End PBXProject section */
+
+/* Begin PBXResourcesBuildPhase section */
+		BP0000000000000000000003 /* Resources */ = {
+			isa = PBXResourcesBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+				BF0000000000000000000017 /* Assets.xcassets in Resources */,
+				BF0000000000000000000018 /* Colors.xcassets in Resources */,
+				BF0000000000000000000016 /* PrivacyInfo.xcprivacy in Resources */,
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+		BP0000000000000000000007 /* Resources */ = {
+			isa = PBXResourcesBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+				BF0000000000000000000118 /* Colors.xcassets in Resources */,
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+/* End PBXResourcesBuildPhase section */
+
+/* Begin PBXSourcesBuildPhase section */
+		BP0000000000000000000001 /* Sources */ = {
+			isa = PBXSourcesBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+				BF0000000000000000000003 /* PeardApp.swift in Sources */,
+				BF0000000000000000000004 /* AppModel.swift in Sources */,
+				BF000000000000000000000F /* PeardConfig.swift in Sources */,
+				BF000000000000000000000C /* KeychainSessionStore.swift in Sources */,
+				BF0000000000000000000005 /* AuthCoordinator.swift in Sources */,
+				BF0000000000000000000006 /* AuthView.swift in Sources */,
+				BF000000000000000000000D /* PairView.swift in Sources */,
+				BF000000000000000000000A /* HomeModel.swift in Sources */,
+				BF000000000000000000000B /* HomeView.swift in Sources */,
+				BF0000000000000000000007 /* CameraPicker.swift in Sources */,
+				BF000000000000000000000E /* PartnerDirectory.swift in Sources */,
+				BF0000000000000000000010 /* PushCoordinator.swift in Sources */,
+				BF0000000000000000000011 /* WidgetSync.swift in Sources */,
+				BF0000000000000000000008 /* DebugSupport.swift in Sources */,
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+		BP0000000000000000000005 /* Sources */ = {
+			isa = PBXSourcesBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+				BF0000000000000000000019 /* PearWidget.swift in Sources */,
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+/* End PBXSourcesBuildPhase section */
+
+/* Begin PBXTargetDependency section */
+		DP0000000000000000000001 /* PBXTargetDependency */ = {
+			isa = PBXTargetDependency;
+			target = TG0000000000000000000002 /* PearWidgetExtension */;
+			targetProxy = PX0000000000000000000001 /* PBXContainerItemProxy */;
+		};
+/* End PBXTargetDependency section */
+
+/* Begin XCBuildConfiguration section */
+		CF0000000000000000000001 /* Debug */ = {
+			isa = XCBuildConfiguration;
+			baseConfigurationReference = FE000000000000000000001C /* Config.example.xcconfig */;
+			buildSettings = {
+				ALWAYS_SEARCH_USER_PATHS = NO;
+				ASSETCATALOG_COMPILER_GENERATE_SWIFT_ASSET_SYMBOL_EXTENSIONS = YES;
+				CLANG_ANALYZER_NONNULL = YES;
+				CLANG_ENABLE_MODULES = YES;
+				CLANG_ENABLE_OBJC_ARC = YES;
+				CLANG_WARN_BLOCK_CAPTURE_AUTORELEASING = YES;
+				CLANG_WARN_BOOL_CONVERSION = YES;
+				CLANG_WARN_DOCUMENTATION_COMMENTS = YES;
+				CLANG_WARN_UNGUARDED_AVAILABILITY = YES_AGGRESSIVE;
+				COPY_PHASE_STRIP = NO;
+				DEBUG_INFORMATION_FORMAT = dwarf;
+				ENABLE_STRICT_OBJC_MSGSEND = YES;
+				ENABLE_TESTABILITY = YES;
+				ENABLE_USER_SCRIPT_SANDBOXING = YES;
+				GCC_C_LANGUAGE_STANDARD = gnu17;
+				GCC_DYNAMIC_NO_PIC = NO;
+				GCC_NO_COMMON_BLOCKS = YES;
+				GCC_OPTIMIZATION_LEVEL = 0;
+				GCC_PREPROCESSOR_DEFINITIONS = (
+					"DEBUG=1",
+					"$(inherited)",
+				);
+				GCC_WARN_UNDECLARED_SELECTOR = YES;
+				GCC_WARN_UNINITIALIZED_AUTOS = YES_AGGRESSIVE;
+				GCC_WARN_UNUSED_FUNCTION = YES;
+				GCC_WARN_UNUSED_VARIABLE = YES;
+				IPHONEOS_DEPLOYMENT_TARGET = 17.0;
+				MTL_ENABLE_DEBUG_INFO = INCLUDE_SOURCE;
+				MTL_FAST_MATH = YES;
+				ONLY_ACTIVE_ARCH = YES;
+				SDKROOT = iphoneos;
+				SWIFT_ACTIVE_COMPILATION_CONDITIONS = "DEBUG $(inherited)";
+				SWIFT_OPTIMIZATION_LEVEL = "-Onone";
+				SWIFT_VERSION = 5.0;
+			};
+			name = Debug;
+		};
+		CF0000000000000000000002 /* Release */ = {
+			isa = XCBuildConfiguration;
+			baseConfigurationReference = FE000000000000000000001C /* Config.example.xcconfig */;
+			buildSettings = {
+				ALWAYS_SEARCH_USER_PATHS = NO;
+				ASSETCATALOG_COMPILER_GENERATE_SWIFT_ASSET_SYMBOL_EXTENSIONS = YES;
+				CLANG_ANALYZER_NONNULL = YES;
+				CLANG_ENABLE_MODULES = YES;
+				CLANG_ENABLE_OBJC_ARC = YES;
+				CLANG_WARN_BLOCK_CAPTURE_AUTORELEASING = YES;
+				CLANG_WARN_BOOL_CONVERSION = YES;
+				CLANG_WARN_DOCUMENTATION_COMMENTS = YES;
+				CLANG_WARN_UNGUARDED_AVAILABILITY = YES_AGGRESSIVE;
+				COPY_PHASE_STRIP = NO;
+				DEBUG_INFORMATION_FORMAT = "dwarf-with-dsym";
+				ENABLE_NS_ASSERTIONS = NO;
+				ENABLE_STRICT_OBJC_MSGSEND = YES;
+				ENABLE_USER_SCRIPT_SANDBOXING = YES;
+				GCC_C_LANGUAGE_STANDARD = gnu17;
+				GCC_NO_COMMON_BLOCKS = YES;
+				GCC_WARN_UNDECLARED_SELECTOR = YES;
+				GCC_WARN_UNINITIALIZED_AUTOS = YES_AGGRESSIVE;
+				GCC_WARN_UNUSED_FUNCTION = YES;
+				GCC_WARN_UNUSED_VARIABLE = YES;
+				IPHONEOS_DEPLOYMENT_TARGET = 17.0;
+				MTL_ENABLE_DEBUG_INFO = NO;
+				MTL_FAST_MATH = YES;
+				SDKROOT = iphoneos;
+				SWIFT_COMPILATION_MODE = wholemodule;
+				SWIFT_VERSION = 5.0;
+				VALIDATE_PRODUCT = YES;
+			};
+			name = Release;
+		};
+		CF0000000000000000000003 /* Debug */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon;
+				ASSETCATALOG_COMPILER_GLOBAL_ACCENT_COLOR_NAME = AccentColor;
+				CODE_SIGN_ENTITLEMENTS = "Peard/Peard-Debug.entitlements";
+				CODE_SIGN_STYLE = Automatic;
+				CURRENT_PROJECT_VERSION = 1;
+				DEVELOPMENT_ASSET_PATHS = "";
+				DEVELOPMENT_TEAM = 72Q6R744M4;
+				ENABLE_PREVIEWS = YES;
+				GENERATE_INFOPLIST_FILE = NO;
+				INFOPLIST_FILE = "Peard/Info-Debug.plist";
+				LD_RUNPATH_SEARCH_PATHS = (
+					"$(inherited)",
+					"@executable_path/Frameworks",
+				);
+				MARKETING_VERSION = 0.1.0;
+				PRODUCT_BUNDLE_IDENTIFIER = com.peard.app;
+				PRODUCT_NAME = "$(TARGET_NAME)";
+				SWIFT_EMIT_LOC_STRINGS = YES;
+				TARGETED_DEVICE_FAMILY = "1,2";
+			};
+			name = Debug;
+		};
+		CF0000000000000000000004 /* Release */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon;
+				ASSETCATALOG_COMPILER_GLOBAL_ACCENT_COLOR_NAME = AccentColor;
+				CODE_SIGN_ENTITLEMENTS = "Peard/Peard-Release.entitlements";
+				CODE_SIGN_STYLE = Automatic;
+				CURRENT_PROJECT_VERSION = 1;
+				DEVELOPMENT_TEAM = 72Q6R744M4;
+				ENABLE_PREVIEWS = YES;
+				GENERATE_INFOPLIST_FILE = NO;
+				INFOPLIST_FILE = Peard/Info.plist;
+				LD_RUNPATH_SEARCH_PATHS = (
+					"$(inherited)",
+					"@executable_path/Frameworks",
+				);
+				MARKETING_VERSION = 0.1.0;
+				PRODUCT_BUNDLE_IDENTIFIER = com.peard.app;
+				PRODUCT_NAME = "$(TARGET_NAME)";
+				SWIFT_EMIT_LOC_STRINGS = YES;
+				TARGETED_DEVICE_FAMILY = "1,2";
+			};
+			name = Release;
+		};
+		CF0000000000000000000005 /* Debug */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				CODE_SIGN_ENTITLEMENTS = PearWidget/PearWidget.entitlements;
+				CODE_SIGN_STYLE = Automatic;
+				CURRENT_PROJECT_VERSION = 1;
+				DEVELOPMENT_TEAM = 72Q6R744M4;
+				GENERATE_INFOPLIST_FILE = NO;
+				INFOPLIST_FILE = PearWidget/Info.plist;
+				LD_RUNPATH_SEARCH_PATHS = (
+					"$(inherited)",
+					"@executable_path/Frameworks",
+					"@executable_path/../../Frameworks",
+				);
+				MARKETING_VERSION = 0.1.0;
+				PRODUCT_BUNDLE_IDENTIFIER = com.peard.app.PearWidget;
+				PRODUCT_NAME = "$(TARGET_NAME)";
+				SKIP_INSTALL = YES;
+				SWIFT_EMIT_LOC_STRINGS = YES;
+				TARGETED_DEVICE_FAMILY = "1,2";
+			};
+			name = Debug;
+		};
+		CF0000000000000000000006 /* Release */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				CODE_SIGN_ENTITLEMENTS = PearWidget/PearWidget.entitlements;
+				CODE_SIGN_STYLE = Automatic;
+				CURRENT_PROJECT_VERSION = 1;
+				DEVELOPMENT_TEAM = 72Q6R744M4;
+				GENERATE_INFOPLIST_FILE = NO;
+				INFOPLIST_FILE = PearWidget/Info.plist;
+				LD_RUNPATH_SEARCH_PATHS = (
+					"$(inherited)",
+					"@executable_path/Frameworks",
+					"@executable_path/../../Frameworks",
+				);
+				MARKETING_VERSION = 0.1.0;
+				PRODUCT_BUNDLE_IDENTIFIER = com.peard.app.PearWidget;
+				PRODUCT_NAME = "$(TARGET_NAME)";
+				SKIP_INSTALL = YES;
+				SWIFT_EMIT_LOC_STRINGS = YES;
+				TARGETED_DEVICE_FAMILY = "1,2";
+			};
+			name = Release;
+		};
+/* End XCBuildConfiguration section */
+
+/* Begin XCConfigurationList section */
+		CL0000000000000000000001 /* Build configuration list for PBXProject "Peard" */ = {
+			isa = XCConfigurationList;
+			buildConfigurations = (
+				CF0000000000000000000001 /* Debug */,
+				CF0000000000000000000002 /* Release */,
+			);
+			defaultConfigurationIsVisible = 0;
+			defaultConfigurationName = Release;
+		};
+		CL0000000000000000000002 /* Build configuration list for PBXNativeTarget "Peard" */ = {
+			isa = XCConfigurationList;
+			buildConfigurations = (
+				CF0000000000000000000003 /* Debug */,
+				CF0000000000000000000004 /* Release */,
+			);
+			defaultConfigurationIsVisible = 0;
+			defaultConfigurationName = Release;
+		};
+		CL0000000000000000000003 /* Build configuration list for PBXNativeTarget "PearWidgetExtension" */ = {
+			isa = XCConfigurationList;
+			buildConfigurations = (
+				CF0000000000000000000005 /* Debug */,
+				CF0000000000000000000006 /* Release */,
+			);
+			defaultConfigurationIsVisible = 0;
+			defaultConfigurationName = Release;
+		};
+/* End XCConfigurationList section */
+
+/* Begin XCLocalSwiftPackageReference section */
+		PK0000000000000000000001 /* XCLocalSwiftPackageReference "PeardCore" */ = {
+			isa = XCLocalSwiftPackageReference;
+			relativePath = PeardCore;
+		};
+/* End XCLocalSwiftPackageReference section */
+
+/* Begin XCSwiftPackageProductDependency section */
+		PD0000000000000000000001 /* PeardCore */ = {
+			isa = XCSwiftPackageProductDependency;
+			productName = PeardCore;
+		};
+		PD0000000000000000000002 /* PeardCore */ = {
+			isa = XCSwiftPackageProductDependency;
+			productName = PeardCore;
+		};
+/* End XCSwiftPackageProductDependency section */
+	};
+	rootObject = PJ0000000000000000000001 /* Project object */;
+}

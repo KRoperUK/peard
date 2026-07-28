@@ -1,0 +1,33 @@
+// Pear'd build configuration (committed).
+//
+// This file is the project's base configuration and holds the defaults. To
+// point a build at a different server or supply a Google client id, copy it
+// and edit the copy — the last line pulls the copy in when it exists:
+//
+//     cp ios/Config.example.xcconfig ios/Config.xcconfig
+//
+// Config.xcconfig is git-ignored (Requirement 3.5), so resolved values never
+// reach source control, and a fresh clone still builds with these defaults.
+//
+// The server URL is split into scheme and host because xcconfig treats "//"
+// as the start of a comment, which would truncate a full URL. Info.plist
+// rejoins them as $(PEARD_SERVER_SCHEME)://$(PEARD_SERVER_HOST).
+//
+// Use your LAN address for a physical device; 127.0.0.1 only works in the
+// simulator.
+
+PEARD_SERVER_SCHEME = http
+PEARD_SERVER_HOST = 127.0.0.1:8090
+
+// Google iOS OAuth client id (https://console.cloud.google.com/apis/credentials).
+// The PocketBase users collection's Google provider must use the same client id.
+// Leaving it empty disables Sign in with Google with an explanatory message.
+PEARD_GOOGLE_IOS_CLIENT_ID =
+
+// Debug only: credentials used by the AAAAAA fake-pair shortcut, which needs
+// superuser rights to create pairs and members. Never read in Release builds.
+PEARD_DEBUG_SUPERUSER_IDENTITY = admin@peard.app
+PEARD_DEBUG_SUPERUSER_PASSWORD = Password123!
+
+// Local, git-ignored overrides. Optional include: missing file is not an error.
+#include? "Config.xcconfig"

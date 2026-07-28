@@ -1,25 +1,58 @@
 # OS
 .DS_Store
+._*
 
 # Env / secrets
 .env
+.env.*
+!.env.example
 *.p8
+*.p12
+*.jks
+*.key
+*.mobileprovision
+*.certSigningRequest
+
+# Logs
+*.log
 
 # --- server ---
 server/pb_data/
 server/peard-server
 server/server
+*.test
+coverage.out
 
-# --- app ---
-app/node_modules/
-app/.expo/
-app/dist/
-app/ios/
-app/android/
-*.jks
-*.p12
-*.key
-*.mobileprovision
+# --- ios: local configuration ---
+# Resolved build configuration (copy of ios/Config.example.xcconfig)
+ios/Config.xcconfig
 
-# Logs
-*.log
+# --- ios: build output ---
+ios/build/
+DerivedData/
+build/
+*.ipa
+*.dSYM
+*.dSYM.zip
+*.hmap
+*.xcresult/
+
+# --- ios: Xcode per-user state ---
+# Rewritten on every open/build; xcshareddata (the Peard scheme) is committed.
+xcuserdata/
+*.xcuserstate
+*.xcscmblueprint
+*.xccheckout
+*.moved-aside
+ios/Peard.xcodeproj/project.xcworkspace/
+
+# --- ios: SwiftPM ---
+.build/
+.swiftpm/
+
+# --- profiling artefacts ---
+*.memgraph
+*.trace
+
+# --- agent / editor local state ---
+.kiro/specs/**/.config.kiro
