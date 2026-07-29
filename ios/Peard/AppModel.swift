@@ -27,6 +27,9 @@ final class AppModel {
     let sharedStore: SharedStore
     let widgetSync: WidgetSync
     let push: PushCoordinator
+    /// Moments logged on the device but not yet accepted by the server.
+    let sendQueue: SendQueue
+    let reachability: Reachability
 
     // MARK: State
 
@@ -40,13 +43,23 @@ final class AppModel {
     var focusedPostID: String?
     /// Non-blocking message shown under the current screen.
     var banner: String?
+    /// Mirror of the queue's contents, so views can draw pending moments without
+    /// awaiting an actor on every redraw.
+    private(set) var pendingSends: [PendingSend] = []
+    /// False while there is no usable network path.
+    private(set) var isOnline = true
+    /// The caller's own record, loaded lazily by the settings screen.
+    private(set) var profile: UserProfile?
 
     private var hasRequestedPushThisSession = false
+    private var flushTask: Task<Void, Never>?
 
     init(
         config: PeardConfig = .current,
         sessionStore: KeychainSessionStore = KeychainSessionStore(),
-        sharedStore: SharedStore = .shared
+        sharedStore: SharedStore = .shared,
+        sendQueue: SendQueue? = nil,
+        reachability: Reachability = Reachability()
     ) {
         self.config = config
         self.sessionStore = sessionStore
@@ -55,6 +68,8 @@ final class AppModel {
         self.api = api
         self.widgetSync = WidgetSync(api: api, store: sharedStore, baseURL: config.serverURL)
         self.push = PushCoordinator(api: api, session: sessionStore, store: sharedStore)
+        self.sendQueue = sendQueue ?? SendQueue(store: FilePendingSendStore.appGroup())
+        self.reachability = reachability
 
         push.onOpenPost = { [weak self] postID in
             self?.openPost(postID)
@@ -69,8 +84,11 @@ final class AppModel {
     var onHomeRefreshRequested: (@MainActor () async -> Void)?
 
     /// Requirement 18.6 — refresh posts, refresh the App Group container, and
-    /// reload widget timelines.
+    /// reload widget timelines. Also drains the send queue: a silent push is a
+    /// free wake-up, and the device demonstrably has connectivity to have received
+    /// it at all.
     private func performBackgroundRefresh() async {
+        await flushSendQueueAndWait()
         await onHomeRefreshRequested?()
         await widgetSync.sync()
     }
@@ -83,6 +101,7 @@ final class AppModel {
     func bootstrap() async {
         phase = .loading
         sessionStore.load()
+        await attachSendQueue()
 
         #if DEBUG
         await DebugSupport.logHealth(api: api)
@@ -93,6 +112,100 @@ final class AppModel {
             return
         }
         await resolveMembership()
+        // Anything logged while the app was closed, or while the last session was
+        // offline, goes out now.
+        flushSendQueue()
+    }
+
+    // MARK: Send queue
+
+    /// Reads the queue into observable state and starts watching the network, so a
+    /// moment logged with no signal leaves as soon as there is one.
+    ///
+    /// Internal rather than private so the app-target tests can drive the real
+    /// path instead of a test-only hook.
+    func attachSendQueue() async {
+        await refreshPendingSends()
+        isOnline = reachability.isOnline
+        reachability.onChange { [weak self] online in
+            Task { @MainActor in
+                guard let self else { return }
+                self.isOnline = online
+                // Only on the way back up: going offline has nothing to send.
+                if online { self.flushSendQueue() }
+            }
+        }
+        reachability.start()
+    }
+
+    /// Copies the queue's contents into `pendingSends`.
+    ///
+    /// Called after every operation that can change the queue rather than through a
+    /// callback registered at startup. The callback version meant the UI showed
+    /// nothing at all if the registration had not happened yet — an ordering
+    /// dependency with no visible symptom, which is the worst kind.
+    private func refreshPendingSends() async {
+        pendingSends = await sendQueue.pending
+    }
+
+    /// Adds a moment to the queue. The queue persists it before anything is sent,
+    /// so the moment survives the app being killed mid-request.
+    func enqueue(_ send: PendingSend) async {
+        await sendQueue.enqueue(send)
+        await refreshPendingSends()
+    }
+
+    /// Kicks off a flush, coalescing with one already in flight. Non-blocking so
+    /// callers on the main actor (a tap, a foreground) are never held up by it.
+    func flushSendQueue() {
+        guard sessionStore.hasSession else { return }
+        flushTask?.cancel()
+        flushTask = Task { [weak self] in
+            await self?.performFlush()
+        }
+    }
+
+    /// Awaits a flush. Used where the caller wants the result before redrawing.
+    @discardableResult
+    func flushSendQueueAndWait() async -> FlushResult {
+        guard sessionStore.hasSession else { return FlushResult() }
+        return await performFlush()
+    }
+
+    @discardableResult
+    private func performFlush() async -> FlushResult {
+        let api = self.api
+        let result = await sendQueue.flush { send in
+            let _: Post = try await api.create("posts", fields: send.postFields)
+        }
+        await refreshPendingSends()
+
+        if result.didChangeAnything {
+            // A send that landed changes the timeline, the tallies and the widget.
+            await onHomeRefreshRequested?()
+            widgetSync.reloadTimelines()
+        }
+        return result
+    }
+
+    /// Clears the failure history of abandoned sends so they are tried again.
+    func retryStalledSends() async {
+        await sendQueue.reviveStalled()
+        await refreshPendingSends()
+        await flushSendQueueAndWait()
+    }
+
+    /// Discards everything queued. Offered when a send has given up, because the
+    /// alternative — a moment that can never be delivered sitting there forever —
+    /// is worse than losing it deliberately.
+    func discardPendingSends() async {
+        await sendQueue.removeAll()
+        await refreshPendingSends()
+    }
+
+    /// Pending sends for one connection, newest last.
+    func pendingSends(forConnection pairID: String) -> [PendingSend] {
+        pendingSends.filter { $0.pairID == pairID }
     }
 
     // MARK: Session
@@ -219,6 +332,65 @@ final class AppModel {
         await widgetSync.sync()
     }
 
+    // MARK: Connection settings
+
+    /// Silences or unsilences one connection's notifications.
+    ///
+    /// Per connection rather than per user: with 20 connections of up to 12 people
+    /// each, the useful control is "this group is too noisy", not "stop
+    /// notifying me".
+    func setMuted(connectionID: String, muted: Bool) async {
+        do {
+            try await api.setMuted(pairID: connectionID, muted: muted)
+        } catch {
+            if await handleIfUnauthorized(error) { return }
+            banner = (error as? APIError)?.localizedDescription ?? error.localizedDescription
+            return
+        }
+        await refreshConnections()
+    }
+
+    /// Removes somebody else from a connection. Owners only, enforced server-side.
+    func removeMember(connectionID: String, userID: String) async {
+        do {
+            try await api.removeMember(pairID: connectionID, userID: userID)
+        } catch {
+            if await handleIfUnauthorized(error) { return }
+            banner = (error as? APIError)?.localizedDescription ?? error.localizedDescription
+            return
+        }
+        await refreshConnections()
+        await widgetSync.sync()
+    }
+
+    // MARK: Profile
+
+    /// Loads the caller's own record. Its `display_name` is what every other
+    /// member sees in the switcher, the timeline and the push copy.
+    func loadProfile() async {
+        do {
+            profile = try await api.profile()
+        } catch {
+            if await handleIfUnauthorized(error) { return }
+            banner = (error as? APIError)?.localizedDescription ?? error.localizedDescription
+        }
+    }
+
+    /// Sets the name other members see. An empty name is a deliberate reset back
+    /// to the email-local-part fallback, not an error.
+    func updateDisplayName(_ name: String) async {
+        do {
+            profile = try await api.updateDisplayName(name)
+        } catch {
+            if await handleIfUnauthorized(error) { return }
+            banner = (error as? APIError)?.localizedDescription ?? error.localizedDescription
+            return
+        }
+        // Every connection carries the caller's own name in its member list.
+        await refreshConnections()
+        await widgetSync.sync()
+    }
+
     /// Requirement 8.4 — a 401 clears the session and forces re-authentication.
     func clearSessionAndReturnToAuth() async {
         sessionStore.clear()
@@ -244,9 +416,17 @@ final class AppModel {
     /// effort and its failure is reported rather than blocking sign-out.
     func signOut() async {
         await push.deleteRegistration()
+        // Queued moments are discarded here but deliberately *not* in
+        // clearSessionAndReturnToAuth: a 401 can just be an expired token, and
+        // the same person will sign back in and still want their moments. Signing
+        // out is a decision, and a queued send carries an author id that the next
+        // account cannot post under anyway.
+        await sendQueue.removeAll()
+        await refreshPendingSends()
         sessionStore.clear()
         widgetSync.clear()
         connections = []
+        profile = nil
         sharedStore.selectedConnectionID = nil
         focusedPostID = nil
         hasRequestedPushThisSession = false
@@ -288,5 +468,9 @@ final class AppModel {
 
     func applicationDidBecomeActive() async {
         await push.refreshAuthorizationStatus()
+        // Coming back to the app is the other reliable moment to drain the queue:
+        // the reachability callback covers a network that returns while the app is
+        // running, this covers everything that changed while it was not.
+        flushSendQueue()
     }
 }

@@ -1,15 +1,133 @@
+import AppIntents
 import PeardCore
 import SwiftUI
 import WidgetKit
 
-// Ported from app/targets/pear-widget/index.swift (Requirement 22.7), now
-// decoding with PeardCore's WidgetFeed and reading the App Group through
-// SharedStore.
+// The home-screen widget.
 //
-// A user may belong to several connections and the widget has room for one, so
-// the server picks whichever somebody else posted in most recently and says which
-// it chose. Emoji and labels arrive resolved, so a custom moment renders here
-// without the widget needing the connection's catalogue.
+// Two things it can do that a static widget could not:
+//
+//  1. Log a moment without opening the app, via App Intents (iOS 17+). That is
+//     the conclusion of the quick-send work — the whole premise is that a moment
+//     costs one tap, and going through a cold launch to get there was three.
+//  2. Be pinned to a particular connection. A user may belong to 20 and the
+//     widget has room for one; before this the server always chose, which is
+//     right by default and wrong as soon as somebody has a preference.
+//
+// Authentication is the revocable widget token in the App Group container, not the
+// PocketBase session: the extension cannot read the Keychain, and the alternative
+// — a keychain access group so it could — is a far wider grant than "let the
+// widget log a beer".
+
+// MARK: - Configuration
+
+/// Which connection the widget shows, chosen in the widget's own edit sheet.
+struct SelectConnectionIntent: WidgetConfigurationIntent {
+    static var title: LocalizedStringResource = "Choose a connection"
+    static var description = IntentDescription(
+        "Pick which connection this widget follows, or leave it on Automatic to follow whichever is liveliest."
+    )
+
+    @Parameter(title: "Connection")
+    var connection: ConnectionEntity?
+
+    init() {}
+
+    init(connection: ConnectionEntity?) {
+        self.connection = connection
+    }
+}
+
+/// A connection as the configuration picker sees it.
+struct ConnectionEntity: AppEntity, Identifiable, Hashable {
+    static var typeDisplayRepresentation: TypeDisplayRepresentation = "Connection"
+    static var defaultQuery = ConnectionQuery()
+
+    let id: String
+    let title: String
+    let subtitle: String
+
+    var displayRepresentation: DisplayRepresentation {
+        DisplayRepresentation(title: "\(title)", subtitle: "\(subtitle)")
+    }
+}
+
+/// Supplies the picker's options from the server, using the widget token.
+struct ConnectionQuery: EntityQuery {
+    func entities(for identifiers: [String]) async throws -> [ConnectionEntity] {
+        let all = try await suggestedEntities()
+        // Preserve the order the caller asked in, and silently drop a connection
+        // that has gone — a widget configured for a group the user has left must
+        // fall back to Automatic rather than fail to render.
+        return identifiers.compactMap { id in all.first { $0.id == id } }
+    }
+
+    func suggestedEntities() async throws -> [ConnectionEntity] {
+        let store = SharedStore.shared
+        guard
+            let token = store.widgetToken, !token.isEmpty,
+            let baseURL = store.apiBaseURL
+        else { return [] }
+
+        let connections = try await APIClient(baseURL: baseURL).widgetConnections(token: token)
+        return connections.map {
+            ConnectionEntity(id: $0.id, title: $0.title, subtitle: $0.subtitle)
+        }
+    }
+}
+
+// MARK: - Quick-send intent
+
+/// Logs a moment from a widget button.
+///
+/// No three-second window here: on the home screen that window exists so a note
+/// can be typed, and there is nowhere to type one from a widget. A tap is the whole
+/// gesture, so it commits immediately.
+struct LogMomentIntent: AppIntent {
+    static var title: LocalizedStringResource = "Log a moment"
+    static var description = IntentDescription("Logs a moment in a Pear'd connection.")
+    /// Keeps the app closed: the point is logging without a launch.
+    static var openAppWhenRun = false
+
+    @Parameter(title: "Moment")
+    var kind: String
+
+    @Parameter(title: "Connection")
+    var pairID: String?
+
+    init() {}
+
+    init(kind: EventKind, pairID: String?) {
+        self.kind = kind.rawValue
+        self.pairID = pairID
+    }
+
+    func perform() async throws -> some IntentResult {
+        let store = SharedStore.shared
+        guard
+            let token = store.widgetToken, !token.isEmpty,
+            let baseURL = store.apiBaseURL
+        else {
+            // Not signed in: nothing to do, and no way to say so from a widget
+            // button. Reloading gets the timeline back to its "pear up" state.
+            WidgetCenter.shared.reloadAllTimelines()
+            return .result()
+        }
+
+        let api = APIClient(baseURL: baseURL)
+        do {
+            try await api.logWidgetMoment(token: token, kind: EventKind(rawValue: kind), pairID: pairID)
+        } catch {
+            // A failed tap is not worth an error dialog over a home-screen button.
+            // The reload below redraws from the server, so the widget never shows a
+            // moment that did not land.
+        }
+        WidgetCenter.shared.reloadAllTimelines()
+        return .result()
+    }
+}
+
+// MARK: - Timeline
 
 struct PearEntry: TimelineEntry {
     let date: Date
@@ -23,6 +141,11 @@ struct PearEntry: TimelineEntry {
     let created: Date?
     let tallies: [WidgetFeed.Tally]
     let image: UIImage?
+    /// Which connection this entry is for, so the buttons log into the same one
+    /// the entry is showing.
+    let pairID: String?
+    /// What the buttons offer.
+    let moments: [WidgetFeed.AvailableMoment]
 
     /// Rendered when the credentials are missing or the request fails
     /// (Requirement 17.4, 17.5).
@@ -36,30 +159,31 @@ struct PearEntry: TimelineEntry {
         momentLabel: "",
         created: nil,
         tallies: [],
-        image: nil
+        image: nil,
+        pairID: nil,
+        moments: MomentCatalogue.builtin.map {
+            WidgetFeed.AvailableMoment(kind: $0.kind, emoji: $0.emoji, label: $0.label)
+        }
     )
 }
 
-struct PearTimelineProvider: TimelineProvider {
+struct PearTimelineProvider: AppIntentTimelineProvider {
     /// Fallback refresh cadence (Requirement 17.11); the app also calls
-    /// `reloadAllTimelines()` after new posts.
+    /// `reloadAllTimelines()` after new posts, and so does every widget button.
     static let refreshInterval: TimeInterval = 15 * 60
 
     func placeholder(in context: Context) -> PearEntry { .placeholder }
 
-    func getSnapshot(in context: Context, completion: @escaping (PearEntry) -> Void) {
-        Task { completion(await loadEntry()) }
+    func snapshot(for configuration: SelectConnectionIntent, in context: Context) async -> PearEntry {
+        await loadEntry(pairID: configuration.connection?.id)
     }
 
-    func getTimeline(in context: Context, completion: @escaping (Timeline<PearEntry>) -> Void) {
-        Task {
-            let entry = await loadEntry()
-            let next = Date().addingTimeInterval(Self.refreshInterval)
-            completion(Timeline(entries: [entry], policy: .after(next)))
-        }
+    func timeline(for configuration: SelectConnectionIntent, in context: Context) async -> Timeline<PearEntry> {
+        let entry = await loadEntry(pairID: configuration.connection?.id)
+        return Timeline(entries: [entry], policy: .after(Date().addingTimeInterval(Self.refreshInterval)))
     }
 
-    private func loadEntry() async -> PearEntry {
+    private func loadEntry(pairID: String?) async -> PearEntry {
         let store = SharedStore.shared
         guard
             let token = store.widgetToken, !token.isEmpty,
@@ -69,7 +193,7 @@ struct PearTimelineProvider: TimelineProvider {
         }
 
         do {
-            let feed = try await APIClient(baseURL: baseURL).widgetFeed(token: token)
+            let feed = try await APIClient(baseURL: baseURL).widgetFeed(token: token, pairID: pairID)
             return PearEntry(
                 date: Date(),
                 state: feed.state,
@@ -80,7 +204,11 @@ struct PearTimelineProvider: TimelineProvider {
                 momentLabel: feed.post?.displayLabel ?? "",
                 created: feed.post?.created ?? nil,
                 tallies: feed.displayTallies,
-                image: await image(for: feed)
+                image: await image(for: feed),
+                // The configured pair when there is one, else whichever the server
+                // chose — so a button logs into the connection on screen.
+                pairID: pairID ?? feed.connection?.id,
+                moments: feed.buttonMoments
             )
         } catch {
             return .placeholder
@@ -98,7 +226,11 @@ struct PearTimelineProvider: TimelineProvider {
     }
 }
 
+// MARK: - Views
+
 struct PearWidgetEntryView: View {
+    @Environment(\.widgetFamily) private var family
+
     let entry: PearEntry
 
     /// In a group the name matters as much as the person, so both are shown.
@@ -115,17 +247,39 @@ struct PearWidgetEntryView: View {
                     .font(.caption)
                     .multilineTextAlignment(.center)
             case .empty:
-                Text("Waiting for \(entry.partnerName)'s first pear…")
-                    .font(.caption)
-                    .multilineTextAlignment(.center)
+                emptyState
             default:
-                content
+                paired
             }
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity)
         .foregroundStyle(PearColor.textPrimary)
         .containerBackground(PearColor.background, for: .widget)
-        .widgetURL(URL(string: "peard://home"))
+    }
+
+    /// Even with nothing to show, the buttons are worth having: logging the first
+    /// moment is exactly what this state needs.
+    private var emptyState: some View {
+        VStack(spacing: 6) {
+            Text("Waiting for \(entry.partnerName)'s first pear…")
+                .font(.caption2)
+                .multilineTextAlignment(.center)
+                .lineLimit(2)
+            momentButtons
+        }
+        .padding(8)
+    }
+
+    private var paired: some View {
+        VStack(spacing: 6) {
+            // Only the moment area opens the app; the buttons must stay tappable,
+            // and a widgetURL on the whole widget would swallow them.
+            Link(destination: URL(string: "peard://home")!) {
+                content
+            }
+            momentButtons
+        }
+        .padding(8)
     }
 
     @ViewBuilder
@@ -142,17 +296,18 @@ struct PearWidgetEntryView: View {
                     Text(attribution).font(.caption).bold().lineLimit(1)
                     talliesRow
                 }
-                .padding(8)
+                .padding(6)
                 .background(.ultraThinMaterial, in: RoundedRectangle(cornerRadius: 10))
-                .padding(8)
+                .padding(6)
             }
+            .clipShape(RoundedRectangle(cornerRadius: 12))
         } else {
-            VStack(spacing: 6) {
+            VStack(spacing: 4) {
                 Text(entry.emoji)
-                    .font(.largeTitle)
+                    .font(.title)
                     .accessibilityLabel(entry.momentLabel)
                 if !entry.note.isEmpty {
-                    Text(entry.note).font(.caption).lineLimit(2)
+                    Text(entry.note).font(.caption2).lineLimit(2)
                 }
                 if entry.groupName != nil {
                     Text(attribution)
@@ -167,7 +322,7 @@ struct PearWidgetEntryView: View {
                         .foregroundStyle(PearColor.textSecondary)
                 }
             }
-            .padding(8)
+            .frame(maxWidth: .infinity)
         }
     }
 
@@ -186,17 +341,43 @@ struct PearWidgetEntryView: View {
                 )
         }
     }
+
+    /// One tap per moment, straight from the home screen.
+    ///
+    /// The small family fits three; medium fits more but is still capped, because
+    /// a row of tiny targets is worse than a short row of usable ones.
+    private var momentButtons: some View {
+        let limit = family == .systemSmall ? 3 : 5
+        return HStack(spacing: 6) {
+            ForEach(entry.moments.prefix(limit)) { moment in
+                Button(intent: LogMomentIntent(kind: moment.kind, pairID: entry.pairID)) {
+                    Text(moment.emoji)
+                        .font(.footnote)
+                        .frame(maxWidth: .infinity, minHeight: 22)
+                }
+                .buttonStyle(.plain)
+                .background(PearColor.surface, in: RoundedRectangle(cornerRadius: 8))
+                .accessibilityLabel("Log \(moment.label)")
+            }
+        }
+    }
 }
+
+// MARK: - Widget
 
 struct PearWidget: Widget {
     let kind = "PearWidget"
 
     var body: some WidgetConfiguration {
-        StaticConfiguration(kind: kind, provider: PearTimelineProvider()) { entry in
+        AppIntentConfiguration(
+            kind: kind,
+            intent: SelectConnectionIntent.self,
+            provider: PearTimelineProvider()
+        ) { entry in
             PearWidgetEntryView(entry: entry)
         }
         .configurationDisplayName("Pear'd")
-        .description("The latest moment from your people, and today's tallies.")
+        .description("The latest moment from your people, today's tallies, and one-tap moments.")
         .supportedFamilies([.systemSmall, .systemMedium])
     }
 }

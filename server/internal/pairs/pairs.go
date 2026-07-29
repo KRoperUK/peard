@@ -1,9 +1,13 @@
 // Package pairs implements Pear'd connections: invite codes, accept and leave.
 //
 // Routes (all require auth):
-//   POST /api/peard/pairs/invite  { pair? }  -> { code, deep_link, expires, pair? }
-//   POST /api/peard/pairs/accept  { code }   -> { pair }
-//   POST /api/peard/pairs/leave   { pair? }  -> { ok }
+//
+//	POST /api/peard/pairs/invite      { pair? }        -> { code, deep_link, expires, pair? }
+//	POST /api/peard/pairs/accept      { code }         -> { pair }
+//	POST /api/peard/pairs/leave       { pair? }        -> { ok }
+//	POST /api/peard/pairs/remove      { pair, user }   -> { ok }
+//	GET  /api/peard/connections                        -> { connections: [...] }
+//	POST /api/peard/connections/mute  { pair, muted }  -> { ok, muted }
 //
 // A "connection" is a `pairs` row plus its `pair_members`. Two members is the
 // 1:1 case the app started with; more than two is a group, which is why
@@ -46,10 +50,14 @@ func Register(app core.App) {
 		g.POST("/invite", inviteHandler(app)).Bind(apis.RequireAuth())
 		g.POST("/accept", acceptHandler(app)).Bind(apis.RequireAuth())
 		g.POST("/leave", leaveHandler(app)).Bind(apis.RequireAuth())
+		// Removing somebody else, which only an owner may do. Distinct from
+		// /leave so the two cannot be confused for one another.
+		g.POST("/remove", removeHandler(app)).Bind(apis.RequireAuth())
 
 		// Not under /pairs: it describes the caller's connections rather than
 		// acting on one.
 		se.Router.GET("/api/peard/connections", connectionsHandler(app)).Bind(apis.RequireAuth())
+		se.Router.POST("/api/peard/connections/mute", muteHandler(app)).Bind(apis.RequireAuth())
 		return se.Next()
 	})
 
@@ -270,6 +278,91 @@ func leaveHandler(app core.App) func(e *core.RequestEvent) error {
 	}
 }
 
+// removeHandler lets an owner remove somebody else from a connection.
+//
+// Deliberately separate from /leave. The `pair_members` DeleteRule is
+// `user = @request.auth.id`, so the collection API can only ever delete your own
+// membership; taking somebody out of a group is a different act with a different
+// authority, and it happens here where that authority can be checked.
+func removeHandler(app core.App) func(e *core.RequestEvent) error {
+	return func(e *core.RequestEvent) error {
+		var body struct {
+			Pair string `json:"pair" form:"pair"`
+			User string `json:"user" form:"user"`
+		}
+		if err := e.BindBody(&body); err != nil {
+			return e.BadRequestError("invalid request body", err)
+		}
+		pairID := strings.TrimSpace(body.Pair)
+		userID := strings.TrimSpace(body.User)
+		if pairID == "" || userID == "" {
+			return e.BadRequestError("pair and user are required", nil)
+		}
+		if userID == e.Auth.Id {
+			// Leaving is not removing: /leave also tidies up the connection when
+			// it empties, and needs no ownership.
+			return e.BadRequestError("use leave to remove yourself", nil)
+		}
+
+		caller, err := app.FindFirstRecordByFilter("pair_members",
+			"pair = {:pair} && user = {:user}",
+			dbx.Params{"pair": pairID, "user": e.Auth.Id})
+		if err != nil || caller == nil {
+			return e.NotFoundError("you are not a member of that connection", err)
+		}
+		if caller.GetString("role") != "owner" {
+			return e.ForbiddenError("only the owner can remove somebody", nil)
+		}
+
+		target, err := app.FindFirstRecordByFilter("pair_members",
+			"pair = {:pair} && user = {:user}",
+			dbx.Params{"pair": pairID, "user": userID})
+		if err != nil || target == nil {
+			return e.NotFoundError("they are not in that connection", err)
+		}
+		if err := app.Delete(target); err != nil {
+			return e.InternalServerError("failed to remove them", err)
+		}
+		// Their moments stay: the timeline is shared, and deleting half a
+		// conversation because somebody left is not what anybody asked for.
+		// authorLabel on the client names a former member "Someone".
+		return e.JSON(http.StatusOK, map[string]any{"ok": true})
+	}
+}
+
+// muteHandler silences push for one connection.
+//
+// It writes the single `muted` field on the caller's own membership. See the
+// 1785369600_peard_muting migration for why this is a route rather than a
+// collection UpdateRule.
+func muteHandler(app core.App) func(e *core.RequestEvent) error {
+	return func(e *core.RequestEvent) error {
+		var body struct {
+			Pair  string `json:"pair" form:"pair"`
+			Muted bool   `json:"muted" form:"muted"`
+		}
+		if err := e.BindBody(&body); err != nil {
+			return e.BadRequestError("invalid request body", err)
+		}
+		pairID := strings.TrimSpace(body.Pair)
+		if pairID == "" {
+			return e.BadRequestError("pair is required", nil)
+		}
+
+		mem, err := app.FindFirstRecordByFilter("pair_members",
+			"pair = {:pair} && user = {:user}",
+			dbx.Params{"pair": pairID, "user": e.Auth.Id})
+		if err != nil || mem == nil {
+			return e.NotFoundError("you are not a member of that connection", err)
+		}
+		mem.Set("muted", body.Muted)
+		if err := app.Save(mem); err != nil {
+			return e.InternalServerError("failed to save the setting", err)
+		}
+		return e.JSON(http.StatusOK, map[string]any{"ok": true, "muted": body.Muted})
+	}
+}
+
 // connectionsHandler describes every connection the caller belongs to, including
 // the other members' display names.
 //
@@ -319,6 +412,7 @@ func connectionsHandler(app core.App) func(e *core.RequestEvent) error {
 				"name":         pair.GetString("name"),
 				"created":      pair.GetString("created"),
 				"role":         membership.GetString("role"),
+				"muted":        membership.GetBool("muted"),
 				"member_count": len(members),
 				"is_group":     len(members) > 2,
 				"members":      people,

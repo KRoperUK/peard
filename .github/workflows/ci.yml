@@ -1,0 +1,135 @@
+name: CI
+
+# Everything here was already runnable locally and only ran when somebody
+# remembered. The split into three jobs is deliberate: the Go job needs no macOS
+# runner and finishes in seconds, so a server-only change gets feedback without
+# waiting on Xcode.
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+  workflow_dispatch:
+
+concurrency:
+  # A new push supersedes an in-flight run for the same ref. macOS runners are the
+  # expensive part, so not queueing three of them for one branch matters.
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  server:
+    name: Server (Go)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-go@v5
+        with:
+          go-version-file: server/go.mod
+          cache-dependency-path: server/go.sum
+
+      - name: Build
+        working-directory: server
+        run: go build ./...
+
+      - name: Vet
+        working-directory: server
+        run: go vet ./...
+
+      - name: Test
+        working-directory: server
+        run: go test ./...
+
+      - name: Check gofmt
+        working-directory: server
+        # gofmt -l prints the files it would change; anything listed is a failure.
+        run: |
+          unformatted=$(gofmt -l .)
+          if [ -n "$unformatted" ]; then
+            echo "These files are not gofmt'd:"
+            echo "$unformatted"
+            exit 1
+          fi
+
+  core:
+    name: PeardCore (swift test)
+    runs-on: macos-15
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Toolchain
+        run: swift --version && xcodebuild -version
+
+      - name: Test
+        working-directory: ios/PeardCore
+        # PeardCore builds for macOS as well as iOS precisely so this needs no
+        # simulator. The integration test skips itself without a server.
+        run: swift test
+
+  app:
+    name: App (build + tests)
+    runs-on: macos-15
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Toolchain
+        # Printed rather than pinned to a specific Xcode_NN.app path: those paths
+        # come and go with the runner image, and a hard-coded one turns an image
+        # update into a red build for a reason that has nothing to do with the code.
+        run: xcodebuild -version
+
+      - name: Install XcodeGen
+        # ios/Peard.xcodeproj is generated from ios/project.yml and is not
+        # committed, so this is a hard requirement rather than a convenience.
+        run: brew install xcodegen
+
+      - name: Generate project
+        run: make project
+
+      - name: Build (Debug)
+        run: make app
+
+      - name: Build (Release)
+        # Catches anything that only compiles with DEBUG defined, and anything the
+        # Release Info.plist or entitlements get wrong.
+        run: make app-release
+
+      - name: Pick a simulator
+        id: sim
+        # Chosen from what the image actually has rather than named outright, for
+        # the same reason as the Xcode version above.
+        run: |
+          name=$(xcrun simctl list devices available --json \
+            | python3 -c "import json,sys;
+          data=json.load(sys.stdin)['devices']
+          for runtime, devices in sorted(data.items(), reverse=True):
+              if 'iOS' not in runtime: continue
+              for device in devices:
+                  if device.get('isAvailable') and device['name'].startswith('iPhone'):
+                      print(device['name']); raise SystemExit
+          ")
+          if [ -z "$name" ]; then
+            echo "No iPhone simulator available on this runner:"
+            xcrun simctl list devices available
+            exit 1
+          fi
+          echo "Using $name"
+          echo "name=$name" >> "$GITHUB_OUTPUT"
+
+      - name: App-target tests
+        run: |
+          xcodebuild -project ios/Peard.xcodeproj -scheme Peard \
+            -configuration Debug \
+            -destination "platform=iOS Simulator,name=${{ steps.sim.outputs.name }},OS=latest" \
+            -derivedDataPath ios/build \
+            -resultBundlePath ios/build/PeardTests.xcresult \
+            test
+
+      - name: Upload test results
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: xcresult
+          path: ios/build/PeardTests.xcresult
+          retention-days: 7

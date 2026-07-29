@@ -44,10 +44,20 @@ server-side cannot break an installed app.
 | `event_kind` | string | free text, max 40; `beer`, `loo`, `coffee` are built in, anything else is a custom moment (see `moment_kinds`) |
 | `note` | string | max 280, `""` when unset |
 | `media` | string | filename, `""` when unset |
+| `client_id` | string | max 60, `""` when unset. The sender's own id for the write, carried so a retry cannot duplicate a moment — see below |
 | `created` | date | |
 | `updated` | date | |
 
 Thumbnail URL: `GET /api/files/posts/{id}/{media}?thumb=512x512`.
+
+`client_id` exists because the app queues moments on the device before sending
+them, so a moment logged with no signal is kept rather than discarded. That
+introduces a failure the previous fire-and-forget client did not have: the record
+is created but the response is lost, and the next flush would send it again. A
+partial unique index (`client_id != ''`, so the empty values on older rows do not
+collide) turns the repeat into a `400` with
+`data.client_id.code = "validation_not_unique"`, which the client treats as
+"already recorded" and drops from its queue.
 
 ### `pairs`
 
@@ -74,6 +84,14 @@ Creation is closed to clients — a `pairs` row only ever appears via
 | `pair` | string | relation → `pairs` |
 | `user` | string | relation → `users` |
 | `role` | `"owner"` \| `"member"` | open |
+| `muted` | bool | the caller has silenced this connection's pushes |
+
+`muted` is not writable through the collection API, and `pair_members` has no
+update rule at all. That is deliberate: PocketBase rules cannot restrict *which*
+fields an update touches, so any rule permissive enough to let a member set
+`muted` would also let them rewrite their own `role` or repoint `pair` at a
+connection they are not in. Muting goes through
+`POST /api/peard/connections/mute`, which writes that one field and nothing else.
 
 `expand=user` only resolves for the signed-in user: the `users` view rule is
 `id = @request.auth.id`, so other members' records are not readable by the
@@ -174,6 +192,7 @@ oldest membership first:
       "name": "Flatmates",
       "created": "2026-07-20 09:00:00.000Z",
       "role": "owner",
+      "muted": false,
       "member_count": 3,
       "is_group": true,
       "members": [
@@ -195,6 +214,71 @@ part → `"Someone"`.
 
 The client titles a connection with, in order: `name`, the other person's name
 for a 1:1, `"Grace & Alan"` for a two-other group, then `"Grace +2"`.
+
+`POST /api/peard/connections/mute` with `{ "pair": "<id>", "muted": true }` →
+`{ "ok": true, "muted": true }`. Per membership rather than per user: with 20
+connections of up to 12 people each, the useful control is "this group is too
+noisy", not "stop notifying me". A muted connection still delivers moments and
+still appears in the widget — it just stops making a sound, and its reactions go
+quiet too.
+
+## Tally routes
+
+`GET /api/peard/tallies?pair=<id>&day=<iso>&week=<iso>&month=<iso>`:
+
+```json
+{
+  "pair": "abc123def456ghi",
+  "mine":   { "day": 6, "week": 14, "month": 14, "all": 14 },
+  "others": { "day": 0, "week": 2,  "month": 2,  "all": 2 },
+  "kinds": [
+    {
+      "kind": "beer", "emoji": "🍺", "label": "Beer",
+      "mine":   { "day": 2, "week": 4, "month": 4, "all": 4 },
+      "others": { "day": 0, "week": 1, "month": 1, "all": 1 },
+      "total": 5
+    }
+  ]
+}
+```
+
+`mine` is the caller's own moments, `others` is everybody else's — the two rows
+the home screen draws. Each window is counted independently, so a week straddling
+a month boundary cannot inflate the month.
+
+This replaced counting on the device. The client used to request every `event`
+post of a connection (`perPage=500`, sorted `-created`) and count them locally on
+every tap, which silently undercounted past 500 event posts — a group of twelve
+reaches that in weeks — and moved up to 500 records to derive eight integers.
+
+The three window boundaries are **supplied by the caller** as RFC 3339 instants,
+because they are the device's: local midnight and a Monday-start week. A server
+guessing its own would make a phone in Sydney disagree with a server in London
+about what "today" means. When they are absent the server falls back to its own
+local boundaries, so a client that does not send them still gets sensible numbers.
+
+`403` when the caller is not a member of `pair`.
+
+## Profile routes
+
+`GET /api/peard/profile` and `POST /api/peard/profile` with
+`{ "display_name": "Ada" }` both answer:
+
+```json
+{ "id": "u1", "display_name": "Ada", "email": "ada@example.com" }
+```
+
+This is the only way to set the name other people see. `display_name` is what
+`GET /api/peard/connections` resolves members to, and with none set it falls back
+to the email's local part — so a group of four reads as a list of email prefixes.
+
+It is a route rather than a `PATCH` against the `users` collection for the same
+reason as muting: a rule permissive enough to admit `display_name` would also
+admit `email`, `password` and `emailVisibility`. The value is trimmed, internal
+whitespace runs are collapsed to single spaces, control characters are stripped,
+and it is truncated to 80 **runes** — a byte truncation could split a multi-byte
+character into invalid UTF-8. An empty value is a deliberate reset back to the
+email fallback, not an error.
 
 ## Pairing routes
 
@@ -232,6 +316,14 @@ to exactly one connection; with more than one the answer is `400`. Leaving
 deletes the membership, and deletes the connection itself once the last member
 goes, cascading to its posts, reactions and moment kinds.
 
+`POST /api/peard/pairs/remove` with `{ "pair": "<id>", "user": "<id>" }` →
+`{ "ok": true }`. Takes somebody *else* out of a connection, and only the owner
+may: `403` otherwise, `400` if `user` is the caller (leaving is a different act,
+with a different authority and its own tidying up). The removed member's moments
+stay in the shared timeline — deleting half a conversation because somebody left
+is not what anybody asked for — and the client attributes a post by a former
+member to `"Someone"` rather than "Partner", which would be wrong in a group.
+
 Invites expire after 7 days and are swept to `status = "expired"` by a cron job
 every 15 minutes.
 
@@ -242,7 +334,7 @@ visually ambiguous characters).
 
 `POST /api/peard/widget/token` → `{ "id": "<record id>", "token": "<hex>" }`.
 
-`GET /api/peard/widget/feed?token=<token>` (no PocketBase session):
+`GET /api/peard/widget/feed?token=<token>[&pair=<id>]` (no PocketBase session):
 
 ```json
 {
@@ -253,6 +345,11 @@ visually ambiguous characters).
   "tallies": [
     { "kind": "beer", "emoji": "🍺", "count": 2, "label": "Beer" },
     { "kind": "tea",  "emoji": "🫖", "count": 1, "label": "Tea" }
+  ],
+  "moments": [
+    { "kind": "beer",   "emoji": "🍺", "label": "Beer" },
+    { "kind": "loo",    "emoji": "💩", "label": "Loo" },
+    { "kind": "coffee", "emoji": "☕", "label": "Coffee" }
   ],
   "post": {
     "id": "...",
@@ -272,12 +369,16 @@ visually ambiguous characters).
 `unpaired`. `partner`, `connection`, `counts`, `tallies` and `post` are absent
 when `state` is `unpaired`; `post` is absent when `state` is `empty`.
 
-The widget has room for one connection, so the server picks whichever one
-somebody else posted in most recently, falling back to the newest membership when
-nobody else has posted anywhere. `connection` describes it, so a group can be
-captioned as one rather than implying a single partner. `partner.name` is
-whoever wrote `post` — the other member in a 1:1, the actual author in a group —
-and follows `display_name` → email local part → `"Partner"`.
+The widget has room for one connection. `pair` pins it to a particular one, which
+is what a configured widget sends; a `pair` the caller is not a member of is
+ignored rather than refused, so a widget left pointing at a group the user has
+left falls back rather than failing to render. Without `pair` the server picks
+whichever connection somebody else posted in most recently, falling back to the
+newest membership when nobody else has posted anywhere. `connection` describes
+whichever was chosen, so a group can be captioned as one rather than implying a
+single partner. `partner.name` is whoever wrote `post` — the other member in a
+1:1, the actual author in a group — and follows `display_name` → email local part
+→ `"Partner"`.
 
 `tallies` covers every moment kind anybody else logged in that connection today,
 most frequent first, with `emoji` and `label` resolved server-side against the
@@ -285,7 +386,53 @@ connection's `moment_kinds` so the widget needs no catalogue of its own.
 Unresolvable kinds come back as `🍐`. `counts` is the original beer/loo pair,
 kept so an installed widget build that predates `tallies` keeps rendering.
 
+`moments` is what the widget's own buttons may log: the built-ins followed by the
+connection's published kinds, with a published kind replacing a built-in of the
+same slug. It is absent on a server predating interactive buttons, and the client
+falls back to the three built-ins.
+
 "Today" is local midnight on the server, converted to UTC before comparison.
+
+`GET /api/peard/widget/connections?token=<token>`:
+
+```json
+{
+  "connections": [
+    { "id": "abc123def456ghi", "title": "Flatmates", "member_count": 3, "is_group": true }
+  ]
+}
+```
+
+Deliberately thinner than `GET /api/peard/connections`: a configurable widget's
+picker needs an id and something to call it, and no more. `title` follows the same
+precedence the client uses — the connection's name, else who else is in it.
+
+`POST /api/peard/widget/moment`:
+
+```json
+{ "token": "<token>", "pair": "abc123def456ghi", "kind": "beer", "client_id": "<uuid>" }
+```
+
+→ `{ "id": "<post id>", "pair": "<id>", "kind": "beer", "emoji": "🍺", "label": "Beer" }`
+
+Logs a moment straight from a widget button. This is what makes the widget
+interactive without sharing the Keychain with the extension — the alternative was
+a keychain access group so it could read the PocketBase session token, a far wider
+grant for a much smaller job. The widget token is already revocable and already in
+the App Group container, and this route only ever creates an `event` post.
+
+`pair` is optional and defaults to the same connection the feed would have chosen.
+`kind` must be a built-in or a kind the connection has published, else `400` —
+without that check this would be a route for writing arbitrary 40-character
+strings into `event_kind`, which every other client would then draw as a pear.
+`client_id` is honoured exactly as on a normal `posts` write, so a tap whose
+response is lost cannot double-log.
+
+## Widget authentication
+
+Every `/api/peard/widget/*` route except `token` authenticates with the widget
+token rather than a PocketBase session, because the extension cannot read the
+Keychain. A missing, unknown, revoked or expired token answers `401`.
 
 ## Errors
 

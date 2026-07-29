@@ -11,7 +11,9 @@ switch between them from the home screen's header.
 built in, and any connection can invent its own — pick from a recommended list or
 type a label and choose an emoji. Tapping a moment sends it on its own after
 **three seconds**; the window is there only so you can add a note, and typing one
-holds the send until you tap it yourself.
+holds the send until you tap it yourself. A moment logged with no signal is kept
+on the device and sent when there is one, so a pub basement is not a reason to
+lose it.
 
 ## Structure
 
@@ -19,13 +21,21 @@ holds the send until you tap it yourself.
 peard/
 ├── server/       PocketBase used as a Go framework (extended)
 ├── ios/          Native SwiftUI app + WidgetKit extension
-│   ├── Peard.xcodeproj    hand-maintained, no generator
+│   ├── project.yml        XcodeGen spec — the source of truth for the project
 │   ├── Peard/             app target
 │   ├── PearWidget/        widget extension target
+│   ├── PeardTests/        app-target XCTest bundle
 │   ├── PeardCore/         shared Swift package (models, API client, App Group)
 │   └── Shared/            colour assets used by both targets
+├── fastlane/     build, test and TestFlight lanes
 └── docs/         wire contract between app and server
 ```
+
+`ios/Peard.xcodeproj` is **generated** from `ios/project.yml` and is not
+committed. Add or rename a source file and the next `make project` picks it up;
+there is no file list to maintain and no `project.pbxproj` merge conflicts. The
+flip side is that build settings changed in Xcode's editor are thrown away on
+regenerate — they belong in `project.yml`.
 
 ## Quick start
 
@@ -36,22 +46,74 @@ make server                    # cd server && go run . serve --http=127.0.0.1:80
 ```
 
 The first run auto-applies the Go migrations (pairs, posts, reactions,
-timestamps, etc.). To apply them without starting the server: `make migrate`.
+timestamps, muting, etc.). To apply them without starting the server:
+`make migrate`.
 
 **Admin UI:** http://127.0.0.1:8090/_/ – create a superuser on first visit.
 
 ### 2. iOS app
 
 ```bash
+brew install xcodegen                                # once
 cp ios/Config.example.xcconfig ios/Config.xcconfig   # optional, for overrides
+make project                                         # generate Peard.xcodeproj
 make app                                             # build app + widget
 make run                                             # build, install, launch on a simulator
-make test                                            # PeardCore unit tests
 ```
 
-Or open `ios/Peard.xcodeproj` in Xcode and run the `Peard` scheme. Requires
-Xcode 26 or newer; the deployment target is iOS 17. There is no CocoaPods, no
-Node, and no prebuild step — the project file is committed and edited by hand.
+Or open `ios/Peard.xcodeproj` in Xcode after `make project` and run the `Peard`
+scheme. Requires Xcode 26 or newer and XcodeGen; the deployment target is
+iOS 17. There is no CocoaPods and no Node.
+
+### 3. Tests
+
+```bash
+make test          # PeardCore unit tests — fast, no simulator
+make test-app      # app-target tests (quick-send flow, routing) on a simulator
+make test-all      # both, plus go test ./...
+make lint          # go vet, and check project.yml still generates
+```
+
+`PeardCore` builds for macOS as well as iOS so its suite runs under plain
+`swift test`; nothing in it may import UIKit. The app-target bundle exists for
+what cannot follow that rule — `HomeModel`'s countdown and `AppModel`'s routing
+are `@MainActor` and import UIKit.
+
+### 4. Fastlane
+
+```bash
+bundle install
+bundle exec fastlane test            # PeardCore + server + app target
+bundle exec fastlane build           # Debug simulator build
+bundle exec fastlane release_build   # Release build
+bundle exec fastlane beta            # archive + TestFlight
+```
+
+Every lane that touches Xcode regenerates the project first. `archive` and `beta`
+need App Store Connect credentials in the environment and say exactly which ones
+if they are missing:
+
+| Variable | Purpose |
+|---|---|
+| `APP_STORE_CONNECT_API_KEY_ID` | API key id |
+| `APP_STORE_CONNECT_API_ISSUER_ID` | Issuer id |
+| `APP_STORE_CONNECT_API_KEY_CONTENT` | The `.p8` contents (or `…_KEY_PATH`) |
+| `PEARD_BUILD_NUMBER` | Optional; CI sets it so each upload is unique |
+
+### 5. Continuous integration
+
+`.github/workflows/ci.yml` runs on every push to `main` and every pull request,
+in three jobs so a server-only change is not stuck behind Xcode:
+
+- **Server** (Ubuntu) — `go build`, `go vet`, `go test`, and a `gofmt` gate.
+- **PeardCore** (macOS) — `swift test`, no simulator needed.
+- **App** (macOS) — generate the project, build Debug *and* Release, then run the
+  app-target tests. On failure the `.xcresult` bundle is uploaded as an artifact.
+
+Neither macOS job pins an `Xcode_NN.app` path or names a simulator: both come and
+go with the runner image, and hard-coding either turns an image update into a red
+build for a reason that has nothing to do with the code. The simulator is chosen
+from what `simctl` reports as available.
 
 ### Configuration
 
@@ -119,23 +181,35 @@ PocketBase's `auth-with-oauth2`. PocketBase links by verified email.
 
 ## WidgetKit
 
-The home-screen widget fetches the latest moment somebody else shared via
-`GET /api/peard/widget/feed` using a revocable widget token stored in the App
-Group container (`group.com.peard.app`). It has room for one connection, so the
-server picks whichever one somebody else posted in most recently and captions a
-group by name.
+The home-screen widget shows the latest moment somebody else shared and today's
+tallies, and has **buttons that log a moment without opening the app** (App
+Intents, iOS 17+). It is **configurable**: long-press → Edit Widget to pin it to
+one connection, or leave it on Automatic and the server picks whichever is
+liveliest.
 
-- After sign-in the app issues a token and writes it to the App Group through
-  `PeardCore`'s `SharedStore` (which replaced the `PearShared` Expo native
-  module), then calls `WidgetCenter.reloadAllTimelines()`.
-- Widget timelines refresh every ~15 min plus on every new post (best-effort,
-  subject to the system's reload budget).
+- Authentication is a revocable widget token in the App Group container
+  (`group.com.peard.app`), written after sign-in through `PeardCore`'s
+  `SharedStore` (which replaced the `PearShared` Expo native module).
+- The buttons post to `POST /api/peard/widget/moment` with that token, **not**
+  the Keychain session — the extension cannot read the Keychain, and a keychain
+  access group would be a much wider grant than "let the widget log a beer".
+- A widget button may only log a built-in moment or one the connection has
+  published, and carries a client id so a lost response cannot double-log.
+- Timelines refresh every ~15 min, on every new post, and after every button tap
+  (best-effort, subject to the system's reload budget).
 
 ## Push notifications (APNs)
 
 Set the `PEARD_APNS_*` env vars to enable:
 - A visible alert + silent background nudge on new posts.
 - A visible alert on reactions.
+
+Notifications are **grouped per connection** with a `thread-id`, so twelve people
+tapping coffee produce one expandable stack rather than twelve banners, and
+collapsed per moment kind so repeats update one notification in place while
+different moments stay separate. The badge counts what other people have posted
+across your connections in the last day. A muted connection is skipped entirely,
+reactions included.
 
 The app registers its APNs token in the `devices` collection after notification
 authorization is granted. Without APNs the app still works — it just won't
@@ -146,15 +220,28 @@ receive live pushes.
 | Method | Path | Auth | Description |
 |--------|------|------|-------------|
 | POST | `/api/peard/auth/apple` | none | Verify Apple identity token, return PB token |
-| GET  | `/api/peard/connections` | user | Your connections, with members' display names |
+| GET  | `/api/peard/connections` | user | Your connections, with members' display names and mute state |
+| POST | `/api/peard/connections/mute` | user | Silence one connection's notifications |
+| GET  | `/api/peard/tallies?pair=` | user | Per-member moment counts for day/week/month/all time |
+| GET  | `/api/peard/profile` | user | Your own record |
+| POST | `/api/peard/profile` | user | Set the name other members see |
 | POST | `/api/peard/pairs/invite` | user | Generate a 6-char invite code; optional `{"pair":"X"}` invites into an existing connection |
 | POST | `/api/peard/pairs/accept` | user | Accept an invite code (body `{"code":"X"}`) |
 | POST | `/api/peard/pairs/leave` | user | Leave a connection; optional `{"pair":"X"}`, required when you're in more than one |
-| GET  | `/api/peard/widget/feed?token=` | widget | Latest moment + today's tallies for the liveliest connection |
+| POST | `/api/peard/pairs/remove` | owner | Remove somebody else from a connection |
+| GET  | `/api/peard/widget/feed?token=` | widget | Latest moment + today's tallies; optional `&pair=` pins a connection |
+| GET  | `/api/peard/widget/connections?token=` | widget | Choices for the configurable widget's picker |
+| POST | `/api/peard/widget/moment` | widget | Log a moment from a widget button |
 | POST | `/api/peard/widget/token` | user | Issue a widget token |
 
 Custom moments are plain collection access rather than a custom route: the app
 lists and creates `moment_kinds` rows scoped to a connection.
+
+`GET /api/peard/tallies` replaced counting on the device, which fetched up to 500
+event posts per tap and silently undercounted beyond that. The window boundaries
+travel with the request because they are the device's — local midnight and a
+Monday-start week — so a phone abroad and the server cannot disagree about what
+"today" means.
 
 ## Android
 
@@ -174,8 +261,19 @@ or can be omitted.
 - [x] Members' display names, via `GET /api/peard/connections` rather than a
       `users` view-rule change (the rule stays `id = @request.auth.id`, so no
       email is ever exposed)
+- [x] Interactive widget buttons (iOS 17+ App Intents), and a configurable widget
+- [x] Per-connection notification muting, now that a user can be in 20 of them
+- [x] Server-side tallies — the device no longer fetches 500 posts to count them
+- [x] Offline send queue, so a moment logged with no signal is not lost
+- [x] The whole shared timeline, paginated, rather than the latest four moments
 - [ ] Live Activity for "instant photo drop" moments (ActivityKit push-to-update)
-- [ ] Interactive widget buttons (iOS 17+ App Intents)
 - [ ] Android widget (Jetpack Glance) — blocked on the Android client decision above
-- [ ] Per-connection notification muting, now that a user can be in 20 of them
 - [ ] Media storage (S3 compatible via PB filesystem settings)
+- [ ] Read state, so the push badge can mean "unread" exactly rather than
+      "posted in the last day"
+
+## Licence
+
+MIT — see [LICENSE](LICENSE). The repository had no licence of its own until now:
+the file that used to sit under `app/` was Expo's, from the `create-expo-app`
+template, and went with the React Native client.

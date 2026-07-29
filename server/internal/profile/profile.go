@@ -1,0 +1,114 @@
+// Package profile lets a signed-in user set the name other people see.
+//
+//	GET  /api/peard/profile                    -> { id, display_name, email }
+//	POST /api/peard/profile { display_name }   -> { id, display_name, email }
+//
+// Names matter more than they look: `GET /api/peard/connections` resolves every
+// member to a display name, and with none set it falls back to the local part of
+// their email — so a group of four reads as a list of email prefixes. Nothing in
+// the app could set one before this route existed.
+//
+// This is a route rather than a PATCH against the `users` collection because the
+// collection's UpdateRule cannot be narrowed to a single field: whatever rule
+// admitted `display_name` would also admit `email`, `password` and
+// `emailVisibility`. Here exactly one field is writable, and it is validated.
+package profile
+
+import (
+	"net/http"
+	"strings"
+
+	"github.com/pocketbase/pocketbase/apis"
+	"github.com/pocketbase/pocketbase/core"
+)
+
+// maxDisplayNameLength matches the users.display_name column (80 characters).
+const maxDisplayNameLength = 80
+
+// Register binds the profile routes.
+func Register(app core.App) {
+	app.OnServe().BindFunc(func(se *core.ServeEvent) error {
+		g := se.Router.Group("/api/peard/profile")
+		g.GET("", readHandler(app)).Bind(apis.RequireAuth())
+		g.POST("", writeHandler(app)).Bind(apis.RequireAuth())
+		return se.Next()
+	})
+}
+
+func readHandler(app core.App) func(e *core.RequestEvent) error {
+	return func(e *core.RequestEvent) error {
+		user, err := app.FindRecordById("users", e.Auth.Id)
+		if err != nil {
+			return e.NotFoundError("user not found", err)
+		}
+		return e.JSON(http.StatusOK, present(user))
+	}
+}
+
+func writeHandler(app core.App) func(e *core.RequestEvent) error {
+	return func(e *core.RequestEvent) error {
+		var body struct {
+			DisplayName string `json:"display_name" form:"display_name"`
+		}
+		if err := e.BindBody(&body); err != nil {
+			return e.BadRequestError("invalid request body", err)
+		}
+
+		// An empty name is a deliberate reset rather than an error: it puts the
+		// caller back on the email-local-part fallback.
+		name := sanitise(body.DisplayName)
+
+		user, err := app.FindRecordById("users", e.Auth.Id)
+		if err != nil {
+			return e.NotFoundError("user not found", err)
+		}
+		user.Set("display_name", name)
+		if err := app.Save(user); err != nil {
+			return e.InternalServerError("failed to save your name", err)
+		}
+		return e.JSON(http.StatusOK, present(user))
+	}
+}
+
+// sanitise trims, collapses runs of whitespace, strips control characters and
+// truncates by rune. Newlines and tabs would otherwise let a name break the
+// layout of every list it appears in, and truncating by byte could split a
+// multi-byte character into invalid UTF-8.
+func sanitise(raw string) string {
+	var builder strings.Builder
+	pendingSpace := false
+	runes := 0
+
+	for _, r := range raw {
+		if r == '\n' || r == '\r' || r == '\t' || r == ' ' {
+			pendingSpace = builder.Len() > 0
+			continue
+		}
+		// Other C0/C1 controls, including the bidi overrides' cousins.
+		if r < 0x20 || (r >= 0x7F && r <= 0x9F) {
+			continue
+		}
+		if pendingSpace {
+			if runes+1 > maxDisplayNameLength {
+				break
+			}
+			builder.WriteRune(' ')
+			runes++
+			pendingSpace = false
+		}
+		if runes+1 > maxDisplayNameLength {
+			break
+		}
+		builder.WriteRune(r)
+		runes++
+	}
+	return builder.String()
+}
+
+func present(user *core.Record) map[string]any {
+	return map[string]any{
+		"id":           user.Id,
+		"display_name": user.GetString("display_name"),
+		"email":        user.GetString("email"),
+	}
+}

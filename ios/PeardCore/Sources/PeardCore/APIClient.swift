@@ -46,6 +46,40 @@ public enum APIError: Error, LocalizedError, Hashable {
     }
 }
 
+// MARK: - Typed request fields
+
+/// A JSON value in a request body.
+///
+/// Exists because the client could originally only encode `[String: String]`, so a
+/// boolean field went out as `"muted": "true"` — a JSON *string* — and any route
+/// that binds it to a Go `bool` answered `400 Invalid request body`. The
+/// collection API is forgiving about that; the custom `/api/peard/*` routes are
+/// not, and the failure was silent from the UI's point of view.
+public enum JSONField: Hashable, Sendable, Encodable {
+    case string(String)
+    case bool(Bool)
+    case int(Int)
+    case double(Double)
+    case null
+
+    public func encode(to encoder: any Encoder) throws {
+        var container = encoder.singleValueContainer()
+        switch self {
+        case .string(let value): try container.encode(value)
+        case .bool(let value): try container.encode(value)
+        case .int(let value): try container.encode(value)
+        case .double(let value): try container.encode(value)
+        case .null: try container.encodeNil()
+        }
+    }
+}
+
+extension JSONField: ExpressibleByStringLiteral, ExpressibleByBooleanLiteral, ExpressibleByIntegerLiteral {
+    public init(stringLiteral value: String) { self = .string(value) }
+    public init(booleanLiteral value: Bool) { self = .bool(value) }
+    public init(integerLiteral value: Int) { self = .int(value) }
+}
+
 // MARK: - Token provider
 
 /// Supplies the PocketBase auth token for authenticated requests.
@@ -220,6 +254,26 @@ public final class APIClient: Sendable {
         )
     }
 
+    /// `POST` with real JSON types, for routes that bind a boolean or a number.
+    @discardableResult
+    public func post<Item: Codable & Hashable & Sendable>(
+        path: String,
+        of _: Item.Type = Item.self,
+        typedFields: [String: JSONField]
+    ) async throws -> Item {
+        try await send(method: "POST", path: path, body: .typedJSON(typedFields))
+    }
+
+    /// `POST` with real JSON types, discarding the response body.
+    public func postIgnoringResponse(path: String, typedFields: [String: JSONField]) async throws {
+        _ = try await sendReturningData(
+            method: "POST",
+            path: path,
+            query: [:],
+            body: .typedJSON(typedFields)
+        )
+    }
+
     /// Raw `GET`, used for the widget feed image and the debug health probe.
     public func data(path: String, query: [String: String] = [:]) async throws -> Data {
         try await sendReturningData(method: "GET", path: path, query: query, body: nil)
@@ -229,6 +283,8 @@ public final class APIClient: Sendable {
 
     private enum Body {
         case json([String: String])
+        /// A body with real JSON types, for routes that bind booleans or numbers.
+        case typedJSON([String: JSONField])
         case multipart(fields: [String: String], file: MultipartFile)
     }
 
@@ -275,6 +331,9 @@ public final class APIClient: Sendable {
 
         switch body {
         case .json(let fields):
+            request.setValue("application/json", forHTTPHeaderField: "Content-Type")
+            request.httpBody = try JSONEncoder().encode(fields)
+        case .typedJSON(let fields):
             request.setValue("application/json", forHTTPHeaderField: "Content-Type")
             request.httpBody = try JSONEncoder().encode(fields)
         case .multipart(let fields, let file):

@@ -1,7 +1,11 @@
 import Foundation
 
 /// Event counts for the four reporting windows (Requirement 12.8).
-public struct TallyPeriods: Hashable, Sendable {
+///
+/// `Codable` because these are exactly the four keys
+/// `GET /api/peard/tallies` returns per side, so the server's counts decode
+/// straight into the type the UI already draws.
+public struct TallyPeriods: Codable, Hashable, Sendable {
     public var day: Int
     public var week: Int
     public var month: Int
@@ -14,6 +18,16 @@ public struct TallyPeriods: Hashable, Sendable {
         self.week = week
         self.month = month
         self.all = all
+    }
+
+    /// A missing side decodes as zero rather than failing the whole response: a
+    /// connection where nobody else has logged anything has no `others` counts.
+    public init(from decoder: any Decoder) throws {
+        let container = try decoder.container(keyedBy: CodingKeys.self)
+        day = try container.decodeIfPresent(Int.self, forKey: .day) ?? 0
+        week = try container.decodeIfPresent(Int.self, forKey: .week) ?? 0
+        month = try container.decodeIfPresent(Int.self, forKey: .month) ?? 0
+        all = try container.decodeIfPresent(Int.self, forKey: .all) ?? 0
     }
 
     /// Counts `event` posts against each window independently, so a week that

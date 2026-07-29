@@ -16,8 +16,8 @@ struct HomeView: View {
     @State private var showLeaveConfirmation = false
     @State private var showMomentSheet = false
     @State private var showInviteSheet = false
-    @State private var isRenaming = false
-    @State private var renameText = ""
+    @State private var showSettings = false
+    @State private var showHistory = false
     @FocusState private var noteFocused: Bool
 
     init(model: HomeModel) {
@@ -55,16 +55,6 @@ struct HomeView: View {
         }
         .pearAnimation(value: model.toast ?? "")
         .alert(item: $model.alert)
-        .alert("Name this connection", isPresented: $isRenaming) {
-            TextField("Flatmates", text: $renameText)
-                .textInputAutocapitalization(.words)
-            Button("Save") {
-                Task { await model.rename(to: renameText) }
-            }
-            Button("Cancel", role: .cancel) {}
-        } message: {
-            Text("Everyone in the connection sees this name.")
-        }
         .confirmationDialog(
             model.isGroup ? "Leave this group?" : "Un-pear?",
             isPresented: $showLeaveConfirmation,
@@ -86,6 +76,23 @@ struct HomeView: View {
         }
         .sheet(isPresented: $showInviteSheet) {
             InviteSheet(pairID: model.pairID, connectionTitle: model.connectionTitle)
+        }
+        .sheet(isPresented: $showSettings) {
+            ConnectionSettingsView(model: model)
+                .environment(app)
+        }
+        .sheet(isPresented: $showHistory) {
+            HistoryView(
+                model: HistoryModel(
+                    api: app.api,
+                    pairID: model.pairID,
+                    signedInUserID: model.signedInUserID,
+                    customKinds: model.customKinds,
+                    connection: model.connection
+                ),
+                serverURL: model.serverURL,
+                title: model.connectionTitle
+            )
         }
         .fullScreenCover(isPresented: $showCamera) {
             CameraPicker { image in
@@ -139,10 +146,14 @@ struct HomeView: View {
 
             Section {
                 Button {
-                    renameText = model.connection?.displayName ?? ""
-                    isRenaming = true
+                    showSettings = true
                 } label: {
-                    Label("Name this connection", systemImage: "pencil")
+                    Label("Connection settings", systemImage: "gearshape")
+                }
+                Button {
+                    showHistory = true
+                } label: {
+                    Label("All moments", systemImage: "clock.arrow.circlepath")
                 }
                 Button {
                     showInviteSheet = true
@@ -168,6 +179,11 @@ struct HomeView: View {
                 Text(model.connectionTitle)
                     .font(.subheadline.bold())
                     .lineLimit(1)
+                if model.isMuted {
+                    Image(systemName: "bell.slash.fill")
+                        .font(.caption2)
+                        .accessibilityLabel("Muted")
+                }
                 Image(systemName: "chevron.down")
                     .font(.caption2.bold())
             }
@@ -192,14 +208,26 @@ struct HomeView: View {
                 heroThumbnail(for: post)
 
                 VStack(alignment: .leading, spacing: 4) {
-                    Text("\(model.authorLabel(for: post)) · \(caption(for: post))")
+                    Text("\(model.authorLabel(for: post)) · \(model.caption(for: post))")
                         .font(.subheadline.bold())
                         .foregroundStyle(PearColor.textPrimary)
                         .lineLimit(1)
 
-                    Text(ElapsedTime.label(for: post.created))
-                        .font(.caption)
-                        .foregroundStyle(PearColor.textTertiary)
+                    HStack(spacing: 6) {
+                        Text(ElapsedTime.label(for: post.created))
+                            .font(.caption)
+                            .foregroundStyle(PearColor.textTertiary)
+                        // A moment that has not reached the server says so, rather
+                        // than looking identical to one that has.
+                        if model.displayedPostIsPending {
+                            Label(
+                                model.isOffline ? "waiting" : "sending",
+                                systemImage: model.isOffline ? "wifi.slash" : "arrow.up.circle"
+                            )
+                            .font(.caption2)
+                            .foregroundStyle(PearColor.textTertiary)
+                        }
+                    }
 
                     if let note = post.displayNote {
                         Text(note)
@@ -245,17 +273,6 @@ struct HomeView: View {
                 .font(.system(size: 44))
                 .frame(width: 72, height: 72)
                 .accessibilityLabel(model.label(for: post.eventKind))
-        }
-    }
-
-    private func caption(for post: Post) -> String {
-        switch post.type {
-        case .event:
-            return model.label(for: post.eventKind)
-        case .photo:
-            return "shared a moment"
-        case .unknown(let value):
-            return value
         }
     }
 
@@ -305,10 +322,18 @@ struct HomeView: View {
                 quickSendRow.pearTransition()
             }
 
+            if let summary = model.pendingSummary {
+                pendingBanner(summary)
+            }
+
             tallyRows
 
             if !model.historyPosts.isEmpty {
                 historyList
+            }
+
+            if model.hasMoreHistory || !model.historyPosts.isEmpty {
+                allMomentsButton
             }
 
             if let toast = model.toast {
@@ -331,6 +356,58 @@ struct HomeView: View {
         }
         .padding(.horizontal, 20)
         .padding(.bottom, 20)
+    }
+
+    /// The queue's state, in one line. Nothing is shown when it is empty, so the
+    /// common case stays quiet.
+    private func pendingBanner(_ summary: String) -> some View {
+        HStack(spacing: 10) {
+            Image(systemName: model.stalledSends.isEmpty
+                ? (model.isOffline ? "wifi.slash" : "arrow.up.circle")
+                : "exclamationmark.triangle.fill")
+                .foregroundStyle(model.stalledSends.isEmpty ? PearColor.textSecondary : PearColor.error)
+
+            Text(summary)
+                .font(.footnote.bold())
+                .foregroundStyle(model.stalledSends.isEmpty ? PearColor.textSecondary : PearColor.error)
+
+            Spacer(minLength: 4)
+
+            if !model.stalledSends.isEmpty {
+                Button("Retry") {
+                    Task { await model.retryPendingSends() }
+                }
+                .font(.footnote.bold())
+                .foregroundStyle(PearColor.accent)
+                .buttonStyle(.plain)
+            }
+        }
+        .padding(12)
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .background(PearColor.surface, in: RoundedRectangle(cornerRadius: 12))
+        .accessibilityElement(children: .combine)
+        .accessibilityLabel(summary)
+    }
+
+    private var allMomentsButton: some View {
+        Button {
+            showHistory = true
+        } label: {
+            HStack {
+                Text("All moments")
+                    .font(.subheadline.bold())
+                Spacer()
+                Image(systemName: "chevron.right")
+                    .font(.caption.bold())
+            }
+            .foregroundStyle(PearColor.accent)
+            .padding(12)
+            .frame(maxWidth: .infinity)
+            .background(PearColor.surface, in: RoundedRectangle(cornerRadius: 12))
+            .contentShape(Rectangle())
+        }
+        .buttonStyle(.plain)
+        .accessibilityHint("Opens the whole shared timeline")
     }
 
     // MARK: Moments
@@ -504,6 +581,12 @@ struct HomeView: View {
                     Text(historyDetail(for: post))
                         .lineLimit(1)
                     Spacer(minLength: 4)
+                    if model.pendingSend(for: post) != nil {
+                        Image(systemName: model.isOffline ? "wifi.slash" : "arrow.up.circle")
+                            .font(.caption2)
+                            .foregroundStyle(PearColor.textTertiary)
+                            .accessibilityLabel("not sent yet")
+                    }
                     Text(ElapsedTime.label(for: post.created))
                         .font(.caption2)
                         .foregroundStyle(PearColor.textTertiary)
@@ -519,11 +602,7 @@ struct HomeView: View {
 
     private func historyDetail(for post: Post) -> String {
         if let note = post.displayNote { return note }
-        switch post.type {
-        case .photo: return "photo"
-        case .event: return model.label(for: post.eventKind)
-        case .unknown: return "shared a moment"
-        }
+        return model.caption(for: post)
     }
 
     // MARK: Actions

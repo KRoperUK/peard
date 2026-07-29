@@ -4,17 +4,19 @@
 // visible notification for reactions.
 //
 // The whole package is a no-op unless these env vars are set:
-//   PEARD_APNS_KEY_PATH   path to the .p8 APNs auth key
-//   PEARD_APNS_KEY_ID     10-char key id
-//   PEARD_APNS_TEAM_ID    Apple Developer team id
-//   PEARD_APNS_BUNDLE_ID  default "com.peard.app"
-//   PEARD_APNS_PRODUCTION "true" to use the production APNs host
+//
+//	PEARD_APNS_KEY_PATH   path to the .p8 APNs auth key
+//	PEARD_APNS_KEY_ID     10-char key id
+//	PEARD_APNS_TEAM_ID    Apple Developer team id
+//	PEARD_APNS_BUNDLE_ID  default "com.peard.app"
+//	PEARD_APNS_PRODUCTION "true" to use the production APNs host
 package push
 
 import (
 	"log"
 	"os"
 	"strings"
+	"time"
 
 	"peard/internal/moments"
 
@@ -29,6 +31,17 @@ type notifier struct {
 	client   *apns2.Client
 	bundleID string
 }
+
+// maxFanOut is how many other members one post can notify. It has to be at least
+// one less than pairs.maxMembers (12) or the last member of a full group is
+// silently skipped — the previous value of 10 did exactly that.
+const maxFanOut = 12
+
+// maxConnections mirrors pairs.maxConnections, used when counting for the badge.
+const maxConnections = 20
+
+// apnsCollapseIDMaxBytes is Apple's limit on the apns-collapse-id header.
+const apnsCollapseIDMaxBytes = 64
 
 var n *notifier
 
@@ -83,6 +96,14 @@ func newNotifier() *notifier {
 }
 
 // notifyPairMembers alerts every other member of the pair about a new post.
+//
+// Notifications are grouped by connection. `thread-id` makes iOS stack a
+// connection's alerts into one expandable group instead of twelve separate
+// banners — which is what a group of 12 tapping coffee actually produces — and
+// `apns-collapse-id` lets a newer alert replace an unread one from the same
+// connection rather than piling up. The badge carries the number of moments the
+// member has not seen, so the count means something after the banners are
+// dismissed.
 func notifyPairMembers(app core.App, post *core.Record) {
 	if n == nil {
 		return
@@ -93,18 +114,25 @@ func notifyPairMembers(app core.App, post *core.Record) {
 	name := displayName(author)
 
 	members, err := app.FindRecordsByFilter("pair_members",
-		"pair = {:pair} && user != {:author}", "", 10, 0,
+		"pair = {:pair} && user != {:author} && muted != true", "", maxFanOut, 0,
 		dbx.Params{"pair": pairID, "author": authorID})
 	if err != nil {
 		return
 	}
 	title, body := copyFor(app, name, post)
+	// One thread per connection, so a member of several groups gets one stack
+	// each rather than one undifferentiated pile.
+	threadID := "pair-" + pairID
+	collapseID := collapseIDFor(pairID, post)
+
 	for _, m := range members {
+		memberID := m.GetString("user")
 		devices, err := app.FindRecordsByFilter("devices",
-			"user = {:user}", "", 20, 0, dbx.Params{"user": m.GetString("user")})
+			"user = {:user}", "", 20, 0, dbx.Params{"user": memberID})
 		if err != nil {
 			continue
 		}
+		badge := unseenCount(app, memberID)
 		for _, d := range devices {
 			t := d.GetString("push_token")
 			if t == "" {
@@ -113,18 +141,82 @@ func notifyPairMembers(app core.App, post *core.Record) {
 			visible := payload.NewPayload().
 				AlertTitle(title).AlertBody(body).
 				Sound("default").MutableContent().
-				Custom("post_id", post.Id)
-			n.send(t, visible, apns2.PushTypeAlert, apns2.PriorityHigh)
+				ThreadID(threadID).
+				Badge(badge).
+				Custom("post_id", post.Id).
+				Custom("pair_id", pairID)
+			n.send(t, visible, apns2.PushTypeAlert, apns2.PriorityHigh, collapseID)
 
 			silent := payload.NewPayload().
 				ContentAvailable().
-				Custom("post_id", post.Id)
-			n.send(t, silent, apns2.PushTypeBackground, apns2.PriorityLow)
+				Custom("post_id", post.Id).
+				Custom("pair_id", pairID)
+			// No collapse id on the background push: collapsing would let APNs
+			// drop the nudge that tells the app to refresh.
+			n.send(t, silent, apns2.PushTypeBackground, apns2.PriorityLow, "")
 		}
 	}
 }
 
-// notifyPostAuthor tells the author their partner reacted.
+// collapseIDFor decides which alerts supersede one another.
+//
+// Grouping by thread alone still leaves twelve banners when twelve people tap
+// coffee. Collapsing by connection alone is too blunt the other way: a beer would
+// silently replace an unread loo. Keying on the connection *and* the kind gets
+// both — repeats of the same moment update one notification in place, different
+// moments stay separate — and a photo is keyed on its own id, because two photos
+// are never the same moment.
+func collapseIDFor(pairID string, post *core.Record) string {
+	if post.GetString("type") == "event" {
+		if kind := post.GetString("event_kind"); kind != "" {
+			return truncate(pairID+":"+kind, apnsCollapseIDMaxBytes)
+		}
+	}
+	return truncate(pairID+":"+post.Id, apnsCollapseIDMaxBytes)
+}
+
+// truncate keeps a header value inside its byte budget. Slugs are ASCII (see
+// MomentSlug) so a byte cut cannot split a character.
+func truncate(value string, max int) string {
+	if len(value) <= max {
+		return value
+	}
+	return value[:max]
+}
+
+// unseenCount is how many moments other people have posted, across every
+// connection the user is in, in the last day — the badge's meaning is "there is
+// this much new", not an exact unread ledger, which would need per-user read
+// state the app does not keep.
+func unseenCount(app core.App, userID string) int {
+	memberships, err := app.FindRecordsByFilter("pair_members",
+		"user = {:user} && muted != true", "", maxConnections, 0,
+		dbx.Params{"user": userID})
+	if err != nil || len(memberships) == 0 {
+		return 0
+	}
+	pairIDs := make([]any, 0, len(memberships))
+	for _, m := range memberships {
+		pairIDs = append(pairIDs, m.GetString("pair"))
+	}
+
+	var total int
+	err = app.DB().
+		Select("COUNT(*)").
+		From("posts").
+		Where(dbx.In("pair", pairIDs...)).
+		AndWhere(dbx.NewExp("author != {:user}", dbx.Params{"user": userID})).
+		AndWhere(dbx.NewExp("created >= {:since}", dbx.Params{
+			"since": time.Now().Add(-24 * time.Hour).UTC().Format("2006-01-02 15:04:05.000Z"),
+		})).
+		Row(&total)
+	if err != nil {
+		return 0
+	}
+	return total
+}
+
+// notifyPostAuthor tells the author somebody reacted to their moment.
 func notifyPostAuthor(app core.App, reaction *core.Record) {
 	if n == nil {
 		return
@@ -137,6 +229,12 @@ func notifyPostAuthor(app core.App, reaction *core.Record) {
 	if authorID == reaction.GetString("user") {
 		return
 	}
+	pairID := post.GetString("pair")
+	// The author may have muted the connection the moment belongs to, in which
+	// case reactions to it are part of what they silenced.
+	if isMuted(app, pairID, authorID) {
+		return
+	}
 	reacter, _ := app.FindRecordById("users", reaction.GetString("user"))
 	name := displayName(reacter)
 
@@ -145,26 +243,51 @@ func notifyPostAuthor(app core.App, reaction *core.Record) {
 	if err != nil {
 		return
 	}
+	// Same thread as the connection's moments, so a reaction lands next to the
+	// thing it is reacting to. Collapsed per post, so several reactions to one
+	// moment update a single notification.
+	threadID := "pair-" + pairID
+	collapseID := truncate("reaction:"+post.Id, apnsCollapseIDMaxBytes)
+	badge := unseenCount(app, authorID)
+
 	for _, d := range devices {
 		t := d.GetString("push_token")
 		if t == "" {
 			continue
 		}
 		p := payload.NewPayload().
-			AlertTitle(reactionEmoji(reaction.GetString("kind")) + " " + name + " reacted").
+			AlertTitle(reactionEmoji(reaction.GetString("kind"))+" "+name+" reacted").
 			Sound("default").
-			Custom("post_id", post.Id)
-		n.send(t, p, apns2.PushTypeAlert, apns2.PriorityHigh)
+			ThreadID(threadID).
+			Badge(badge).
+			Custom("post_id", post.Id).
+			Custom("pair_id", pairID)
+		n.send(t, p, apns2.PushTypeAlert, apns2.PriorityHigh, collapseID)
 	}
 }
 
-func (nt *notifier) send(deviceToken string, p *payload.Payload, pushType apns2.EPushType, priority int) {
+// isMuted reports whether the user has silenced a connection.
+func isMuted(app core.App, pairID, userID string) bool {
+	if pairID == "" {
+		return false
+	}
+	mem, err := app.FindFirstRecordByFilter("pair_members",
+		"pair = {:pair} && user = {:user}",
+		dbx.Params{"pair": pairID, "user": userID})
+	if err != nil || mem == nil {
+		return false
+	}
+	return mem.GetBool("muted")
+}
+
+func (nt *notifier) send(deviceToken string, p *payload.Payload, pushType apns2.EPushType, priority int, collapseID string) {
 	res, err := nt.client.Push(&apns2.Notification{
 		DeviceToken: deviceToken,
 		Topic:       nt.bundleID,
 		Payload:     p,
 		PushType:    pushType,
 		Priority:    priority,
+		CollapseID:  collapseID,
 	})
 	if err != nil {
 		log.Println("[push] send error:", err)

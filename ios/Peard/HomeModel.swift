@@ -31,8 +31,12 @@ final class HomeModel {
     private(set) var posts: [Post] = []
     private(set) var focusedPost: Post?
     private(set) var reactions: [Reaction] = []
-    private(set) var myTallies = TallyPeriods.zero
-    private(set) var partnerTallies = TallyPeriods.zero
+    /// Counts as the server reported them, before locally queued sends are added.
+    private(set) var serverTallies = ConnectionTallies.zero
+    /// False when the counts came from the on-device fallback because the server
+    /// has no tallies endpoint. Surfaced so the UI can say the numbers may be
+    /// short rather than quietly lying.
+    private(set) var talliesAreServerSide = true
     /// The connection's published custom moments.
     private(set) var customKinds: [MomentKind] = []
 
@@ -57,6 +61,11 @@ final class HomeModel {
         self.app = app
         self.api = app.api
         self.pairID = pairID
+        // Seeded with the connection id, not `.zero`, whose `pair` is empty:
+        // `adding(pending:)` matches queued sends on it, so an empty seed would
+        // silently drop every pending moment until the first successful fetch —
+        // which is precisely the offline first-launch case.
+        self.serverTallies = ConnectionTallies(pair: pairID, mine: .zero, others: .zero, kinds: [])
     }
 
     var signedInUserID: String { app.signedInUserID }
@@ -76,24 +85,81 @@ final class HomeModel {
     /// Who the second tally row belongs to. A group has no single partner.
     var othersLabel: String { isGroup ? "Others" : shortPartnerName }
 
+    // MARK: Tallies
+
+    /// Counts including anything still queued on this device.
+    private var tallies: ConnectionTallies {
+        serverTallies.adding(pending: pendingSends)
+    }
+
+    var myTallies: TallyPeriods { tallies.mine }
+    var partnerTallies: TallyPeriods { tallies.others }
+
+    /// Per-moment counts, most logged first. Empty against a server with no
+    /// tallies endpoint, which is why the UI treats it as optional detail.
+    var talliesByKind: [ConnectionTallies.Kind] { tallies.rankedKinds }
+
+    // MARK: Pending sends
+
+    /// Moments logged here that the server has not accepted yet.
+    var pendingSends: [PendingSend] { app.pendingSends(forConnection: pairID) }
+
+    /// Sends that have exhausted their retries and need the user to decide.
+    var stalledSends: [PendingSend] { pendingSends.filter(\.hasGivenUp) }
+
+    var isOffline: Bool { !app.isOnline }
+
+    /// What to say about the queue, or nothing when it is empty.
+    var pendingSummary: String? {
+        let count = pendingSends.count
+        guard count > 0 else { return nil }
+        if !stalledSends.isEmpty {
+            return stalledSends.count == 1
+                ? "1 moment couldn't be sent"
+                : "\(stalledSends.count) moments couldn't be sent"
+        }
+        let noun = count == 1 ? "moment" : "moments"
+        return isOffline ? "\(count) \(noun) waiting for signal" : "Sending \(count) \(noun)…"
+    }
+
     /// The moments offered on the home screen.
     var moments: [Moment] { MomentCatalogue.available(customKinds: customKinds) }
 
     /// The recommended moments this connection has not published yet.
     var suggestedMoments: [Moment] { MomentCatalogue.unusedPresets(customKinds: customKinds) }
 
+    /// The timeline as the user sees it: queued moments first (they are the most
+    /// recent by definition), then what the server has.
+    ///
+    /// A queued moment appears here the instant it is tapped. Without that, logging
+    /// something offline would look like it did nothing at all.
+    var timeline: [Post] {
+        pendingSends
+            .sorted { $0.queuedAt > $1.queuedAt }
+            .map(\.optimisticPost) + posts
+    }
+
     /// The post shown in the hero: the notification-focused one when there is
     /// one, otherwise the most recent (Requirement 11.2, 18.7).
     var displayedPost: Post? {
         if let focusedPost { return focusedPost }
-        return posts.first
+        return timeline.first
+    }
+
+    /// True when the hero is showing a moment that has not reached the server.
+    var displayedPostIsPending: Bool {
+        displayedPost.map { $0.id.hasPrefix("pending:") } ?? false
     }
 
     /// The three posts after the most recent one (Requirement 11.9).
     var historyPosts: [Post] {
-        guard posts.count > 1 else { return [] }
-        return Array(posts.dropFirst().prefix(3))
+        guard timeline.count > 1 else { return [] }
+        return Array(timeline.dropFirst().prefix(3))
     }
+
+    /// True when there is more timeline than the home screen shows, so the
+    /// history screen is worth offering.
+    var hasMoreHistory: Bool { timeline.count > 4 }
 
     /// Requirement 14.1 — reactions are offered on other people's posts only.
     var canReactToDisplayedPost: Bool {
@@ -119,11 +185,35 @@ final class HomeModel {
     }
 
     func emoji(for post: Post) -> String {
-        MomentCatalogue.emoji(for: post, customKinds: customKinds)
+        // A queued send carries its own emoji and label, which matters when the
+        // moment is a custom one that has not been published yet: the connection's
+        // catalogue does not know it, so the catalogue lookup would draw a pear.
+        if let pending = pendingSend(for: post) { return pending.emoji }
+        return MomentCatalogue.emoji(for: post, customKinds: customKinds)
     }
 
     func label(for kind: EventKind?) -> String {
         MomentCatalogue.label(for: kind, customKinds: customKinds)
+    }
+
+    /// The queue entry a timeline row came from, when it came from one.
+    func pendingSend(for post: Post) -> PendingSend? {
+        guard post.id.hasPrefix("pending:") else { return nil }
+        let id = String(post.id.dropFirst("pending:".count))
+        return pendingSends.first { $0.id == id }
+    }
+
+    /// Describes a moment for the timeline, preferring the queue entry's own label.
+    func caption(for post: Post) -> String {
+        if let pending = pendingSend(for: post) { return pending.label }
+        switch post.type {
+        case .event:
+            return label(for: post.eventKind)
+        case .photo:
+            return "shared a moment"
+        case .unknown(let value):
+            return value
+        }
     }
 
     // MARK: Loading
@@ -151,13 +241,41 @@ final class HomeModel {
         }
     }
 
-    /// Requirement 12.8, 12.9.
+    /// Requirement 12.8, 12.9 — counted server-side.
+    ///
+    /// One aggregate request replaces fetching up to 500 event posts and counting
+    /// them on the device. That fetch also capped out: past 500 event posts the
+    /// all-time tally silently undercounted, which a busy group reaches in weeks.
+    ///
+    /// Locally queued sends are merged in on top, so a moment logged with no signal
+    /// moves the number the moment it is tapped rather than when it is delivered.
     func refreshTallies() async {
+        do {
+            serverTallies = try await api.tallies(pairID: pairID)
+            talliesAreServerSide = true
+            banner = nil
+        } catch let error as APIError where error.status == 404 {
+            // A server that predates GET /api/peard/tallies. Fall back to counting
+            // on the device rather than showing nothing.
+            await refreshTalliesLocally()
+        } catch {
+            await report(error)
+        }
+    }
+
+    /// The pre-endpoint path, kept for older servers only. Inaccurate past 500
+    /// event posts, which is exactly why the endpoint exists.
+    private func refreshTalliesLocally() async {
         do {
             let events = try await api.eventPosts(pairID: pairID)
             let split = TallyPeriods.split(posts: events, signedInUserID: signedInUserID)
-            myTallies = split.mine
-            partnerTallies = split.partner
+            serverTallies = ConnectionTallies(
+                pair: pairID,
+                mine: split.mine,
+                others: split.partner,
+                kinds: []
+            )
+            talliesAreServerSide = false
         } catch {
             await report(error)
         }
@@ -178,6 +296,12 @@ final class HomeModel {
         // from outside this screen: somebody renames the group, a member joins,
         // another connection is added on another device.
         await app.refreshConnections()
+        // Also drain the queue. Reachability covers the network coming back and
+        // foregrounding covers everything that changed while the app was away, but
+        // neither fires when the *server* is briefly unreachable with the app open —
+        // the path is fine, so nothing changes. Without this a queued moment would
+        // sit there until the app was backgrounded and reopened.
+        await app.flushSendQueueAndWait()
         await refreshCustomKinds()
         await refresh()
         await refreshTallies()
@@ -306,6 +430,12 @@ final class HomeModel {
     }
 
     /// Requirement 12.3 – 12.5, 12.7.
+    ///
+    /// The moment goes onto the durable queue first, then the queue is flushed.
+    /// That ordering is the whole point: the previous version posted directly and
+    /// showed "Couldn't log it" on failure, throwing away a moment somebody had
+    /// deliberately logged — and the moments this app is for happen in pub
+    /// basements and on trains.
     private func commitQuickSend() async {
         guard let send = quickSend else { return }
         countdownTask?.cancel()
@@ -319,29 +449,43 @@ final class HomeModel {
 
         // A preset only exists locally until it is published, and a moment
         // nobody else can name is not worth logging, so publishing comes first.
-        if moment.needsPublishing {
+        // Publishing needs the network; when it is unavailable the moment is still
+        // queued, and the kind is published on the next successful attempt.
+        if moment.needsPublishing, !isOffline {
             guard await publish(moment: moment) else { return }
         }
 
-        do {
-            let _: Post = try await api.create("posts", fields: [
-                "pair": pairID,
-                "author": signedInUserID,
-                "type": PostType.event.rawValue,
-                "event_kind": moment.kind.rawValue,
-                "note": note,
-            ])
-        } catch {
-            if await app.handleIfUnauthorized(error) { return }
-            alert = AlertContent(title: "Couldn't log it", message: message(for: error))
-            return
-        }
+        await app.enqueue(PendingSend(
+            pairID: pairID,
+            authorID: signedInUserID,
+            kind: moment.kind,
+            emoji: moment.emoji,
+            label: moment.label,
+            note: note
+        ))
 
-        // Only on success (clarification Q3).
-        showToast("\(moment.emoji) logged!")
+        // The moment is recorded on the device now, so the confirmation is honest
+        // whether or not the request gets through.
+        showToast(isOffline ? "\(moment.emoji) saved — will send" : "\(moment.emoji) logged!")
+
+        let result = await app.flushSendQueueAndWait()
+        if result.sent > 0 {
+            await refresh()
+            await refreshTallies()
+        }
+    }
+
+    /// Retries sends that have given up, after the user asks.
+    func retryPendingSends() async {
+        await app.retryStalledSends()
         await refresh()
         await refreshTallies()
-        app.widgetSync.reloadTimelines()
+    }
+
+    /// Discards the queue after the user decides the moments are no longer worth
+    /// sending.
+    func discardPendingSends() async {
+        await app.discardPendingSends()
     }
 
     // MARK: Custom moments
@@ -449,6 +593,28 @@ final class HomeModel {
             if await app.handleIfUnauthorized(error) { return }
             banner = message(for: error)
         }
+    }
+
+    /// True when this connection's notifications are silenced.
+    var isMuted: Bool { connection?.isMuted ?? false }
+
+    /// True when the signed-in user may remove other members.
+    var canRemoveMembers: Bool { connection?.isOwnedByMe ?? false }
+
+    /// Everybody else in the connection.
+    var otherMembers: [Connection.Member] { connection?.others ?? [] }
+
+    /// Silences or unsilences this connection.
+    func setMuted(_ muted: Bool) async {
+        await app.setMuted(connectionID: pairID, muted: muted)
+    }
+
+    /// Removes somebody from this connection. Their moments stay in the shared
+    /// timeline and are attributed to "Someone" from then on.
+    func remove(member: Connection.Member) async {
+        await app.removeMember(connectionID: pairID, userID: member.user)
+        await refresh()
+        await refreshTallies()
     }
 
     /// Requirement 12.4 — 1.5 seconds, then removed.

@@ -1,10 +1,12 @@
 // Pear'd server — PocketBase used as a Go framework.
 //
 // Everything custom lives under internal/:
-//   - auth:   native Sign in with Apple (JWKS verify + email identity linking)
-//   - pairs:  invite / accept / leave pairing routes
-//   - widget: token-authenticated feed for the WidgetKit extension
-//   - push:   APNs delivery triggered by record hooks
+//   - auth:    native Sign in with Apple (JWKS verify + email identity linking)
+//   - pairs:   invite / accept / leave / remove, connection list and muting
+//   - profile: the caller's own display name
+//   - tallies: server-side moment counts for one connection
+//   - widget:  token-authenticated feed for the WidgetKit extension
+//   - push:    APNs delivery triggered by record hooks
 package main
 
 import (
@@ -18,7 +20,9 @@ import (
 
 	peardauth "peard/internal/auth"
 	"peard/internal/pairs"
+	"peard/internal/profile"
 	"peard/internal/push"
+	"peard/internal/tallies"
 	"peard/internal/widget"
 	_ "peard/migrations"
 )
@@ -42,6 +46,8 @@ func main() {
 
 	peardauth.Register(app)
 	pairs.Register(app)
+	profile.Register(app)
+	tallies.Register(app)
 	widget.Register(app)
 	push.Register(app)
 

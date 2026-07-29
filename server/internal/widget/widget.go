@@ -2,8 +2,9 @@
 // extension, plus issuing of the revocable, scope-limited widget tokens.
 //
 // Routes:
-//   GET  /api/peard/widget/feed?token=...  (widget-token auth, no PB session)
-//   POST /api/peard/widget/token           (requires PB auth; issues a token)
+//
+//	GET  /api/peard/widget/feed?token=...  (widget-token auth, no PB session)
+//	POST /api/peard/widget/token           (requires PB auth; issues a token)
 //
 // The widget token is deliberately NOT the user's PocketBase auth token:
 // it lives in the App Group container readable by the extension, and can be
@@ -32,13 +33,204 @@ import (
 	"github.com/pocketbase/pocketbase/core"
 )
 
+// Bounds mirroring internal/pairs, used when the widget routes walk a caller's
+// memberships or a connection's members without going through that package.
+const (
+	maxConnections = 20
+	maxMembers     = 12
+	// A widget has room for a handful of buttons; this only guards the query.
+	widgetMomentCatalogueLimit = 50
+)
+
 // Register binds the widget routes.
 func Register(app core.App) {
 	app.OnServe().BindFunc(func(se *core.ServeEvent) error {
 		se.Router.GET("/api/peard/widget/feed", feedHandler(app))
+		se.Router.GET("/api/peard/widget/connections", connectionsHandler(app))
+		se.Router.POST("/api/peard/widget/moment", momentHandler(app))
 		se.Router.POST("/api/peard/widget/token", issueTokenHandler(app)).Bind(apis.RequireAuth())
 		return se.Next()
 	})
+}
+
+// resolveToken authenticates a widget-token request and returns the owning user
+// id. Every widget route goes through this rather than apis.RequireAuth: the
+// extension has no PocketBase session, only the revocable token in the App Group
+// container.
+func resolveToken(app core.App, e *core.RequestEvent, token string) (string, error) {
+	if token == "" {
+		return "", e.UnauthorizedError("missing token", nil)
+	}
+	wt, err := app.FindFirstRecordByFilter("widget_tokens",
+		"token = {:token} && revoked = false", dbx.Params{"token": token})
+	if err != nil || wt == nil {
+		return "", e.UnauthorizedError("invalid token", nil)
+	}
+	if exp := wt.GetDateTime("expires"); !exp.IsZero() && exp.Time().Before(time.Now()) {
+		return "", e.UnauthorizedError("token expired", nil)
+	}
+	return wt.GetString("user"), nil
+}
+
+// connectionsHandler lists the caller's connections so a configurable widget can
+// offer a choice of which one to show.
+//
+// Deliberately thinner than /api/peard/connections: a title, whether it is a
+// group, and the id. The widget needs enough to draw a picker and nothing more,
+// and this endpoint is reachable with the widget token rather than a session.
+func connectionsHandler(app core.App) func(e *core.RequestEvent) error {
+	return func(e *core.RequestEvent) error {
+		userID, err := resolveToken(app, e, e.Request.URL.Query().Get("token"))
+		if err != nil {
+			return err
+		}
+
+		memberships, ferr := app.FindRecordsByFilter("pair_members",
+			"user = {:user}", "created", maxConnections, 0, dbx.Params{"user": userID})
+		if ferr != nil {
+			return e.InternalServerError("could not read your connections", ferr)
+		}
+
+		out := make([]map[string]any, 0, len(memberships))
+		for _, membership := range memberships {
+			pairID := membership.GetString("pair")
+			members, merr := app.FindRecordsByFilter("pair_members",
+				"pair = {:pair}", "created", maxMembers, 0, dbx.Params{"pair": pairID})
+			if merr != nil {
+				continue
+			}
+			out = append(out, map[string]any{
+				"id":           pairID,
+				"title":        connectionTitle(app, pairID, members, userID),
+				"member_count": len(members),
+				"is_group":     len(members) > 2,
+			})
+		}
+		return e.JSON(http.StatusOK, map[string]any{"connections": out})
+	}
+}
+
+// momentHandler logs a moment from the widget's own buttons.
+//
+// This is what makes the widget interactive without sharing the Keychain with the
+// extension. The alternative was a keychain access group so the widget could read
+// the PocketBase session token — a much wider grant for a much smaller job. The
+// widget token is already revocable and already in the App Group container, and
+// this route only ever creates an `event` post.
+//
+// `client_id` is honoured so a tap whose response is lost cannot double-log: the
+// partial unique index on posts rejects the repeat.
+func momentHandler(app core.App) func(e *core.RequestEvent) error {
+	return func(e *core.RequestEvent) error {
+		var body struct {
+			Token    string `json:"token" form:"token"`
+			Pair     string `json:"pair" form:"pair"`
+			Kind     string `json:"kind" form:"kind"`
+			ClientID string `json:"client_id" form:"client_id"`
+		}
+		if err := e.BindBody(&body); err != nil {
+			return e.BadRequestError("invalid request body", err)
+		}
+		userID, err := resolveToken(app, e, strings.TrimSpace(body.Token))
+		if err != nil {
+			return err
+		}
+
+		kind := strings.TrimSpace(body.Kind)
+		if kind == "" {
+			return e.BadRequestError("kind is required", nil)
+		}
+
+		pairID := strings.TrimSpace(body.Pair)
+		if pairID == "" {
+			// No connection named: use whichever the feed would have shown, so a
+			// widget with no configuration still works.
+			pairID = liveliestPair(app, userID)
+		}
+		if pairID == "" {
+			return e.NotFoundError("you are not pear'd with anyone", nil)
+		}
+		member, merr := app.FindFirstRecordByFilter("pair_members",
+			"pair = {:pair} && user = {:user}",
+			dbx.Params{"pair": pairID, "user": userID})
+		if merr != nil || member == nil {
+			return e.ForbiddenError("you are not a member of that connection", nil)
+		}
+
+		// The widget may only log a moment the connection already knows about.
+		// Without this it would be a route for writing arbitrary 40-character
+		// strings into event_kind, which every other client would then render as a
+		// pear.
+		if !isKnownKind(app, pairID, kind) {
+			return e.BadRequestError("that moment isn't available in this connection", nil)
+		}
+
+		col, cerr := app.FindCollectionByNameOrId("posts")
+		if cerr != nil {
+			return e.InternalServerError("posts collection missing", cerr)
+		}
+		post := core.NewRecord(col)
+		post.Set("pair", pairID)
+		post.Set("author", userID)
+		post.Set("type", "event")
+		post.Set("event_kind", kind)
+		if id := strings.TrimSpace(body.ClientID); id != "" {
+			post.Set("client_id", id)
+		}
+		if err := app.Save(post); err != nil {
+			return e.BadRequestError("failed to log that moment", err)
+		}
+
+		descriptor := moments.Resolve(app, pairID, kind)
+		return e.JSON(http.StatusOK, map[string]any{
+			"id":    post.Id,
+			"pair":  pairID,
+			"kind":  kind,
+			"emoji": descriptor.Emoji,
+			"label": descriptor.Label,
+		})
+	}
+}
+
+// isKnownKind reports whether a slug is a built-in moment or one this connection
+// has published.
+func isKnownKind(app core.App, pairID, slug string) bool {
+	if _, ok := moments.Builtin(slug); ok {
+		return true
+	}
+	rec, err := app.FindFirstRecordByFilter("moment_kinds",
+		"pair = {:pair} && slug = {:slug}",
+		dbx.Params{"pair": pairID, "slug": slug})
+	return err == nil && rec != nil
+}
+
+// connectionTitle mirrors the client's Connection.title(): the name somebody set,
+// else who else is in it.
+func connectionTitle(app core.App, pairID string, members []*core.Record, userID string) string {
+	if pair, err := app.FindRecordById("pairs", pairID); err == nil {
+		if name := pair.GetString("name"); name != "" {
+			return name
+		}
+	}
+	names := make([]string, 0, len(members))
+	for _, member := range members {
+		otherID := member.GetString("user")
+		if otherID == userID {
+			continue
+		}
+		user, _ := app.FindRecordById("users", otherID)
+		names = append(names, displayName(user))
+	}
+	switch len(names) {
+	case 0:
+		return "Just you"
+	case 1:
+		return names[0]
+	case 2:
+		return names[0] + " & " + names[1]
+	default:
+		return fmt.Sprintf("%s +%d", names[0], len(names)-1)
+	}
 }
 
 func issueTokenHandler(app core.App) func(e *core.RequestEvent) error {
@@ -67,54 +259,62 @@ func issueTokenHandler(app core.App) func(e *core.RequestEvent) error {
 // feedHandler returns everything the home-screen widget needs in one call: the
 // latest moment somebody else shared, who shared it, which connection it came
 // from, and today's tallies for that connection.
+//
+// `pair` pins the feed to one connection, which is what a configurable widget
+// sends. Without it the server picks the liveliest — the original behaviour, and
+// still the right default for an unconfigured widget.
 func feedHandler(app core.App) func(e *core.RequestEvent) error {
 	return func(e *core.RequestEvent) error {
-		token := e.Request.URL.Query().Get("token")
-		if token == "" {
-			return e.UnauthorizedError("missing token", nil)
+		query := e.Request.URL.Query()
+		userID, err := resolveToken(app, e, query.Get("token"))
+		if err != nil {
+			return err
 		}
-		wt, err := app.FindFirstRecordByFilter("widget_tokens",
-			"token = {:token} && revoked = false", dbx.Params{"token": token})
-		if err != nil || wt == nil {
-			return e.UnauthorizedError("invalid token", nil)
-		}
-		if exp := wt.GetDateTime("expires"); !exp.IsZero() && exp.Time().Before(time.Now()) {
-			return e.UnauthorizedError("token expired", nil)
-		}
-		userID := wt.GetString("user")
 
-		memberships, err := app.FindRecordsByFilter("pair_members",
+		memberships, ferr := app.FindRecordsByFilter("pair_members",
 			"user = {:user}", "-created", 50, 0, dbx.Params{"user": userID})
-		if err != nil || len(memberships) == 0 {
+		if ferr != nil || len(memberships) == 0 {
 			return e.JSON(http.StatusOK, map[string]any{"state": "unpaired"})
 		}
 
-		// The connection somebody else posted in most recently, falling back to
-		// the first membership when nobody else has posted anywhere yet.
+		requested := strings.TrimSpace(query.Get("pair"))
 		var chosenPair string
 		var latest *core.Record
-		for _, mem := range memberships {
-			pairID := mem.GetString("pair")
+
+		if requested != "" && isMemberOf(memberships, requested) {
+			chosenPair = requested
 			posts, _ := app.FindRecordsByFilter("posts",
-				"pair = {:pair} && author != {:user}",
-				"-created", 1, 0,
-				dbx.Params{"pair": pairID, "user": userID})
-			if len(posts) == 0 {
-				continue
-			}
-			if latest == nil || posts[0].GetDateTime("created").Time().After(latest.GetDateTime("created").Time()) {
+				"pair = {:pair} && author != {:user}", "-created", 1, 0,
+				dbx.Params{"pair": chosenPair, "user": userID})
+			if len(posts) > 0 {
 				latest = posts[0]
-				chosenPair = pairID
 			}
-		}
-		if chosenPair == "" {
-			chosenPair = memberships[0].GetString("pair")
+		} else {
+			// The connection somebody else posted in most recently, falling back to
+			// the first membership when nobody else has posted anywhere yet.
+			for _, mem := range memberships {
+				pairID := mem.GetString("pair")
+				posts, _ := app.FindRecordsByFilter("posts",
+					"pair = {:pair} && author != {:user}",
+					"-created", 1, 0,
+					dbx.Params{"pair": pairID, "user": userID})
+				if len(posts) == 0 {
+					continue
+				}
+				if latest == nil || posts[0].GetDateTime("created").Time().After(latest.GetDateTime("created").Time()) {
+					latest = posts[0]
+					chosenPair = pairID
+				}
+			}
+			if chosenPair == "" {
+				chosenPair = memberships[0].GetString("pair")
+			}
 		}
 
-		others, err := app.FindRecordsByFilter("pair_members",
+		others, oerr := app.FindRecordsByFilter("pair_members",
 			"pair = {:pair} && user != {:user}", "", 50, 0,
 			dbx.Params{"pair": chosenPair, "user": userID})
-		if err != nil || len(others) == 0 {
+		if oerr != nil || len(others) == 0 {
 			// A connection the user is alone in has nothing to show.
 			return e.JSON(http.StatusOK, map[string]any{"state": "unpaired"})
 		}
@@ -124,6 +324,9 @@ func feedHandler(app core.App) func(e *core.RequestEvent) error {
 			"connection": connectionInfo(app, chosenPair, len(others)+1),
 			"counts":     todayCounts(app, chosenPair, userID),
 			"tallies":    todayTallies(app, chosenPair, userID),
+			// What the widget's own buttons may log, resolved here so the extension
+			// does not need the connection's catalogue.
+			"moments": availableMoments(app, chosenPair),
 		}
 
 		// Who the moment is "from": in a 1:1 that is the other member, in a
@@ -163,6 +366,99 @@ func feedHandler(app core.App) func(e *core.RequestEvent) error {
 		}
 		return e.JSON(http.StatusOK, res)
 	}
+}
+
+// isMemberOf reports whether one of the caller's memberships is for this pair,
+// so a configured pair id cannot be used to read a connection the caller left.
+func isMemberOf(memberships []*core.Record, pairID string) bool {
+	for _, membership := range memberships {
+		if membership.GetString("pair") == pairID {
+			return true
+		}
+	}
+	return false
+}
+
+// liveliestPair is the connection somebody else posted in most recently, used
+// when the widget has not been configured with one.
+func liveliestPair(app core.App, userID string) string {
+	memberships, err := app.FindRecordsByFilter("pair_members",
+		"user = {:user}", "-created", maxConnections, 0, dbx.Params{"user": userID})
+	if err != nil || len(memberships) == 0 {
+		return ""
+	}
+	best := ""
+	var bestAt time.Time
+	for _, mem := range memberships {
+		pairID := mem.GetString("pair")
+		posts, _ := app.FindRecordsByFilter("posts",
+			"pair = {:pair} && author != {:user}", "-created", 1, 0,
+			dbx.Params{"pair": pairID, "user": userID})
+		if len(posts) == 0 {
+			continue
+		}
+		at := posts[0].GetDateTime("created").Time()
+		if best == "" || at.After(bestAt) {
+			best = pairID
+			bestAt = at
+		}
+	}
+	if best == "" {
+		return memberships[0].GetString("pair")
+	}
+	return best
+}
+
+// availableMoments is what the widget's buttons may log: the built-ins plus
+// whatever the connection has published, in the same precedence order the client
+// uses (a published kind replaces a built-in of the same slug).
+func availableMoments(app core.App, pairID string) []map[string]any {
+	order := []string{"beer", "loo", "coffee"}
+	byKind := map[string]moments.Descriptor{}
+	for _, slug := range order {
+		if d, ok := moments.Builtin(slug); ok {
+			byKind[slug] = d
+		}
+	}
+
+	records, err := app.FindRecordsByFilter("moment_kinds",
+		"pair = {:pair}", "created", widgetMomentCatalogueLimit, 0, dbx.Params{"pair": pairID})
+	if err == nil {
+		for _, rec := range records {
+			slug := rec.GetString("slug")
+			if slug == "" {
+				continue
+			}
+			if _, seen := byKind[slug]; !seen {
+				order = append(order, slug)
+			}
+			byKind[slug] = moments.Descriptor{
+				Slug:  slug,
+				Emoji: firstNonEmptyString(rec.GetString("emoji"), moments.FallbackEmoji),
+				Label: firstNonEmptyString(rec.GetString("label"), slug),
+			}
+		}
+	}
+
+	out := make([]map[string]any, 0, len(order))
+	for _, slug := range order {
+		d := byKind[slug]
+		out = append(out, map[string]any{
+			"kind":  slug,
+			"emoji": d.Emoji,
+			"label": d.Label,
+		})
+	}
+	return out
+}
+
+func firstNonEmptyString(values ...string) string {
+	for _, v := range values {
+		if v != "" {
+			return v
+		}
+	}
+	return ""
 }
 
 // connectionInfo describes the connection the feed is showing, so the widget can

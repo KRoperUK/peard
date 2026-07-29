@@ -1,0 +1,8 @@
+# Identifiers fastlane needs for anything that talks to Apple.
+#
+# No Apple ID is set here on purpose: distribution goes through an App Store
+# Connect API key supplied by the environment (see the `archive` lane), which
+# avoids storing anybody's account in the repository and works unattended in CI.
+
+app_identifier "com.peard.app"
+team_id "72Q6R744M4"

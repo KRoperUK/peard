@@ -37,18 +37,36 @@ build/
 *.hmap
 *.xcresult/
 
+# --- ios: generated project ---
+# ios/Peard.xcodeproj is generated from ios/project.yml by XcodeGen (make
+# project). Committing it is what produced pbxproj merge conflicts and a file
+# list to maintain by hand; project.yml is the source of truth instead.
+ios/Peard.xcodeproj/
+
 # --- ios: Xcode per-user state ---
-# Rewritten on every open/build; xcshareddata (the Peard scheme) is committed.
+# Rewritten on every open/build. Kept for any project not generated.
 xcuserdata/
 *.xcuserstate
 *.xcscmblueprint
 *.xccheckout
 *.moved-aside
-ios/Peard.xcodeproj/project.xcworkspace/
 
 # --- ios: SwiftPM ---
 .build/
 .swiftpm/
+
+# --- fastlane ---
+# Generated docs and per-run reports; the Fastfile and Appfile are committed.
+fastlane/README.md
+fastlane/report.xml
+fastlane/Preview.html
+fastlane/screenshots/
+fastlane/test_output/
+# App Store Connect API key, if one is placed here.
+fastlane/*.json
+!fastlane/Appfile
+vendor/bundle/
+.bundle/
 
 # --- profiling artefacts ---
 *.memgraph

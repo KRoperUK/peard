@@ -5,13 +5,49 @@ public extension APIClient {
     // MARK: Peard routes
 
     /// `GET /api/peard/widget/feed?token=…` — no PocketBase session required.
-    func widgetFeed(token: String) async throws -> WidgetFeed {
-        let data = try await data(path: "/api/peard/widget/feed", query: ["token": token])
+    ///
+    /// `pairID` pins the feed to one connection, which is what a configured widget
+    /// asks for. Omitting it lets the server pick the liveliest.
+    func widgetFeed(token: String, pairID: String? = nil) async throws -> WidgetFeed {
+        var query = ["token": token]
+        if let pairID, !pairID.isEmpty { query["pair"] = pairID }
+        let data = try await data(path: "/api/peard/widget/feed", query: query)
         do {
             return try JSONDecoder.peard.decode(WidgetFeed.self, from: data)
         } catch {
             throw APIError.decoding(String(describing: error))
         }
+    }
+
+    /// `GET /api/peard/widget/connections?token=…` — the choices a configurable
+    /// widget offers.
+    func widgetConnections(token: String) async throws -> [WidgetConnection] {
+        let list: WidgetConnectionList = try await get(
+            path: "/api/peard/widget/connections",
+            query: ["token": token]
+        )
+        return list.connections
+    }
+
+    /// `POST /api/peard/widget/moment` — logs a moment straight from the widget.
+    ///
+    /// Authenticated with the widget token rather than the session, because the
+    /// extension has no access to the Keychain. `clientID` makes the write
+    /// idempotent, so a tap whose response is lost cannot double-log.
+    @discardableResult
+    func logWidgetMoment(
+        token: String,
+        kind: EventKind,
+        pairID: String? = nil,
+        clientID: String = UUID().uuidString
+    ) async throws -> WidgetMomentResult {
+        var fields = [
+            "token": token,
+            "kind": kind.rawValue,
+            "client_id": clientID,
+        ]
+        if let pairID, !pairID.isEmpty { fields["pair"] = pairID }
+        return try await post(path: "/api/peard/widget/moment", fields: fields)
     }
 
     /// `POST /api/peard/widget/token` (Requirement 16.1).
@@ -38,6 +74,65 @@ public extension APIClient {
     /// be named once a user can be in several.
     func leave(pairID: String) async throws {
         try await postIgnoringResponse(path: "/api/peard/pairs/leave", fields: ["pair": pairID])
+    }
+
+    /// `POST /api/peard/pairs/remove` — takes somebody else out of a connection.
+    ///
+    /// Separate from `leave` because it needs owner authority. The `pair_members`
+    /// DeleteRule is `user = @request.auth.id`, so the collection API can only
+    /// ever delete your own membership.
+    func removeMember(pairID: String, userID: String) async throws {
+        try await postIgnoringResponse(
+            path: "/api/peard/pairs/remove",
+            fields: ["pair": pairID, "user": userID]
+        )
+    }
+
+    /// `POST /api/peard/connections/mute` — silences one connection's pushes.
+    ///
+    /// `muted` goes out as a real JSON boolean: the server binds it to a Go `bool`,
+    /// and a quoted `"true"` is rejected with `400 Invalid request body`.
+    func setMuted(pairID: String, muted: Bool) async throws {
+        try await postIgnoringResponse(
+            path: "/api/peard/connections/mute",
+            typedFields: ["pair": .string(pairID), "muted": .bool(muted)]
+        )
+    }
+
+    /// `GET /api/peard/profile` — the caller's own record.
+    func profile() async throws -> UserProfile {
+        try await get(path: "/api/peard/profile")
+    }
+
+    /// `POST /api/peard/profile` — sets the name other members see.
+    @discardableResult
+    func updateDisplayName(_ name: String) async throws -> UserProfile {
+        try await post(path: "/api/peard/profile", fields: ["display_name": name])
+    }
+
+    /// `GET /api/peard/tallies?pair=…` — the connection's counts, computed
+    /// server-side.
+    ///
+    /// The window boundaries go up with the request because they are the device's:
+    /// local midnight and a Monday-start week. Letting the server assume its own
+    /// would make a phone in Sydney disagree with a server in London about what
+    /// "today" is.
+    func tallies(
+        pairID: String,
+        now: Date = Date(),
+        calendar: Calendar = .peardTally
+    ) async throws -> ConnectionTallies {
+        let dayStart = calendar.startOfDay(for: now)
+        let weekStart = calendar.dateInterval(of: .weekOfYear, for: now)?.start ?? dayStart
+        let monthStart = calendar.date(from: calendar.dateComponents([.year, .month], from: now)) ?? dayStart
+        let formatter = ISO8601DateFormatter()
+
+        return try await get(path: "/api/peard/tallies", query: [
+            "pair": pairID,
+            "day": formatter.string(from: dayStart),
+            "week": formatter.string(from: weekStart),
+            "month": formatter.string(from: monthStart),
+        ])
     }
 
     // MARK: Collections
@@ -140,7 +235,36 @@ public extension APIClient {
         )
     }
 
-    /// Every `event` post of a pair, used for the tallies (Requirement 12.8).
+    /// One page of a connection's timeline, newest first, with the paging
+    /// metadata the history screen needs to know whether to keep going.
+    ///
+    /// The home screen deliberately shows only the latest few moments. This is
+    /// how the rest of the shared timeline — the thing the product is actually
+    /// about — becomes reachable, without ever loading it all at once.
+    func postsPage(pairID: String, page: Int, perPage: Int = 30) async throws -> PostPage {
+        let list: RecordList<Post> = try await get(
+            path: "/api/collections/posts/records",
+            query: [
+                "filter": PeardFilter.equals("pair", pairID),
+                "sort": "-created",
+                "page": String(max(1, page)),
+                "perPage": String(perPage),
+            ]
+        )
+        return PostPage(
+            posts: list.items,
+            page: list.page ?? page,
+            totalPages: list.totalPages ?? 1,
+            totalItems: list.totalItems ?? list.items.count
+        )
+    }
+
+    /// Every `event` post of a pair.
+    ///
+    /// Superseded by `tallies(pairID:)` for counting, and kept only as the
+    /// fallback for a server that predates `GET /api/peard/tallies`. It cannot be
+    /// used to count reliably: `perPage` caps at 500, so a connection past that
+    /// many event posts silently undercounts.
     func eventPosts(pairID: String) async throws -> [Post] {
         try await list(
             "posts",

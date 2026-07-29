@@ -356,12 +356,16 @@ public struct Connection: Codable, Hashable, Sendable, Identifiable {
     public let role: MemberRole
     public let memberCount: Int
     public let members: [Member]
+    /// True when the signed-in user has silenced this connection's pushes. Per
+    /// membership, not per user: silencing the noisy group leaves the 1:1 audible.
+    public let isMuted: Bool
 
     public var id: String { pair }
 
     enum CodingKeys: String, CodingKey {
         case pair, name, created, role, members
         case memberCount = "member_count"
+        case isMuted = "muted"
     }
 
     public init(
@@ -370,7 +374,8 @@ public struct Connection: Codable, Hashable, Sendable, Identifiable {
         created: Date = .distantPast,
         role: MemberRole = .member,
         memberCount: Int? = nil,
-        members: [Member] = []
+        members: [Member] = [],
+        isMuted: Bool = false
     ) {
         self.pair = pair
         self.name = name
@@ -378,6 +383,7 @@ public struct Connection: Codable, Hashable, Sendable, Identifiable {
         self.role = role
         self.members = members
         self.memberCount = memberCount ?? max(members.count, 1)
+        self.isMuted = isMuted
     }
 
     public init(from decoder: any Decoder) throws {
@@ -387,10 +393,15 @@ public struct Connection: Codable, Hashable, Sendable, Identifiable {
         created = (try? container.decode(Date.self, forKey: .created)) ?? .distantPast
         role = try container.decodeIfPresent(MemberRole.self, forKey: .role) ?? .member
         members = try container.decodeIfPresent([Member].self, forKey: .members) ?? []
+        isMuted = try container.decodeIfPresent(Bool.self, forKey: .isMuted) ?? false
         let count = try container.decodeIfPresent(Int.self, forKey: .memberCount)
         // A connection always contains at least the signed-in user.
         memberCount = max(count ?? members.count, 1)
     }
+
+    /// True when the signed-in user owns the connection, and so may remove
+    /// somebody from it.
+    public var isOwnedByMe: Bool { role == .owner }
 
     /// More than two people makes it a group.
     public var isGroup: Bool { memberCount > 2 }
@@ -712,12 +723,30 @@ public struct WidgetFeed: Codable, Hashable, Sendable {
         }
     }
 
+    /// One moment the widget's own buttons may log, resolved server-side so the
+    /// extension does not need the connection's catalogue.
+    public struct AvailableMoment: Codable, Hashable, Sendable, Identifiable {
+        public let kind: EventKind
+        public let emoji: String
+        public let label: String
+
+        public var id: String { kind.rawValue }
+
+        public init(kind: EventKind, emoji: String, label: String) {
+            self.kind = kind
+            self.emoji = emoji
+            self.label = label
+        }
+    }
+
     public let state: FeedState
     public let partner: Partner?
     public let connection: ConnectionInfo?
     public let counts: Counts?
     public let tallies: [Tally]?
     public let post: FeedPost?
+    /// Absent on a server that predates interactive widget buttons.
+    public let moments: [AvailableMoment]?
 
     public init(
         state: FeedState,
@@ -725,7 +754,8 @@ public struct WidgetFeed: Codable, Hashable, Sendable {
         connection: ConnectionInfo? = nil,
         counts: Counts? = nil,
         tallies: [Tally]? = nil,
-        post: FeedPost? = nil
+        post: FeedPost? = nil,
+        moments: [AvailableMoment]? = nil
     ) {
         self.state = state
         self.partner = partner
@@ -733,6 +763,16 @@ public struct WidgetFeed: Codable, Hashable, Sendable {
         self.counts = counts
         self.tallies = tallies
         self.post = post
+        self.moments = moments
+    }
+
+    /// The moments to offer as buttons, falling back to the built-ins so a widget
+    /// talking to an older server still has something to tap.
+    public var buttonMoments: [AvailableMoment] {
+        if let moments, !moments.isEmpty { return moments }
+        return MomentCatalogue.builtin.map {
+            AvailableMoment(kind: $0.kind, emoji: $0.emoji, label: $0.label)
+        }
     }
 
     public var partnerName: String { partner?.name ?? PartnerLabel.fallback }
@@ -763,6 +803,66 @@ public struct WidgetFeed: Codable, Hashable, Sendable {
     }
 }
 
+/// Response of `GET /api/peard/widget/connections`.
+///
+/// Thinner than `Connection` on purpose: a configurable widget's picker needs an
+/// id and something to call it, and this endpoint is reachable with the widget
+/// token rather than a PocketBase session — which the extension does not have.
+public struct WidgetConnection: Codable, Hashable, Sendable, Identifiable {
+    public let id: String
+    public let title: String
+    public let memberCount: Int
+    public let isGroup: Bool
+
+    enum CodingKeys: String, CodingKey {
+        case id, title
+        case memberCount = "member_count"
+        case isGroup = "is_group"
+    }
+
+    public init(id: String, title: String, memberCount: Int = 2, isGroup: Bool = false) {
+        self.id = id
+        self.title = title
+        self.memberCount = memberCount
+        self.isGroup = isGroup
+    }
+
+    public init(from decoder: any Decoder) throws {
+        let container = try decoder.container(keyedBy: CodingKeys.self)
+        id = try container.decode(String.self, forKey: .id)
+        title = try container.decodeIfPresent(String.self, forKey: .title) ?? PartnerLabel.fallback
+        memberCount = try container.decodeIfPresent(Int.self, forKey: .memberCount) ?? 2
+        isGroup = try container.decodeIfPresent(Bool.self, forKey: .isGroup) ?? false
+    }
+
+    public var subtitle: String {
+        isGroup ? "\(memberCount) people" : "Just the two of you"
+    }
+}
+
+/// Response of `GET /api/peard/widget/connections`.
+public struct WidgetConnectionList: Codable, Hashable, Sendable {
+    public let connections: [WidgetConnection]
+    public init(connections: [WidgetConnection]) { self.connections = connections }
+}
+
+/// Response of `POST /api/peard/widget/moment`.
+public struct WidgetMomentResult: Codable, Hashable, Sendable {
+    public let id: String
+    public let pair: String
+    public let kind: EventKind
+    public let emoji: String?
+    public let label: String?
+
+    public init(id: String, pair: String, kind: EventKind, emoji: String? = nil, label: String? = nil) {
+        self.id = id
+        self.pair = pair
+        self.kind = kind
+        self.emoji = emoji
+        self.label = label
+    }
+}
+
 /// Response of the auth endpoints (`/api/peard/auth/apple`,
 /// `/api/collections/users/auth-with-oauth2`, `auth-with-password`).
 public struct AuthResponse: Codable, Hashable, Sendable {
@@ -772,6 +872,63 @@ public struct AuthResponse: Codable, Hashable, Sendable {
         self.token = token
         self.record = record
     }
+}
+
+/// Response of `GET`/`POST /api/peard/profile`.
+///
+/// Distinct from `UserRecord`: this route is the caller reading and writing their
+/// own record, so `display_name` is always present (empty when unset) rather than
+/// optional-because-hidden-by-a-view-rule.
+public struct UserProfile: Codable, Hashable, Sendable, Identifiable {
+    public let id: String
+    public let displayName: String
+    public let email: String?
+
+    enum CodingKeys: String, CodingKey {
+        case id, email
+        case displayName = "display_name"
+    }
+
+    public init(id: String, displayName: String = "", email: String? = nil) {
+        self.id = id
+        self.displayName = displayName
+        self.email = email
+    }
+
+    public init(from decoder: any Decoder) throws {
+        let container = try decoder.container(keyedBy: CodingKeys.self)
+        id = try container.decode(String.self, forKey: .id)
+        displayName = try container.decodeIfPresent(String.self, forKey: .displayName) ?? ""
+        email = try container.decodeIfPresent(String.self, forKey: .email)
+    }
+
+    /// What other members would see today: the set name, else the email's local
+    /// part, else the neutral fallback. Mirrors the server's own resolution.
+    public var effectiveName: String {
+        PartnerLabel.resolve(displayName: displayName.isEmpty ? nil : displayName, email: email)
+    }
+}
+
+/// One page of a connection's timeline.
+public struct PostPage: Hashable, Sendable {
+    public let posts: [Post]
+    public let page: Int
+    public let totalPages: Int
+    public let totalItems: Int
+
+    public init(posts: [Post], page: Int, totalPages: Int, totalItems: Int) {
+        self.posts = posts
+        self.page = page
+        self.totalPages = totalPages
+        self.totalItems = totalItems
+    }
+
+    /// True when another page exists. Uses the page number rather than "did this
+    /// page come back full", which would ask for an empty page whenever the total
+    /// happened to be an exact multiple of the page size.
+    public var hasMore: Bool { page < totalPages }
+
+    public var nextPage: Int { page + 1 }
 }
 
 /// PocketBase paged list envelope.
