@@ -18,6 +18,7 @@ struct HomeView: View {
     @State private var showInviteSheet = false
     @State private var showSettings = false
     @State private var showHistory = false
+    @State private var showBreakdown = false
     @FocusState private var noteFocused: Bool
 
     init(model: HomeModel) {
@@ -80,6 +81,15 @@ struct HomeView: View {
         .sheet(isPresented: $showSettings) {
             ConnectionSettingsView(model: model)
                 .environment(app)
+        }
+        .sheet(isPresented: $showBreakdown) {
+            MomentBreakdownSheet(
+                tallies: model.momentTallies,
+                connectionTitle: model.connectionTitle,
+                mineLabel: "You",
+                othersLabel: model.othersLabel,
+                isServerSide: model.talliesAreServerSide
+            )
         }
         .sheet(isPresented: $showHistory) {
             HistoryView(
@@ -154,6 +164,11 @@ struct HomeView: View {
                     showHistory = true
                 } label: {
                     Label("All moments", systemImage: "clock.arrow.circlepath")
+                }
+                Button {
+                    showBreakdown = true
+                } label: {
+                    Label("Moment breakdown", systemImage: "chart.bar.xaxis")
                 }
                 Button {
                     showInviteSheet = true
@@ -544,7 +559,50 @@ struct HomeView: View {
         VStack(spacing: 6) {
             tallyRow(label: "You", tallies: model.myTallies)
             tallyRow(label: model.othersLabel, tallies: model.partnerTallies)
+            if model.hasMomentBreakdown {
+                breakdownStrip
+            }
         }
+    }
+
+    /// The tally rows say how many; this says of what. One line, because the home
+    /// screen is meant to fit without scrolling — the full breakdown is a tap away
+    /// rather than inline, since a connection with a dozen invented moments would
+    /// be a dozen rows.
+    private var breakdownStrip: some View {
+        Button {
+            showBreakdown = true
+        } label: {
+            HStack(spacing: 12) {
+                ForEach(model.topMoments) { kind in
+                    HStack(spacing: 3) {
+                        Text(kind.emoji)
+                            .font(.caption)
+                        Text("\(kind.total)")
+                            .font(.caption.weight(.semibold))
+                            .foregroundStyle(PearColor.textPrimary)
+                            .monospacedDigit()
+                    }
+                }
+                Spacer(minLength: 4)
+                Image(systemName: "chevron.right")
+                    .font(.caption2.bold())
+                    .foregroundStyle(PearColor.accent)
+            }
+            .padding(10)
+            .frame(maxWidth: .infinity, alignment: .leading)
+            .background(PearColor.surface, in: RoundedRectangle(cornerRadius: 12))
+            .contentShape(Rectangle())
+        }
+        .buttonStyle(.plain)
+        .accessibilityElement(children: .ignore)
+        .accessibilityLabel(breakdownAccessibilityLabel)
+        .accessibilityHint("Opens the breakdown by moment")
+    }
+
+    private var breakdownAccessibilityLabel: String {
+        let parts = model.topMoments.map { "\($0.label) \($0.total)" }
+        return parts.isEmpty ? "Moment breakdown" : "Most logged: " + parts.joined(separator: ", ")
     }
 
     private func tallyRow(label: String, tallies: TallyPeriods) -> some View {

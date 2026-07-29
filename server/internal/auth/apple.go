@@ -5,6 +5,11 @@
 // by verified email — email is the linking identity across providers — and
 // returns a PocketBase auth token + user record.
 //
+// POST /api/peard/auth/apple/notifications receives Apple's server-to-server
+// notifications (the endpoint configured on the App ID). Apple posts a signed
+// JWT there when a user disables mail forwarding, revokes the app's access, or
+// deletes their Apple Account. See apple_notifications.go.
+//
 // Google sign-in is handled by PocketBase's built-in OAuth2 code exchange
 // (pb.collection('users').authWithOAuth2Code), which links to the same user
 // record by verified email.
@@ -41,8 +46,19 @@ const (
 func Register(app core.App) {
 	app.OnServe().BindFunc(func(se *core.ServeEvent) error {
 		se.Router.POST("/api/peard/auth/apple", appleSignInHandler(app))
+		se.Router.POST(appleNotificationPath, appleNotificationHandler(app))
 		return se.Next()
 	})
+}
+
+// appleAudience is the `aud` both the identity token and the server-to-server
+// notification token must carry: the app's bundle id, which is Apple's
+// client_id for a native app.
+func appleAudience() string {
+	if a := os.Getenv("PEARD_APPLE_AUDIENCE"); a != "" {
+		return a
+	}
+	return "com.peard.app"
 }
 
 func appleSignInHandler(app core.App) func(e *core.RequestEvent) error {
@@ -59,12 +75,7 @@ func appleSignInHandler(app core.App) func(e *core.RequestEvent) error {
 			return e.BadRequestError("identity_token is required", nil)
 		}
 
-		audience := os.Getenv("PEARD_APPLE_AUDIENCE")
-		if audience == "" {
-			audience = "com.peard.app"
-		}
-
-		claims, err := verifyIdentityToken(body.IdentityToken, audience, body.Nonce)
+		claims, err := verifyIdentityToken(body.IdentityToken, appleAudience(), body.Nonce)
 		if err != nil {
 			return e.UnauthorizedError("invalid identity token", err)
 		}
@@ -147,7 +158,17 @@ type appleClaims struct {
 	Nonce         string `json:"nonce"`
 }
 
-func verifyIdentityToken(token, expectedAudience, rawNonce string) (*appleClaims, error) {
+// keyLookup resolves a JWT's `kid` header to the RSA public key that signed it.
+// Production passes applePublicKey; tests pass a locally generated key so the
+// whole verification path can run without reaching Apple.
+type keyLookup func(kid string) (*rsa.PublicKey, error)
+
+// verifyAppleJWT checks an Apple-issued RS256 JWT's signature and returns its
+// raw claims payload. It deliberately validates nothing about the claims
+// themselves: the identity token and the server-to-server notification token
+// share a signing key and an algorithm but not a claim set — notifications
+// carry no `exp`, so a single combined check would reject every one of them.
+func verifyAppleJWT(token string, keyFor keyLookup) ([]byte, error) {
 	parts := strings.Split(token, ".")
 	if len(parts) != 3 {
 		return nil, errors.New("malformed JWT")
@@ -168,7 +189,7 @@ func verifyIdentityToken(token, expectedAudience, rawNonce string) (*appleClaims
 		return nil, fmt.Errorf("unexpected alg %q", header.Alg)
 	}
 
-	key, err := applePublicKey(header.Kid)
+	key, err := keyFor(header.Kid)
 	if err != nil {
 		return nil, err
 	}
@@ -185,6 +206,19 @@ func verifyIdentityToken(token, expectedAudience, rawNonce string) (*appleClaims
 	claimsBytes, err := base64.RawURLEncoding.DecodeString(parts[1])
 	if err != nil {
 		return nil, fmt.Errorf("decode claims: %w", err)
+	}
+	return claimsBytes, nil
+}
+
+// appleIdentityKeyLookup resolves the signing key for identity tokens. As with
+// appleNotificationKeyLookup it is a variable only so tests can substitute a
+// locally generated key; nothing in production reassigns it.
+var appleIdentityKeyLookup keyLookup = applePublicKey
+
+func verifyIdentityToken(token, expectedAudience, rawNonce string) (*appleClaims, error) {
+	claimsBytes, err := verifyAppleJWT(token, appleIdentityKeyLookup)
+	if err != nil {
+		return nil, err
 	}
 	var claims appleClaims
 	if err := json.Unmarshal(claimsBytes, &claims); err != nil {

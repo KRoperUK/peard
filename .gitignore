@@ -24,8 +24,11 @@ server/server
 coverage.out
 
 # --- ios: local configuration ---
-# Resolved build configuration (copy of ios/Config.example.xcconfig)
+# Resolved build configuration (copy of ios/Config.example.xcconfig). Read by
+# both configurations; Release pins the production server above it.
 ios/Config.xcconfig
+# Deliberate Release-only override, e.g. pointing an archive at a staging host.
+ios/Config.release.local.xcconfig
 
 # --- ios: build output ---
 ios/build/

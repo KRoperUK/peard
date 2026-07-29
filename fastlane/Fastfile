@@ -20,6 +20,13 @@ DERIVED     = "ios/build"
 SIMULATOR   = ENV.fetch("PEARD_SIMULATOR", "iPhone 17 Pro")
 OUTPUT_DIR  = "fastlane/build"
 
+# The App Store Connect app record's numeric id (not the bundle id). Passing it
+# to upload_to_testflight skips the bundle-id lookup, which needs an API key
+# permitted to list every app on the account — narrower keys can upload to a
+# known app but cannot enumerate, and the failure reads as "app not found"
+# rather than as a permissions problem.
+APP_STORE_APP_ID = ENV.fetch("PEARD_APP_STORE_APP_ID", "6795739297")
+
 platform :ios do
   desc "Regenerate ios/Peard.xcodeproj from ios/project.yml"
   lane :generate do
@@ -124,6 +131,8 @@ platform :ios do
     archive
     upload_to_testflight(
       ipa: "#{OUTPUT_DIR}/Peard.ipa",
+      app_identifier: "com.peard.app",
+      apple_id: APP_STORE_APP_ID,
       skip_waiting_for_build_processing: true,
       # Release notes come from the changelog when there is one, rather than a
       # placeholder nobody updates.

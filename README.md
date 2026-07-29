@@ -99,6 +99,12 @@ if they are missing:
 | `APP_STORE_CONNECT_API_ISSUER_ID` | Issuer id |
 | `APP_STORE_CONNECT_API_KEY_CONTENT` | The `.p8` contents (or `…_KEY_PATH`) |
 | `PEARD_BUILD_NUMBER` | Optional; CI sets it so each upload is unique |
+| `PEARD_APP_STORE_APP_ID` | Optional; overrides the App Store Connect app id, `6795739297` |
+
+`beta` uploads against that numeric app id rather than looking the app up by
+bundle id, because the lookup needs an API key allowed to list every app on the
+account. A key scoped to one app can upload perfectly well but cannot enumerate,
+and the failure reads as "app not found" rather than as a permissions problem.
 
 ### 5. Continuous integration
 
@@ -117,22 +123,68 @@ from what `simctl` reports as available.
 
 ### Configuration
 
-`ios/Config.example.xcconfig` is the project's base configuration and holds the
-defaults. Copy it to `ios/Config.xcconfig` (git-ignored) to override them; the
-example file pulls the copy in with `#include?` when it exists.
+The server URL is baked into `Info.plist` at build time, and the two
+configurations need different ones, so each has its own xcconfig:
 
-| Setting | Default | Purpose |
+| File | Sets | Committed |
 |---|---|---|
-| `PEARD_SERVER_SCHEME` | `http` | Server scheme |
-| `PEARD_SERVER_HOST` | `127.0.0.1:8090` | Server host and port |
-| `PEARD_GOOGLE_IOS_CLIENT_ID` | *(empty)* | Google iOS OAuth client id |
-| `PEARD_DEBUG_SUPERUSER_IDENTITY` | `admin@peard.app` | Debug fake-pair shortcut only |
-| `PEARD_DEBUG_SUPERUSER_PASSWORD` | `Password123!` | Debug fake-pair shortcut only |
+| `ios/Config.debug.xcconfig` | `http://127.0.0.1:8090` | yes |
+| `ios/Config.release.xcconfig` | `https://peard.kroper.uk` | yes |
+| `ios/Config.example.xcconfig` | everything both share | yes |
+| `ios/Config.xcconfig` | your overrides | no, git-ignored |
+| `ios/Config.release.local.xcconfig` | Release-only overrides | no, git-ignored |
+
+Copy the example to `ios/Config.xcconfig` and both configurations read it — but
+where it sits in the include order differs, on purpose:
+
+- **Debug** reads it last, so a LAN address for a physical device wins outright.
+- **Release** reads it *before* pinning `peard.kroper.uk`, so settings like the
+  Google client id still apply while the server host cannot be changed by
+  accident. Your local file almost certainly says `127.0.0.1`, and shipping that
+  to TestFlight is a build nobody can sign into, with nothing on screen to say
+  why. To point an archive somewhere else deliberately — a staging host — put the
+  host in `ios/Config.release.local.xcconfig`, which is read last of all.
+
+| Setting | Debug | Release | Purpose |
+|---|---|---|---|
+| `PEARD_SERVER_SCHEME` | `http` | `https` | Server scheme |
+| `PEARD_SERVER_HOST` | `127.0.0.1:8090` | `peard.kroper.uk` | Server host and port |
+| `PEARD_GOOGLE_IOS_CLIENT_ID` | *(empty)* | *(empty)* | Google iOS OAuth client id |
+| `PEARD_DEBUG_SUPERUSER_IDENTITY` | `admin@peard.app` | — | Debug fake-pair shortcut only |
+| `PEARD_DEBUG_SUPERUSER_PASSWORD` | `Password123!` | — | Debug fake-pair shortcut only |
+
+The Release defaults are tracked rather than left to the git-ignored file
+because CI has no copy of it: an archive built on a runner would otherwise ship
+pointing at `127.0.0.1`.
 
 The URL is split into scheme and host because xcconfig treats `//` as the start
 of a comment; `Info.plist` rejoins them. Use your LAN address for a physical
 device — `127.0.0.1` only works in the simulator. Debug builds permit cleartext
-HTTP to local addresses; Release builds do not.
+HTTP to local addresses; Release builds do not, which is why the production host
+must be HTTPS.
+
+### Deployment
+
+The production server is **https://peard.kroper.uk**, which is what a Release
+build — and therefore every TestFlight build — talks to.
+
+```bash
+cd server && go build -o peard-server .
+./peard-server serve --https=0.0.0.0:443
+```
+
+`--https` makes PocketBase manage its own Let's Encrypt certificate, stored in
+`pb_data`. That needs the DNS `A`/`AAAA` record for `peard.kroper.uk` pointing at
+the host, and both **80** and **443** reachable — port 80 is where the ACME
+challenge is answered, and it redirects to HTTPS afterwards. Migrations apply on
+start, so a deploy is: build, replace the binary, restart.
+
+`server/.env.example` lists the environment variables and their production
+values. Nothing parses that file — the server reads the process environment — so
+point systemd at it with `EnvironmentFile=` or export the values however the host
+prefers. `PEARD_APNS_PRODUCTION=true` is the one that is easy to miss and silent
+when wrong: TestFlight builds carry `aps-environment=production`, so their device
+tokens only resolve on Apple's production APNs host.
 
 ### Debug shortcuts
 
@@ -167,6 +219,38 @@ PocketBase auth token.
 - Required env: `PEARD_APPLE_AUDIENCE` (default `com.peard.app` – your iOS bundle id).
 - The `_externalAuths` collection is kept in sync so PB's built-in
   OAuth2/OIDC flows recognise the link.
+
+#### Server-to-server notifications
+
+Apple posts a signed JWT to the URL set as the App ID's **Server-to-Server
+Notification Endpoint** when a user changes mail forwarding, revokes the app's
+access, or deletes their Apple Account. Put this in that field:
+
+```
+https://peard.kroper.uk/api/peard/auth/apple/notifications
+```
+
+The field takes one absolute `https` URL per app group and requires TLS 1.2+,
+which PocketBase's own Let's Encrypt certificate satisfies. It is safe to set
+before there are users; it can be changed or cleared later.
+
+What each event does is in
+[`docs/wire-contract.md`](docs/wire-contract.md#apple-server-to-server-notifications).
+The short version: mail-forwarding changes are recorded and no more, because this
+server sends no email at all; `consent-revoked` ends every session — PB auth
+tokens, widget tokens, APNs devices and the Apple link; `account-delete` does the
+same and *keeps* the account unless `PEARD_APPLE_ERASE_ON_ACCOUNT_DELETE=true`.
+
+That default is deliberate. `posts.author` is `CascadeDelete`, so deleting a user
+also erases their moments from the shared timeline of every connection they were
+in — history the other members can see and did not ask to lose. Which way that
+should go is a product decision about other people's data, so it is a switch
+rather than a webhook's choice.
+
+Verification is deliberately stricter than the identity token's in one respect:
+these notifications carry **no `exp` claim**, so a captured one would verify
+forever. Freshness is bounded by `iat` instead (24 h, with 5 min of future skew),
+which is well outside Apple's retry window but closes the replay hole.
 
 ### Sign in with Google (OAuth2 code + PKCE)
 
@@ -220,6 +304,7 @@ receive live pushes.
 | Method | Path | Auth | Description |
 |--------|------|------|-------------|
 | POST | `/api/peard/auth/apple` | none | Verify Apple identity token, return PB token |
+| POST | `/api/peard/auth/apple/notifications` | Apple JWT | Apple's server-to-server notifications (not called by the app) |
 | GET  | `/api/peard/connections` | user | Your connections, with members' display names and mute state |
 | POST | `/api/peard/connections/mute` | user | Silence one connection's notifications |
 | GET  | `/api/peard/tallies?pair=` | user | Per-member moment counts for day/week/month/all time |

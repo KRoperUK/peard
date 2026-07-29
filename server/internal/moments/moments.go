@@ -7,8 +7,9 @@
 //  2. the connection's own `moment_kinds` rows, which is where a custom moment
 //     invented on one device becomes legible to everybody else.
 //
-// Anything still unresolved falls back to the pear, so a kind written by a
-// newer client (or by hand) is never rendered blank.
+// Anything still unresolved falls back to the pear and a humanised slug, so a
+// kind written by a newer client (or one whose `moment_kinds` row has since been
+// removed) is never rendered blank or as a raw slug.
 package moments
 
 import (
@@ -60,11 +61,35 @@ func Resolve(app core.App, pairID, slug string) Descriptor {
 			return Descriptor{
 				Slug:  slug,
 				Emoji: firstNonEmpty(rec.GetString("emoji"), FallbackEmoji),
-				Label: firstNonEmpty(rec.GetString("label"), slug),
+				Label: firstNonEmpty(rec.GetString("label"), Humanise(slug)),
 			}
 		}
 	}
-	return Descriptor{Slug: slug, Emoji: FallbackEmoji, Label: slug}
+	return Descriptor{Slug: slug, Emoji: FallbackEmoji, Label: Humanise(slug)}
+}
+
+// Humanise turns a slug into something printable: `dog_walk` -> `Dog walk`.
+//
+// Mirrors PeardCore's `MomentSlug.humanised`. It matters because a slug can
+// outlive its `moment_kinds` row: removing a custom moment deliberately leaves
+// past posts with their kind, so past tallies are unaffected — and without this
+// the moment breakdown then lists `dog_walk` rather than "Dog walk".
+//
+// The client cannot patch this over: it only humanises when the label is missing
+// entirely, and the fallback here always sends one.
+func Humanise(slug string) string {
+	words := strings.Split(strings.TrimSpace(slug), "_")
+	var parts []string
+	for _, word := range words {
+		if word != "" {
+			parts = append(parts, word)
+		}
+	}
+	if len(parts) == 0 {
+		return slug
+	}
+	parts[0] = strings.ToUpper(parts[0][:1]) + parts[0][1:]
+	return strings.Join(parts, " ")
 }
 
 // ResolveAll looks up many kinds with a single query for the custom ones, so a
@@ -86,7 +111,7 @@ func ResolveAll(app core.App, pairID string, slugs []string) map[string]Descript
 		}
 		custom = append(custom, slug)
 		// Provisional, replaced below if the connection has a row for it.
-		out[slug] = Descriptor{Slug: slug, Emoji: FallbackEmoji, Label: slug}
+		out[slug] = Descriptor{Slug: slug, Emoji: FallbackEmoji, Label: Humanise(slug)}
 	}
 	if pairID == "" || len(custom) == 0 {
 		return out
@@ -105,7 +130,7 @@ func ResolveAll(app core.App, pairID string, slugs []string) map[string]Descript
 		out[slug] = Descriptor{
 			Slug:  slug,
 			Emoji: firstNonEmpty(rec.GetString("emoji"), FallbackEmoji),
-			Label: firstNonEmpty(rec.GetString("label"), slug),
+			Label: firstNonEmpty(rec.GetString("label"), Humanise(slug)),
 		}
 	}
 	return out

@@ -1,0 +1,14 @@
+// Debug configuration: a Pear'd server on this machine.
+//
+// Use your LAN address for a physical device; 127.0.0.1 only reaches the server
+// from the simulator. Debug builds permit cleartext HTTP to local addresses
+// (NSAllowsLocalNetworking in Info-Debug.plist); Release builds do not.
+
+#include "Config.example.xcconfig"
+
+PEARD_SERVER_SCHEME = http
+PEARD_SERVER_HOST = 127.0.0.1:8090
+
+// Last, so a developer's git-ignored overrides win over the defaults above.
+// Release does the opposite for the server host — see Config.release.xcconfig.
+#include? "Config.xcconfig"

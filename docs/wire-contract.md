@@ -179,6 +179,48 @@ SHA-256. Google code exchange body:
 { "provider": "google", "code": "...", "codeVerifier": "...", "redirectURL": "peard://auth/google" }
 ```
 
+### Apple server-to-server notifications
+
+`POST /api/peard/auth/apple/notifications` is **not called by the client**. It is
+the URL configured as the App ID's *Server-to-Server Notification Endpoint*, and
+Apple is the only caller:
+
+```json
+{ "payload": "<signed JWT>" }
+```
+
+The JWT is RS256, signed with the same keys as the identity token, and carries
+`iss`, `aud` (the bundle id), `iat`, `jti` and `events`. Two differences from an
+identity token drive the implementation:
+
+- there is **no `exp`**, so freshness is bounded by `iat` — 24 h maximum age,
+  5 min future skew — otherwise a captured notification would verify forever and
+  could be replayed to sign somebody out at will;
+- `events` is a **string containing JSON**, not a nested object, so the payload
+  is doubly encoded. The server accepts an object too.
+
+The decoded event is `{ "type", "sub", "email", "is_private_email", "event_time" }`,
+where `is_private_email` may be a bool or the string `"true"`.
+
+| Response | When |
+|---|---|
+| `200 {"status":"applied"}` | Verified, matched a user, action performed |
+| `200 {"status":"acknowledged"}` | Verified; no action (unknown user, or a record-only event) |
+| `200 {"status":"unparsable"}` | Verified as Apple's, but the `events` claim did not parse |
+| `400` | No `payload` field |
+| `401` | Signature, issuer, audience or freshness check failed |
+| `500` | The action failed; Apple should retry |
+
+Apple retries on any non-2xx, so a verified notification the server chooses not
+to act on still answers 200 — only an unverifiable one is rejected. Actions are
+idempotent, because a retry arrives as the same event.
+
+| Event `type` | Effect |
+|---|---|
+| `email-disabled` / `email-enabled` | Recorded only. Pear'd sends no email — auth is OAuth-only and notifications go over APNs — and the relay address stays valid as the linking identity even when it no longer forwards. |
+| `consent-revoked` | Auth tokens invalidated, widget tokens revoked, APNs devices deleted, `_externalAuths` Apple link removed. Account and moments kept. |
+| `account-delete` | As `consent-revoked`. Also deletes the user record when `PEARD_APPLE_ERASE_ON_ACCOUNT_DELETE=true`, which cascades their posts out of every shared timeline — off by default for that reason. |
+
 ## Connection routes
 
 `GET /api/peard/connections` lists every connection the caller belongs to,
@@ -256,6 +298,24 @@ because they are the device's: local midnight and a Monday-start week. A server
 guessing its own would make a phone in Sydney disagree with a server in London
 about what "today" means. When they are absent the server falls back to its own
 local boundaries, so a client that does not send them still gets sensible numbers.
+
+`kinds` is what the app's moment breakdown draws. Two things about it matter to a
+renderer:
+
+- **The per-kind rows can sum to less than `mine` + `others`.** A post saved with
+  no `event_kind` counts towards its author's side totals but belongs to no kind.
+  A share-of-total bar must therefore be drawn against the sum of the rows, not
+  against the side totals, or the parts would never reach the whole.
+- **`emoji` and `label` are always populated.** A kind with no `moment_kinds` row
+  falls back to 🍐 and a humanised slug (`dog_walk` → `Dog walk`). That is a real
+  case rather than a defensive one: removing a custom moment deliberately leaves
+  past posts with their kind so past tallies are unaffected, so a slug outlives its
+  row. Because the server always sends a label, a client must not expect to do the
+  humanising itself.
+
+`kinds` is omitted entirely by servers predating this route's per-kind support, so
+a client should treat an empty list as "no breakdown available" rather than "no
+moments".
 
 `403` when the caller is not a member of `pair`.
 

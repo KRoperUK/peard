@@ -22,11 +22,15 @@ struct ConnectionSettingsView: View {
     @State private var memberPendingRemoval: Connection.Member?
     @State private var showLeaveConfirmation = false
     @State private var showInviteSheet = false
+    /// All time by default: it is the only window guaranteed to have something in
+    /// it, so the section does not open on "nothing logged today yet".
+    @State private var breakdownWindow: TallyWindow = .all
 
     var body: some View {
         NavigationStack {
             Form {
                 nameSection
+                momentsSection
                 membersSection
                 notificationsSection
                 pendingSection
@@ -121,6 +125,20 @@ struct ConnectionSettingsView: View {
         } footer: {
             Text("Everyone in the connection sees this. Leave it empty to go by who's in it.")
         }
+    }
+
+    // MARK: Moments
+
+    /// Which moments this connection actually logs. The tally rows on the home
+    /// screen only ever said how many there were in total.
+    private var momentsSection: some View {
+        MomentBreakdownSection(
+            tallies: model.momentTallies,
+            mineLabel: "You",
+            othersLabel: model.othersLabel,
+            isServerSide: model.talliesAreServerSide,
+            window: $breakdownWindow
+        )
     }
 
     // MARK: Members

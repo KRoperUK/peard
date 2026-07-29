@@ -27,12 +27,15 @@ configs:
   Debug: debug
   Release: release
 
-# Base configuration for both configs. Config.example.xcconfig holds the
-# defaults and ends with `#include? "Config.xcconfig"`, so a developer's
-# git-ignored copy overrides them without editing anything tracked.
+# One configuration file per build configuration, because the server URL is
+# baked into Info.plist at build time and the two differ: Debug talks to a local
+# server over HTTP, Release to https://peard.kroper.uk. Both include
+# Config.example.xcconfig, which holds the shared settings and ends with
+# `#include? "Config.xcconfig"` so a developer's git-ignored copy overrides them
+# without editing anything tracked.
 configFiles:
-  Debug: Config.example.xcconfig
-  Release: Config.example.xcconfig
+  Debug: Config.debug.xcconfig
+  Release: Config.release.xcconfig
 
 packages:
   PeardCore:
@@ -98,7 +101,11 @@ targets:
         DEVELOPMENT_TEAM: 72Q6R744M4
         ENABLE_PREVIEWS: YES
         GENERATE_INFOPLIST_FILE: NO
-        MARKETING_VERSION: 0.1.0
+        # Matches the 1.0 version record in App Store Connect. TestFlight groups
+        # builds by this string, so a mismatch produces a train that the 1.0
+        # submission cannot select a build from. Bump the build number, not this,
+        # between uploads of the same version — see PEARD_BUILD_NUMBER.
+        MARKETING_VERSION: "1.0"
         PRODUCT_BUNDLE_IDENTIFIER: com.peard.app
         PRODUCT_NAME: $(TARGET_NAME)
         SWIFT_EMIT_LOC_STRINGS: YES
@@ -146,7 +153,9 @@ targets:
         DEVELOPMENT_TEAM: 72Q6R744M4
         GENERATE_INFOPLIST_FILE: NO
         INFOPLIST_FILE: PearWidget/Info.plist
-        MARKETING_VERSION: 0.1.0
+        # Must equal the app's MARKETING_VERSION: App Store validation rejects an
+        # appex whose short version differs from its host.
+        MARKETING_VERSION: "1.0"
         PRODUCT_BUNDLE_IDENTIFIER: com.peard.app.PearWidget
         PRODUCT_NAME: $(TARGET_NAME)
         SKIP_INSTALL: YES

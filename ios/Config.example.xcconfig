@@ -1,23 +1,23 @@
-// Pear'd build configuration (committed).
+// Pear'd build configuration shared by both configurations (committed).
 //
-// This file is the project's base configuration and holds the defaults. To
-// point a build at a different server or supply a Google client id, copy it
-// and edit the copy — the last line pulls the copy in when it exists:
+// The server URL is NOT here: it differs per configuration and lives in
+// Config.debug.xcconfig (a local server) and Config.release.xcconfig (the
+// production host, https://peard.kroper.uk). project.yml points each
+// configuration at its own file, and both include this one.
+//
+// To change anything for your own machine, copy this file and edit the copy:
 //
 //     cp ios/Config.example.xcconfig ios/Config.xcconfig
 //
-// Config.xcconfig is git-ignored (Requirement 3.5), so resolved values never
-// reach source control, and a fresh clone still builds with these defaults.
+// Config.xcconfig is git-ignored, so resolved values never reach source
+// control, and a fresh clone still builds with the defaults below. Each
+// configuration decides where that copy sits in its include order: Debug reads
+// it last so it wins outright, while Release pins the production server above
+// it and takes Release-only overrides from Config.release.local.xcconfig.
 //
-// The server URL is split into scheme and host because xcconfig treats "//"
-// as the start of a comment, which would truncate a full URL. Info.plist
-// rejoins them as $(PEARD_SERVER_SCHEME)://$(PEARD_SERVER_HOST).
-//
-// Use your LAN address for a physical device; 127.0.0.1 only works in the
-// simulator.
-
-PEARD_SERVER_SCHEME = http
-PEARD_SERVER_HOST = 127.0.0.1:8090
+// The server URL is split into scheme and host because xcconfig treats "//" as
+// the start of a comment, which would truncate a full URL. Info.plist rejoins
+// them as $(PEARD_SERVER_SCHEME)://$(PEARD_SERVER_HOST).
 
 // Google iOS OAuth client id (https://console.cloud.google.com/apis/credentials).
 // The PocketBase users collection's Google provider must use the same client id.
@@ -29,5 +29,8 @@ PEARD_GOOGLE_IOS_CLIENT_ID =
 PEARD_DEBUG_SUPERUSER_IDENTITY = admin@peard.app
 PEARD_DEBUG_SUPERUSER_PASSWORD = Password123!
 
-// Local, git-ignored overrides. Optional include: missing file is not an error.
-#include? "Config.xcconfig"
+// Uncomment in your own Config.xcconfig to point a Debug build at another
+// server — your LAN address for a physical device, for instance.
+//
+// PEARD_SERVER_SCHEME = http
+// PEARD_SERVER_HOST = 192.168.1.42:8090

@@ -1,7 +1,7 @@
 // Pear'd server — PocketBase used as a Go framework.
 //
 // Everything custom lives under internal/:
-//   - auth:    native Sign in with Apple (JWKS verify + email identity linking)
+//   - auth:    native Sign in with Apple + Apple's server-to-server notifications
 //   - pairs:   invite / accept / leave / remove, connection list and muting
 //   - profile: the caller's own display name
 //   - tallies: server-side moment counts for one connection

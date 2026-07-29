@@ -95,9 +95,25 @@ final class HomeModel {
     var myTallies: TallyPeriods { tallies.mine }
     var partnerTallies: TallyPeriods { tallies.others }
 
-    /// Per-moment counts, most logged first. Empty against a server with no
-    /// tallies endpoint, which is why the UI treats it as optional detail.
-    var talliesByKind: [ConnectionTallies.Kind] { tallies.rankedKinds }
+    /// The connection's counts broken down by moment, including anything still
+    /// queued on this device. What the moment breakdown draws.
+    ///
+    /// Handed over whole rather than pre-ranked: the breakdown re-ranks as the
+    /// window changes, and a moment's position in "Today" has nothing to do with
+    /// its position in "All".
+    var momentTallies: ConnectionTallies { tallies }
+
+    /// True when there is a per-moment breakdown to show. False against a server
+    /// predating `GET /api/peard/tallies`, whose fallback can only produce the
+    /// two side totals.
+    var hasMomentBreakdown: Bool { tallies.hasKindBreakdown }
+
+    /// The connection's most-logged moments, for the home screen's one-line
+    /// summary. Capped because that line has to stay one line — the full list
+    /// lives behind it, where it can be as long as the connection is inventive.
+    var topMoments: [ConnectionTallies.Kind] {
+        Array(tallies.rankedKinds(in: .all).prefix(4))
+    }
 
     // MARK: Pending sends
 

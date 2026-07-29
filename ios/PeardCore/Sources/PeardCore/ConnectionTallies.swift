@@ -24,6 +24,16 @@ public struct ConnectionTallies: Codable, Hashable, Sendable {
         /// Everybody's count, all time.
         public var total: Int { mine.all + others.all }
 
+        /// Everybody's count in one window.
+        public func total(in window: TallyWindow) -> Int {
+            mine.count(in: window) + others.count(in: window)
+        }
+
+        /// This side's count in one window, picked by authorship.
+        public func count(in window: TallyWindow, mine isMine: Bool) -> Int {
+            (isMine ? mine : others).count(in: window)
+        }
+
         enum CodingKeys: String, CodingKey {
             case kind, emoji, label, mine, others
         }
@@ -81,6 +91,37 @@ public struct ConnectionTallies: Codable, Hashable, Sendable {
             $0.total == $1.total ? $0.kind.rawValue < $1.kind.rawValue : $0.total > $1.total
         }
     }
+
+    /// The kinds anybody logged inside one window, most logged first.
+    ///
+    /// Kinds with nothing in the window are dropped rather than shown as zero:
+    /// "Today" listing a connection's entire twelve-moment catalogue at zero is
+    /// noise, and it buries the one moment somebody actually logged this morning.
+    public func rankedKinds(in window: TallyWindow) -> [Kind] {
+        guard window != .all else { return rankedKinds.filter { $0.total > 0 } }
+        return kinds
+            .filter { $0.total(in: window) > 0 }
+            .sorted {
+                let left = $0.total(in: window)
+                let right = $1.total(in: window)
+                return left == right ? $0.kind.rawValue < $1.kind.rawValue : left > right
+            }
+    }
+
+    /// Everybody's moments in one window, whatever kind. The denominator for a
+    /// share-of-total bar, and the reason the breakdown can say "of 14".
+    ///
+    /// Summed from the per-kind rows rather than read off `mine`/`others`, so the
+    /// bar's parts always add up to the whole it is drawn against. The two can
+    /// differ: a post saved before the kind was recorded counts towards the
+    /// side totals but belongs to no kind.
+    public func total(in window: TallyWindow) -> Int {
+        kinds.reduce(0) { $0 + $1.total(in: window) }
+    }
+
+    /// True when the breakdown has something to show. False against a server with
+    /// no tallies endpoint, where the fallback path can only produce side totals.
+    public var hasKindBreakdown: Bool { !kinds.isEmpty }
 
     /// Adds locally queued sends that the server has not seen yet, so a moment
     /// logged with no signal still moves the number the moment it is tapped.

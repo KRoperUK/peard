@@ -1,0 +1,28 @@
+// Release configuration: the production Pear'd server.
+//
+// These are tracked, not left to a git-ignored override, because the server URL
+// is baked into Info.plist at build time and CI has no Config.xcconfig. A
+// Release archive built anywhere — a clean clone, a GitHub runner — has to reach
+// a real server rather than 127.0.0.1, or the TestFlight build cannot sign in.
+//
+// HTTPS is not a preference here: Release carries no App Transport Security
+// exception, so a cleartext host would be refused by the system.
+
+// Shared defaults, then a developer's git-ignored overrides — so a Google client
+// id set for local work is present in a Release build too, which a TestFlight
+// reviewer needs in order to use Sign in with Google.
+#include "Config.example.xcconfig"
+#include? "Config.xcconfig"
+
+// Assigned AFTER those includes, so the production server wins over whatever
+// Config.xcconfig says. That file usually points at 127.0.0.1 for simulator
+// work, and silently shipping that address to TestFlight is a build nobody can
+// sign in to — with no clue as to why.
+PEARD_SERVER_SCHEME = https
+PEARD_SERVER_HOST = peard.kroper.uk
+
+// Escape hatch for pointing a Release build somewhere else on purpose — a
+// staging host, say. Deliberately a different filename from Config.xcconfig:
+// overriding the production server should be an explicit act, not a side effect
+// of however your simulator happens to be configured. Git-ignored.
+#include? "Config.release.local.xcconfig"
