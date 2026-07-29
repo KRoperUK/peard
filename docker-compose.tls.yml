@@ -1,0 +1,57 @@
+# Override: let PocketBase manage its own Let's Encrypt certificate instead of
+# running behind a reverse proxy.
+#
+#   docker compose -f docker-compose.yml -f docker-compose.tls.yml up -d --build
+#
+# Requirements, all of which fail silently-ish if missed:
+#   - PEARD_TLS_DOMAIN is set to the public hostname (defaults to
+#     peard.kroper.uk). This is not cosmetic — see the note on the command below.
+#   - The DNS A/AAAA record for that domain points at this host.
+#   - Ports 80 and 443 are free on the host and reachable from the internet.
+#     80 is not optional — it is where the ACME http-01 challenge is answered,
+#     and afterwards it redirects to HTTPS.
+#   - PEARD_APP_URL uses https:// and the same domain.
+#
+# Do not use this together with a proxy that already owns 80/443.
+
+services:
+  server:
+    ports: !override
+      - "80:80"
+      - "443:443"
+
+    command:
+      - serve
+      # The domain is a POSITIONAL argument, and it is what PocketBase feeds to
+      # autocert.HostWhitelist. Omitting it does not mean "any host": with only
+      # --https=0.0.0.0:443, PocketBase falls back to the address's host part and
+      # whitelists the literal string "0.0.0.0", so Let's Encrypt is never asked
+      # for the real domain and TLS never comes up. (apis/serve.go:112)
+      - ${PEARD_TLS_DOMAIN:-peard.kroper.uk}
+      - --dir=/pb_data
+      # PocketBase answers the ACME challenge on the --http address and redirects
+      # it to HTTPS, so both have to be bound. With a domain argument these are
+      # also the defaults, but they are spelled out because the base file's
+      # --http=0.0.0.0:8090 would otherwise be merged in instead.
+      - --http=0.0.0.0:80
+      - --https=0.0.0.0:443
+      - --encryptionEnv=PEARD_PB_ENCRYPTION_KEY
+
+    # Binding 80 and 443 as uid 1000 needs the capability explicitly; the image
+    # runs as a non-root user. Granting this is much narrower than running as
+    # root, which is the usual way this problem gets "solved".
+    cap_add:
+      - NET_BIND_SERVICE
+
+    # The plain-HTTP port now only redirects, so probing it would follow to a
+    # hostname this container cannot resolve to itself. Probe HTTPS directly and
+    # skip verification: the certificate is valid for the public domain, not for
+    # 127.0.0.1, and the check exists to prove the process serves, not to test TLS.
+    healthcheck:
+      test: ["CMD", "wget", "-q", "--no-check-certificate", "-O", "/dev/null", "https://127.0.0.1:443/api/health"]
+      interval: 30s
+      timeout: 5s
+      # Longer than the base file: the very first start also has to obtain a
+      # certificate from Let's Encrypt before it can serve anything on 443.
+      start_period: 180s
+      retries: 3

@@ -16,6 +16,13 @@
 # Logs
 *.log
 
+# --- docker ---
+# Compose auto-loads this file when present, so it is the local escape hatch for
+# host-specific tweaks. Komodo deploys from a clone and never sees it. The stack's
+# own variables arrive in .env, already ignored above.
+docker-compose.override.yml
+docker-compose.override.yaml
+
 # --- server ---
 server/pb_data/
 server/peard-server

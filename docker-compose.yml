@@ -1,0 +1,92 @@
+# Pear'd server as a Komodo repo-based stack.
+#
+# Komodo clones this repository, writes the stack's Environment into a .env file
+# beside this compose file, and runs `docker compose up -d --build`. So every
+# ${VAR} below is resolved from that Environment; the defaults are what a stack
+# with an empty Environment gets.
+#
+# This file serves plain HTTP on 8090 and expects a reverse proxy in front of it
+# to terminate TLS. That is the right shape for most Komodo hosts, which already
+# run Traefik / Caddy / NPM, and it keeps the container off privileged ports and
+# off root. To let PocketBase manage its own Let's Encrypt certificate instead —
+# the setup described in the README — add the override:
+#
+#   docker compose -f docker-compose.yml -f docker-compose.tls.yml up -d --build
+#
+# In Komodo, list both files in the stack's "Compose file paths".
+
+name: peard
+
+services:
+  server:
+    build:
+      context: ./server
+      dockerfile: Dockerfile
+    image: peard-server:latest
+    restart: unless-stopped
+
+    # Host port is configurable; the container port is not, because the health
+    # check below and the TLS override both depend on knowing it.
+    ports:
+      - "${PEARD_HTTP_PORT:-8090}:8090"
+
+    command:
+      - serve
+      - --dir=/pb_data
+      - --http=0.0.0.0:8090
+      # Names the env var holding a 32-character key used to encrypt PocketBase's
+      # settings at rest — which is where the Google OAuth client secret lives.
+      # Naming it is harmless when unset (settings stay plaintext, and reads try
+      # plaintext first). Read the warning in server/.env.example before setting
+      # it: losing the key afterwards means the server cannot boot.
+      - --encryptionEnv=PEARD_PB_ENCRYPTION_KEY
+
+    environment:
+      # Public URL, used to build the media URLs the widget feed returns. Behind
+      # a proxy this must be the public https:// address, not the container's.
+      - PEARD_APP_URL=${PEARD_APP_URL:-https://peard.kroper.uk}
+      - PEARD_APPLE_AUDIENCE=${PEARD_APPLE_AUDIENCE:-com.peard.app}
+      - PEARD_APPLE_ERASE_ON_ACCOUNT_DELETE=${PEARD_APPLE_ERASE_ON_ACCOUNT_DELETE:-false}
+
+      # APNs. Listed without a default so an unset one is absent from the
+      # container rather than empty, which is how push detects "not configured".
+      # KEY_CONTENT is the .p8 itself — see server/.env.example for the accepted
+      # encodings. There is deliberately no bind mount for a .p8 file: the key is
+      # git-ignored, so a repo-based stack could not carry it anyway.
+      - PEARD_APNS_KEY_CONTENT
+      - PEARD_APNS_KEY_ID
+      - PEARD_APNS_TEAM_ID
+      - PEARD_APNS_BUNDLE_ID=${PEARD_APNS_BUNDLE_ID:-com.peard.app}
+      # Must match how the app was built: a TestFlight or App Store build carries
+      # aps-environment=production, and its tokens only resolve on the production
+      # host. Wrong value fails every send with BadDeviceToken and says nothing.
+      - PEARD_APNS_PRODUCTION=${PEARD_APNS_PRODUCTION:-true}
+
+      - PEARD_PB_ENCRYPTION_KEY
+      - TZ=${TZ:-Etc/UTC}
+
+    volumes:
+      # PocketBase's SQLite databases, uploaded media, and — if TLS is managed
+      # here — the Let's Encrypt certificate. The only state that matters.
+      - pb_data:/pb_data
+
+    healthcheck:
+      test: ["CMD", "wget", "-q", "-O", "/dev/null", "http://127.0.0.1:8090/api/health"]
+      interval: 30s
+      timeout: 5s
+      # Generous, because the first start of a new deploy applies migrations.
+      start_period: 60s
+      retries: 3
+
+    # Long enough for SQLite to checkpoint its WAL on shutdown. PocketBase traps
+    # SIGTERM itself, so the binary can be PID 1 without an init shim.
+    stop_grace_period: 30s
+
+    logging:
+      driver: json-file
+      options:
+        max-size: "10m"
+        max-file: "5"
+
+volumes:
+  pb_data:

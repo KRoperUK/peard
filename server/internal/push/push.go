@@ -5,14 +5,19 @@
 //
 // The whole package is a no-op unless these env vars are set:
 //
-//	PEARD_APNS_KEY_PATH   path to the .p8 APNs auth key
-//	PEARD_APNS_KEY_ID     10-char key id
-//	PEARD_APNS_TEAM_ID    Apple Developer team id
-//	PEARD_APNS_BUNDLE_ID  default "com.peard.app"
-//	PEARD_APNS_PRODUCTION "true" to use the production APNs host
+//	PEARD_APNS_KEY_CONTENT the .p8 APNs auth key itself (PEM, PEM with literal
+//	                       \n, or base64 of either) — preferred in containers
+//	PEARD_APNS_KEY_PATH    path to the .p8 file, used when CONTENT is unset
+//	PEARD_APNS_KEY_ID      10-char key id
+//	PEARD_APNS_TEAM_ID     Apple Developer team id
+//	PEARD_APNS_BUNDLE_ID   default "com.peard.app"
+//	PEARD_APNS_PRODUCTION  "true" to use the production APNs host
 package push
 
 import (
+	"encoding/base64"
+	"errors"
+	"fmt"
 	"log"
 	"os"
 	"strings"
@@ -65,19 +70,21 @@ func Register(app core.App) {
 }
 
 func newNotifier() *notifier {
-	keyPath := os.Getenv("PEARD_APNS_KEY_PATH")
 	keyID := os.Getenv("PEARD_APNS_KEY_ID")
 	teamID := os.Getenv("PEARD_APNS_TEAM_ID")
 	bundleID := os.Getenv("PEARD_APNS_BUNDLE_ID")
 	if bundleID == "" {
 		bundleID = "com.peard.app"
 	}
-	if keyPath == "" || keyID == "" || teamID == "" {
+	if keyID == "" || teamID == "" {
 		return nil
 	}
-	keyBytes, err := os.ReadFile(keyPath)
+	keyBytes, err := apnsKeyBytes(os.Getenv("PEARD_APNS_KEY_CONTENT"), os.Getenv("PEARD_APNS_KEY_PATH"))
 	if err != nil {
 		log.Println("[push] cannot read APNs key:", err)
+		return nil
+	}
+	if keyBytes == nil {
 		return nil
 	}
 	authKey, err := token.AuthKeyFromBytes(keyBytes)
@@ -93,6 +100,39 @@ func newNotifier() *notifier {
 		client = client.Development()
 	}
 	return &notifier{client: client, bundleID: bundleID}
+}
+
+// apnsKeyBytes resolves the APNs signing key from either its content or a file
+// path, returning (nil, nil) when neither is set so push stays disabled.
+//
+// Content wins over path because a container has no sensible place to keep the
+// .p8: it is git-ignored, so a repo-based Docker stack cannot carry the file, and
+// bind-mounting a secret from the host defeats the point of deploying from the
+// repo. The trade-off is that env vars cannot hold real newlines in a compose
+// `.env` file, so three encodings are accepted — a PEM with real newlines (works
+// in Komodo's UI and in `docker run --env-file`), a PEM whose newlines are the
+// two characters \n, and base64 of the whole PEM, which is the only form that
+// survives every layer without quoting rules mattering.
+func apnsKeyBytes(content, path string) ([]byte, error) {
+	if trimmed := strings.TrimSpace(content); trimmed != "" {
+		unescaped := strings.ReplaceAll(strings.ReplaceAll(trimmed, `\r\n`, "\n"), `\n`, "\n")
+		if strings.Contains(unescaped, "-----BEGIN") {
+			return []byte(unescaped), nil
+		}
+		// Not PEM as given: the remaining supported form is base64 of one.
+		decoded, err := base64.StdEncoding.DecodeString(strings.Join(strings.Fields(trimmed), ""))
+		if err != nil {
+			return nil, fmt.Errorf("PEARD_APNS_KEY_CONTENT is neither a PEM key nor valid base64: %w", err)
+		}
+		if !strings.Contains(string(decoded), "-----BEGIN") {
+			return nil, errors.New("PEARD_APNS_KEY_CONTENT decoded from base64 but is not a PEM key")
+		}
+		return decoded, nil
+	}
+	if path == "" {
+		return nil, nil
+	}
+	return os.ReadFile(path)
 }
 
 // notifyPairMembers alerts every other member of the pair about a new post.

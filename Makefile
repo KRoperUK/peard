@@ -5,7 +5,8 @@ XCODEBUILD = xcodebuild -project $(PROJECT) -scheme Peard
 BUILT_APP = ios/build/Build/Products/Debug-iphonesimulator/Peard.app
 
 .PHONY: server migrate app app-release run project test test-app test-integration \
-        test-all icons lint clean
+        test-all icons lint clean \
+        docker-build docker-up docker-up-tls docker-down docker-logs
 
 # --- server ---
 
@@ -94,6 +95,36 @@ test-integration:
 lint:
 	cd server && go vet ./...
 	cd ios && xcodegen generate --spec project.yml --use-cache
+
+# --- docker ---
+
+# Prefer the Compose v2 plugin, fall back to the standalone binary. Homebrew
+# installs the plugin under /opt/homebrew/lib/docker/cli-plugins, which is not on
+# Docker's default search path, so `docker compose` can be missing on a machine
+# that has a perfectly good `docker-compose`.
+COMPOSE := $(shell docker compose version >/dev/null 2>&1 && echo "docker compose" || echo docker-compose)
+COMPOSE_TLS = $(COMPOSE) -f docker-compose.yml -f docker-compose.tls.yml
+
+docker-build:
+	$(COMPOSE) build
+
+# Plain HTTP on $$PEARD_HTTP_PORT (default 8090); expects a reverse proxy in
+# front. Note this collides with `make server` if both run on one machine.
+docker-up:
+	$(COMPOSE) up -d --build
+
+# PocketBase manages its own Let's Encrypt certificate and owns 80 + 443.
+docker-up-tls:
+	$(COMPOSE_TLS) up -d --build
+
+# Stops and removes the container, keeping the pb_data volume. There is no
+# target that passes -v on purpose: that deletes the databases, the uploaded
+# media and the certificate.
+docker-down:
+	$(COMPOSE) down
+
+docker-logs:
+	$(COMPOSE) logs -f --tail=100
 
 clean:
 	rm -rf server/pb_data server/peard-server ios/build ios/Peard.xcodeproj

@@ -1,0 +1,25 @@
+# Build context is ./server. Everything here is either irrelevant to the build
+# or actively harmful to copy into an image.
+
+# The live database. Copying it would bake a developer's data — including PB
+# settings, which hold the Google OAuth client secret — into the image.
+pb_data/
+
+# Locally built binaries. macOS/arm64 host builds are useless in a linux image
+# and would be overwritten anyway, but they are ~34 MB of context each.
+peard-server
+server
+*.test
+coverage.out
+
+# Secrets. Never in an image layer: layers are readable by anyone who can pull it.
+# The APNs key reaches the container through PEARD_APNS_KEY_CONTENT instead.
+*.p8
+*.p12
+.env
+.env.*
+!.env.example
+
+# Container definitions themselves are not build inputs.
+Dockerfile
+.dockerignore

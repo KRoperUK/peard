@@ -20,6 +20,7 @@ lose it.
 ```
 peard/
 ├── server/       PocketBase used as a Go framework (extended)
+│   └── Dockerfile         two-stage, CGO-free, non-root alpine image
 ├── ios/          Native SwiftUI app + WidgetKit extension
 │   ├── project.yml        XcodeGen spec — the source of truth for the project
 │   ├── Peard/             app target
@@ -28,7 +29,9 @@ peard/
 │   ├── PeardCore/         shared Swift package (models, API client, App Group)
 │   └── Shared/            colour assets used by both targets
 ├── fastlane/     build, test and TestFlight lanes
-└── docs/         wire contract between app and server
+├── docs/         wire contract between app and server
+├── docker-compose.yml      the server stack (HTTP, proxy in front)
+└── docker-compose.tls.yml  override: PocketBase owns 80/443 and its own cert
 ```
 
 `ios/Peard.xcodeproj` is **generated** from `ios/project.yml` and is not
@@ -109,9 +112,13 @@ and the failure reads as "app not found" rather than as a permissions problem.
 ### 5. Continuous integration
 
 `.github/workflows/ci.yml` runs on every push to `main` and every pull request,
-in three jobs so a server-only change is not stuck behind Xcode:
+in four jobs so a server-only change is not stuck behind Xcode:
 
 - **Server** (Ubuntu) — `go build`, `go vet`, `go test`, and a `gofmt` gate.
+- **Docker** (Ubuntu) — validate both compose files, build the image, then start
+  it and wait for `/api/health`. A green `go build` does not prove the container
+  serves, and migrations apply on start, so this is where a broken image surfaces
+  rather than mid-deploy.
 - **PeardCore** (macOS) — `swift test`, no simulator needed.
 - **App** (macOS) — generate the project, build Debug *and* Release, then run the
   app-target tests. On failure the `.xcresult` bundle is uploaded as an artifact.
@@ -166,11 +173,12 @@ must be HTTPS.
 ### Deployment
 
 The production server is **https://peard.kroper.uk**, which is what a Release
-build — and therefore every TestFlight build — talks to.
+build — and therefore every TestFlight build — talks to. Two supported shapes:
+Docker (below) or the binary directly.
 
 ```bash
 cd server && go build -o peard-server .
-./peard-server serve --https=0.0.0.0:443
+./peard-server serve peard.kroper.uk --https=0.0.0.0:443
 ```
 
 `--https` makes PocketBase manage its own Let's Encrypt certificate, stored in
@@ -179,12 +187,71 @@ the host, and both **80** and **443** reachable — port 80 is where the ACME
 challenge is answered, and it redirects to HTTPS afterwards. Migrations apply on
 start, so a deploy is: build, replace the binary, restart.
 
+The domain is a **positional** argument and it is not optional. PocketBase feeds
+it to `autocert.HostWhitelist`; with only `--https=0.0.0.0:443` it falls back to
+the address's host part and whitelists the literal string `0.0.0.0`, so Let's
+Encrypt is never asked for the real domain and TLS never comes up.
+
 `server/.env.example` lists the environment variables and their production
 values. Nothing parses that file — the server reads the process environment — so
 point systemd at it with `EnvironmentFile=` or export the values however the host
 prefers. `PEARD_APNS_PRODUCTION=true` is the one that is easy to miss and silent
 when wrong: TestFlight builds carry `aps-environment=production`, so their device
 tokens only resolve on Apple's production APNs host.
+
+### Docker, and Komodo repo-based stacks
+
+`docker-compose.yml` at the repo root builds `server/Dockerfile` and is the whole
+stack — one service, one volume. In [Komodo](https://komo.do), create a
+**repo-based stack** pointing at this repository; it clones, writes the stack's
+Environment to a `.env` beside the compose file, and runs
+`docker compose up -d --build`. Every variable has a default, so a stack with an
+empty Environment starts and serves.
+
+```bash
+docker compose up -d --build                 # HTTP on 8090, proxy in front
+make docker-up                               # same thing
+make docker-up-tls                           # PocketBase owns 80/443 itself
+```
+
+The base file serves plain HTTP on `${PEARD_HTTP_PORT:-8090}` and expects a
+reverse proxy to terminate TLS — the right shape for most Komodo hosts, which
+already run Traefik or Caddy, and it keeps the container off privileged ports.
+To let PocketBase manage its own certificate instead, add the override:
+
+```bash
+docker compose -f docker-compose.yml -f docker-compose.tls.yml up -d --build
+```
+
+In Komodo, list both paths in the stack's *Compose file paths*. The override
+replaces the port mapping outright (`ports: !override`, needs Compose 2.24+),
+passes `PEARD_TLS_DOMAIN` as the positional argument, and grants
+`NET_BIND_SERVICE` so uid 1000 can bind 80 and 443 — narrower than the usual fix
+of running as root. Do not combine it with a proxy that already owns those ports.
+
+Variables are in `server/.env.example`, including the four that only the compose
+files read (`PEARD_HTTP_PORT`, `PEARD_TLS_DOMAIN`, `TZ`,
+`PEARD_PB_ENCRYPTION_KEY`). Two are worth knowing before the first deploy:
+
+**The APNs key travels as content, not a path.** A `.p8` is git-ignored, so a
+repo-based stack cannot carry the file, and bind-mounting a host secret defeats
+the point of deploying from the repo. `PEARD_APNS_KEY_CONTENT` accepts the PEM
+verbatim, the PEM with literal `\n`, or base64 of it. A compose `.env` cannot
+hold a multi-line value, so base64 is the form to use there:
+
+```bash
+base64 < AuthKey_XXXXXXXXXX.p8 | tr -d '\n'
+```
+
+**`pb_data` is a named volume.** It holds the SQLite databases, uploaded media,
+and the Let's Encrypt certificate if TLS is managed here — the only state that
+matters, and the only thing to back up. A fresh named volume inherits uid 1000
+from the image; a *bind* mount does not, so a host directory has to be
+`chown 1000:1000`'d by hand or the server cannot write.
+
+The image is two-stage: `CGO_ENABLED=0` (PocketBase's SQLite driver is pure Go)
+into `alpine`, ~50 MB, running as a non-root user. `ca-certificates` is required
+rather than tidy — Apple's JWKS, APNs and Let's Encrypt are all outbound TLS.
 
 ### Debug shortcuts
 

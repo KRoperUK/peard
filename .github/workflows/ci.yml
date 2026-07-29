@@ -52,6 +52,46 @@ jobs:
             exit 1
           fi
 
+  docker:
+    name: Docker image + compose
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Validate compose files
+        # Parses and interpolates both shapes. Catches a bad ${VAR} default, a
+        # malformed override, and — because the TLS file uses `ports: !override`
+        # — a runner whose Compose predates 2.24.
+        run: |
+          docker compose version
+          docker compose -f docker-compose.yml config >/dev/null
+          docker compose -f docker-compose.yml -f docker-compose.tls.yml config >/dev/null
+
+      - name: Build image
+        run: docker compose build
+
+      - name: Smoke test
+        # The deploy story is "migrations apply on start", so a green `go build`
+        # is not enough: this proves the container actually serves. Port 8090 is
+        # published by the base file, and the runner has nothing else on it.
+        run: |
+          docker compose up -d
+          for i in $(seq 1 30); do
+            if curl -fsS http://127.0.0.1:8090/api/health >/dev/null; then
+              echo "healthy after ${i}s"
+              # A collection from the Pear'd migrations: present means they ran,
+              # 404 would mean the binary started against an unmigrated database.
+              curl -fsS -o /dev/null -w 'posts collection: %{http_code}\n' \
+                http://127.0.0.1:8090/api/collections/posts/records
+              docker compose down
+              exit 0
+            fi
+            sleep 1
+          done
+          echo "Container never became healthy:"
+          docker compose logs
+          exit 1
+
   core:
     name: PeardCore (swift test)
     runs-on: macos-15
