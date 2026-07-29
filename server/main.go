@@ -4,6 +4,7 @@
 //   - auth:    native Sign in with Apple + Apple's server-to-server notifications
 //   - pairs:   invite / accept / leave / remove, connection list and muting
 //   - profile: the caller's own display name
+//   - avatars: profile photos, for a person and for a connection
 //   - tallies: server-side moment counts for one connection
 //   - widget:  token-authenticated feed for the WidgetKit extension
 //   - push:    APNs delivery triggered by record hooks
@@ -19,6 +20,7 @@ import (
 	"github.com/pocketbase/pocketbase/plugins/migratecmd"
 
 	peardauth "peard/internal/auth"
+	"peard/internal/avatars"
 	"peard/internal/pairs"
 	"peard/internal/profile"
 	"peard/internal/push"
@@ -47,6 +49,7 @@ func main() {
 	peardauth.Register(app)
 	pairs.Register(app)
 	profile.Register(app)
+	avatars.Register(app)
 	tallies.Register(app)
 	widget.Register(app)
 	push.Register(app)

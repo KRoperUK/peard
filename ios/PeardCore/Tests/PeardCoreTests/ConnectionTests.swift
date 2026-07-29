@@ -43,11 +43,26 @@ final class ConnectionTests: XCTestCase {
 
     /// This is why the server resolves member names: without them every unnamed
     /// connection would title identically and the switcher could not be used.
-    func testAConnectionWithNoKnownMembersFallsBack() {
-        let alone = Connection(pair: "pair1", members: [])
-        XCTAssertEqual(alone.title(), PartnerLabel.fallback)
-        XCTAssertNil(alone.partnerName)
-        XCTAssertEqual(alone.memberCount, 1, "the signed-in user always counts")
+    ///
+    /// `memberCount: 2` is the load-bearing part of the fixture. It says there is
+    /// somebody else even though their name did not arrive, which is what makes
+    /// "Partner" the right guess — as opposed to a connection whose count is one,
+    /// where there is genuinely nobody to name.
+    func testAConnectionWithUnresolvedMembersFallsBack() {
+        let unresolved = Connection(pair: "pair1", memberCount: 2, members: [])
+        XCTAssertEqual(unresolved.title(), PartnerLabel.fallback)
+        XCTAssertNil(unresolved.partnerName)
+        XCTAssertFalse(unresolved.isJustYou)
+    }
+
+    /// The decoder's default when the server omits the count. One, because the
+    /// signed-in user always counts — and with no other members that reads as a
+    /// connection holding only you.
+    func testMemberCountDefaultsToCountingYou() {
+        let bare = Connection(pair: "pair1", members: [])
+        XCTAssertEqual(bare.memberCount, 1, "the signed-in user always counts")
+        XCTAssertTrue(bare.isJustYou)
+        XCTAssertEqual(bare.title(), "Just you")
     }
 
     func testAnUnnamedGroupListsItsMembers() {
@@ -127,6 +142,69 @@ final class ConnectionTests: XCTestCase {
     }
 
     // MARK: Filters
+
+    func testOthersLabelNamesTheOtherPersonInAOneToOne() {
+        XCTAssertEqual(connection(otherNames: ["Sam"]).othersLabel, "Sam")
+    }
+
+    func testOthersLabelIsCollectiveInAGroup() {
+        XCTAssertEqual(connection(otherNames: ["Sam", "Ari"]).othersLabel, "Others")
+        XCTAssertEqual(connection(otherNames: ["Sam", "Ari", "Bo"]).othersLabel, "Others")
+    }
+
+    /// The case that produced the bug: everybody else has left, but their moments
+    /// are still in the timeline and still counted. "Partner" would be wrong twice
+    /// — there is no partner, and `HistoryModel.authorLabel` already calls that
+    /// same author `PartnerLabel.unknown`. The two screens have to agree.
+    func testOthersLabelIsNeutralWhenNobodyElseIsLeft() {
+        let alone = connection(otherNames: [])
+        XCTAssertTrue(alone.others.isEmpty)
+        XCTAssertFalse(alone.isGroup)
+        XCTAssertNil(alone.partnerName)
+        XCTAssertEqual(alone.othersLabel, PartnerLabel.unknown)
+        XCTAssertNotEqual(alone.othersLabel, PartnerLabel.fallback)
+    }
+
+    /// Both neutral labels have to survive the tally row's truncation unchanged,
+    /// or the fix would read as "Someone…" / "Others…".
+    func testNeutralLabelsAreShortEnoughForTheTallyRow() {
+        XCTAssertEqual(PartnerLabel.short(PartnerLabel.unknown), PartnerLabel.unknown)
+        XCTAssertEqual(PartnerLabel.short("Others"), "Others")
+    }
+
+    /// The other half of the same wrong assumption: "not a group" was taken to mean
+    /// two people, so a connection holding only you claimed "Just the two of you".
+    func testAConnectionHoldingOnlyYouSaysSo() {
+        let alone = connection(otherNames: [])
+        XCTAssertTrue(alone.isJustYou)
+        XCTAssertEqual(alone.subtitle, "Just you")
+        XCTAssertNotEqual(alone.subtitle, "Just the two of you")
+        // Unnamed, so the title falls through to the size description rather than
+        // guessing at a partner who is not there.
+        XCTAssertEqual(alone.title(), "Just you")
+        XCTAssertNotEqual(alone.title(), PartnerLabel.fallback)
+    }
+
+    /// A named one is still called by its name — the fix must not override that.
+    func testANamedConnectionHoldingOnlyYouKeepsItsName() {
+        let named = connection(name: "Curl Crew", otherNames: [])
+        XCTAssertTrue(named.isJustYou)
+        XCTAssertEqual(named.title(), "Curl Crew")
+        XCTAssertEqual(named.subtitle, "Just you")
+    }
+
+    /// And a real pair whose member names the server could not resolve still gets
+    /// "Partner": there *is* somebody, they are just unnamed. Distinguishing these
+    /// two is the whole point of `isJustYou`.
+    func testAnUnresolvedPairStillSaysPartner() {
+        let unresolved = Connection(pair: "p", memberCount: 2, members: [
+            .init(user: "me", name: "Me", role: .owner, isYou: true),
+        ])
+        XCTAssertFalse(unresolved.isJustYou)
+        XCTAssertEqual(unresolved.title(), PartnerLabel.fallback)
+        XCTAssertEqual(unresolved.subtitle, "Just the two of you")
+    }
+
 
     func testAnyEqualsBuildsAParenthesisedOrGroup() {
         XCTAssertEqual(

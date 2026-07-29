@@ -106,6 +106,21 @@ final class HistoryModel {
         MomentCatalogue.emoji(for: post, customKinds: customKinds)
     }
 
+    /// The author's photo, or their initials. A former member is not in the list
+    /// any more, so there is nothing to draw but initials — consistent with
+    /// `authorLabel` naming them "Someone".
+    func avatar(forAuthor userID: String) -> Avatar {
+        if let member = connection?.members.first(where: { $0.user == userID }) {
+            return member.avatar
+        }
+        return Avatar(
+            owner: .users,
+            recordID: userID,
+            filename: nil,
+            placeholder: .make(name: PartnerLabel.unknown, key: userID)
+        )
+    }
+
     func detail(for post: Post) -> String {
         if let note = post.displayNote { return note }
         switch post.type {
@@ -168,10 +183,9 @@ final class HistoryModel {
     }
 }
 
-/// The timeline screen.
+/// The timeline screen. A tab rather than a sheet, so reading back through the
+/// shared timeline does not have to be dismissed to log anything.
 struct HistoryView: View {
-    @Environment(\.dismiss) private var dismiss
-
     @State private var model: HistoryModel
     private let serverURL: URL
     private let title: String
@@ -186,11 +200,11 @@ struct HistoryView: View {
         NavigationStack {
             content
                 .background(PearColor.background)
-                .navigationTitle(title)
+                .navigationTitle("Timeline")
                 .navigationBarTitleDisplayMode(.inline)
                 .toolbar {
-                    ToolbarItem(placement: .topBarTrailing) {
-                        Button("Done") { dismiss() }
+                    ToolbarItem(placement: .principal) {
+                        ConnectionToolbarTitle(title: "Timeline", subtitle: title)
                     }
                 }
                 .refreshable { await model.reload() }
@@ -276,9 +290,13 @@ struct HistoryView: View {
             thumbnail(for: post)
 
             VStack(alignment: .leading, spacing: 2) {
-                Text(model.authorLabel(for: post))
-                    .font(.subheadline.bold())
-                    .foregroundStyle(PearColor.textPrimary)
+                HStack(spacing: 5) {
+                    AvatarView(avatar: model.avatar(forAuthor: post.author), serverURL: serverURL, size: 16)
+                        .accessibilityHidden(true)
+                    Text(model.authorLabel(for: post))
+                        .font(.subheadline.bold())
+                        .foregroundStyle(PearColor.textPrimary)
+                }
                 Text(model.detail(for: post))
                     .font(.footnote)
                     .foregroundStyle(PearColor.textSecondary)

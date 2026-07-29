@@ -1,43 +1,65 @@
+import OSLog
 import PeardCore
 import SwiftUI
 
-/// Shared timeline, tallies, moments, photo capture and reactions
-/// (Requirements 11–15).
+/// Logging a moment, and what landed last.
 ///
-/// The title, the connection switcher and the latest-moment hero are pinned:
-/// they are the answer to "what is happening with us right now", so they stay on
-/// screen while the tallies and history scroll underneath.
+/// Narrower than it was: the tally rows, the whole timeline and every connection
+/// setting are now their own tabs. What is left is the question Home is for —
+/// "what's happening with us, and what do I want to say" — which is the connection
+/// rail, the latest moment, and the moments themselves.
+///
+/// The title and the rail are pinned at the top, the camera is pinned at the
+/// bottom. Both are held outside the scrolling content rather than inside it: as
+/// pinned section headers they stopped at the safe-area inset, which left the
+/// status-bar band part of the scrolling viewport and let content slide up behind
+/// the clock.
 struct HomeView: View {
+    static let diagnostic = Logger(subsystem: "com.peard.app", category: "home-render")
+
     @Environment(AppModel.self) private var app
     @Environment(\.scenePhase) private var scenePhase
 
     @State private var model: HomeModel
     @State private var showCamera = false
-    @State private var showLeaveConfirmation = false
     @State private var showMomentSheet = false
-    @State private var showInviteSheet = false
-    @State private var showSettings = false
-    @State private var showHistory = false
-    @State private var showBreakdown = false
     @FocusState private var noteFocused: Bool
 
-    init(model: HomeModel) {
+    /// Switches to the tallies tab. The breakdown strip is a summary, and its whole
+    /// job is to lead somewhere fuller.
+    private let onShowTallies: () -> Void
+
+    init(model: HomeModel, onShowTallies: @escaping () -> Void = {}) {
         _model = State(initialValue: model)
+        self.onShowTallies = onShowTallies
     }
 
     var body: some View {
-        ScrollView {
+        // Read here, in `body` itself, rather than inside the `safeAreaInset`
+        // closure below. That closure is evaluated outside the observation scope of
+        // this body, so anything it reads is not registered as a dependency: the
+        // connection rail kept drawing a replaced group photo, and the muted bell
+        // kept not appearing, until something *else* happened to invalidate the
+        // body — in practice the 30-second poll. Verified against the server's
+        // request log, which recorded no fetch of the new file until then.
+        let connections = app.connections
+        let isMuted = model.isMuted
+
+        HomeView.diagnostic.notice(
+            "body: connections=\(connections.count, privacy: .public) selected=\(connections.first { $0.id == model.pairID }?.avatarFilename ?? "nil", privacy: .public)"
+        )
+
+        return ScrollView {
             scrollingContent
         }
         .background(PearColor.background)
-        // The title, switcher and hero are held outside the scrolling content
-        // rather than pinned inside it. As a pinned section header they stopped
-        // at the safe-area inset, which left the status-bar band part of the
-        // scrolling viewport and let the tallies slide up behind the clock. As a
-        // safe-area inset the header owns that band, and its background extends
-        // through it.
-        .safeAreaInset(edge: .top, spacing: 20) {
-            pinnedHeader
+        .safeAreaInset(edge: .top, spacing: 16) {
+            pinnedHeader(connections: connections, isMuted: isMuted)
+        }
+        // Pinned so the heaviest action is always one tap away, however long the
+        // moment grid grows.
+        .safeAreaInset(edge: .bottom) {
+            cameraBar
         }
         .refreshable { await model.refreshAll() }
         .task { await model.load() }
@@ -56,53 +78,8 @@ struct HomeView: View {
         }
         .pearAnimation(value: model.toast ?? "")
         .alert(item: $model.alert)
-        .confirmationDialog(
-            model.isGroup ? "Leave this group?" : "Un-pear?",
-            isPresented: $showLeaveConfirmation,
-            titleVisibility: .visible
-        ) {
-            Button("Leave", role: .destructive) {
-                Task { await model.leaveConnection() }
-            }
-            Button("Cancel", role: .cancel) {}
-        } message: {
-            Text(
-                model.isGroup
-                    ? "You'll lose this group's shared timeline."
-                    : "You'll both lose the shared timeline."
-            )
-        }
         .sheet(isPresented: $showMomentSheet) {
             MomentSheet(model: model)
-        }
-        .sheet(isPresented: $showInviteSheet) {
-            InviteSheet(pairID: model.pairID, connectionTitle: model.connectionTitle)
-        }
-        .sheet(isPresented: $showSettings) {
-            ConnectionSettingsView(model: model)
-                .environment(app)
-        }
-        .sheet(isPresented: $showBreakdown) {
-            MomentBreakdownSheet(
-                tallies: model.momentTallies,
-                connectionTitle: model.connectionTitle,
-                mineLabel: "You",
-                othersLabel: model.othersLabel,
-                isServerSide: model.talliesAreServerSide
-            )
-        }
-        .sheet(isPresented: $showHistory) {
-            HistoryView(
-                model: HistoryModel(
-                    api: app.api,
-                    pairID: model.pairID,
-                    signedInUserID: model.signedInUserID,
-                    customKinds: model.customKinds,
-                    connection: model.connection
-                ),
-                serverURL: model.serverURL,
-                title: model.connectionTitle
-            )
         }
         .fullScreenCover(isPresented: $showCamera) {
             CameraPicker { image in
@@ -116,117 +93,102 @@ struct HomeView: View {
 
     // MARK: Pinned header
 
-    private var pinnedHeader: some View {
+    private func pinnedHeader(connections: [Connection], isMuted: Bool) -> some View {
         VStack(alignment: .leading, spacing: 12) {
             HStack(alignment: .firstTextBaseline) {
                 Text("Pear'd 🍐")
                     .font(.title2.bold())
                     .foregroundStyle(PearColor.textPrimary)
                 Spacer(minLength: 8)
-                connectionMenu
+                if isMuted {
+                    Image(systemName: "bell.slash.fill")
+                        .font(.footnote)
+                        .foregroundStyle(PearColor.textTertiary)
+                        .accessibilityLabel("\(model.connectionTitle) is muted")
+                }
             }
-            heroCard
+
+            ConnectionRail(
+                connections: connections,
+                selectedID: model.pairID,
+                serverURL: model.serverURL,
+                onSelect: { app.select(connectionID: $0) },
+                onAdd: { app.startAddingConnection() }
+            )
         }
         .padding(.horizontal, 20)
-        .padding(.top, 12)
-        .padding(.bottom, 12)
+        .padding(.top, 10)
+        .padding(.bottom, 10)
         // Held above the scrolling content, so it must be opaque — and the fill
         // has to reach through the top safe area, or the status-bar band shows
         // whatever is scrolling underneath.
         .background(PearColor.background.ignoresSafeArea(edges: .top))
     }
 
-    private var connectionMenu: some View {
-        Menu {
-            if app.connections.count > 1 {
-                Section("Connections") {
-                    ForEach(app.connections) { connection in
-                        Button {
-                            app.select(connectionID: connection.id)
-                        } label: {
-                            if connection.id == model.pairID {
-                                Label(connection.title(), systemImage: "checkmark")
-                            } else {
-                                Text(connection.title())
-                            }
-                        }
-                    }
-                }
+    // MARK: Scrolling content
+
+    private var scrollingContent: some View {
+        VStack(alignment: .leading, spacing: 16) {
+            heroCard
+
+            if model.quickSend != nil {
+                quickSendRow.pearTransition()
             }
 
-            Section {
-                Button {
-                    showSettings = true
-                } label: {
-                    Label("Connection settings", systemImage: "gearshape")
-                }
-                Button {
-                    showHistory = true
-                } label: {
-                    Label("All moments", systemImage: "clock.arrow.circlepath")
-                }
-                Button {
-                    showBreakdown = true
-                } label: {
-                    Label("Moment breakdown", systemImage: "chart.bar.xaxis")
-                }
-                Button {
-                    showInviteSheet = true
-                } label: {
-                    Label(model.isGroup ? "Invite to this group" : "Add someone here", systemImage: "person.badge.plus")
-                }
-                Button {
-                    app.startAddingConnection()
-                } label: {
-                    Label("New connection", systemImage: "plus.circle")
-                }
+            if let summary = model.pendingSummary {
+                pendingBanner(summary)
             }
 
-            Section {
-                Button(role: .destructive) {
-                    showLeaveConfirmation = true
-                } label: {
-                    Label(model.isGroup ? "Leave group" : "Un-pear", systemImage: "person.badge.minus")
-                }
+            MomentGrid(
+                moments: model.moments,
+                pendingKind: model.quickSend?.moment.kind,
+                isBusy: model.isBusy,
+                onTap: { model.tap(moment: $0) },
+                onMore: { showMomentSheet = true }
+            )
+
+            if model.hasMomentBreakdown {
+                breakdownStrip
             }
-        } label: {
-            HStack(spacing: 4) {
-                Text(model.connectionTitle)
-                    .font(.subheadline.bold())
-                    .lineLimit(1)
-                if model.isMuted {
-                    Image(systemName: "bell.slash.fill")
-                        .font(.caption2)
-                        .accessibilityLabel("Muted")
-                }
-                Image(systemName: "chevron.down")
-                    .font(.caption2.bold())
+
+            if let toast = model.toast {
+                Text(toast)
+                    .font(.headline)
+                    .foregroundStyle(PearColor.accent)
+                    .frame(maxWidth: .infinity)
+                    .pearTransition()
             }
-            .foregroundStyle(PearColor.accent)
-            .padding(.horizontal, 12)
-            .padding(.vertical, 7)
-            .background(PearColor.surface, in: Capsule())
+
+            if let banner = model.banner {
+                Text(banner)
+                    .font(.footnote)
+                    .foregroundStyle(PearColor.error)
+                    .frame(maxWidth: .infinity, alignment: .leading)
+            }
         }
-        .accessibilityLabel("Connection: \(model.connectionTitle)")
-        .accessibilityHint("Switch connection, invite someone, or leave")
+        .padding(.horizontal, 20)
+        .padding(.bottom, 12)
     }
 
-    private func title(for connection: Connection) -> String {
-        connection.title()
-    }
-
-    /// The hero: whatever landed most recently, kept compact enough to stay
-    /// pinned without crowding out the content below it.
+    /// The hero: whatever landed most recently.
     private var heroCard: some View {
         HStack(spacing: 14) {
             if let post = model.displayedPost {
                 heroThumbnail(for: post)
 
                 VStack(alignment: .leading, spacing: 4) {
-                    Text("\(model.authorLabel(for: post)) · \(model.caption(for: post))")
-                        .font(.subheadline.bold())
-                        .foregroundStyle(PearColor.textPrimary)
-                        .lineLimit(1)
+                    HStack(spacing: 6) {
+                        AvatarView(
+                            avatar: model.avatar(forAuthor: post.author),
+                            serverURL: model.serverURL,
+                            size: 18
+                        )
+                        .accessibilityHidden(true)
+                        Text("\(model.authorLabel(for: post)) · \(model.caption(for: post))")
+                            .font(.subheadline.bold())
+                            .foregroundStyle(PearColor.textPrimary)
+                            .lineLimit(1)
+                    }
 
                     HStack(spacing: 6) {
                         Text(ElapsedTime.label(for: post.created))
@@ -327,52 +289,6 @@ struct HomeView: View {
         }
     }
 
-    // MARK: Scrolling content
-
-    private var scrollingContent: some View {
-        VStack(alignment: .leading, spacing: 20) {
-            momentStrip
-
-            if model.quickSend != nil {
-                quickSendRow.pearTransition()
-            }
-
-            if let summary = model.pendingSummary {
-                pendingBanner(summary)
-            }
-
-            tallyRows
-
-            if !model.historyPosts.isEmpty {
-                historyList
-            }
-
-            if model.hasMoreHistory || !model.historyPosts.isEmpty {
-                allMomentsButton
-            }
-
-            if let toast = model.toast {
-                Text(toast)
-                    .font(.headline)
-                    .foregroundStyle(PearColor.accent)
-                    .frame(maxWidth: .infinity)
-                    .pearTransition()
-            }
-
-            if let banner = model.banner {
-                Text(banner)
-                    .font(.footnote)
-                    .foregroundStyle(PearColor.error)
-                    .frame(maxWidth: .infinity, alignment: .leading)
-            }
-
-            cameraButton
-            footer
-        }
-        .padding(.horizontal, 20)
-        .padding(.bottom, 20)
-    }
-
     /// The queue's state, in one line. Nothing is shown when it is empty, so the
     /// common case stays quiet.
     private func pendingBanner(_ summary: String) -> some View {
@@ -404,93 +320,39 @@ struct HomeView: View {
         .accessibilityLabel(summary)
     }
 
-    private var allMomentsButton: some View {
-        Button {
-            showHistory = true
-        } label: {
-            HStack {
-                Text("All moments")
-                    .font(.subheadline.bold())
-                Spacer()
+    /// What this connection logs most, in one line, leading to the tallies tab.
+    private var breakdownStrip: some View {
+        Button(action: onShowTallies) {
+            HStack(spacing: 12) {
+                ForEach(model.topMoments) { kind in
+                    HStack(spacing: 3) {
+                        Text(kind.emoji)
+                            .font(.caption)
+                        Text("\(kind.total)")
+                            .font(.caption.weight(.semibold))
+                            .foregroundStyle(PearColor.textPrimary)
+                            .monospacedDigit()
+                    }
+                }
+                Spacer(minLength: 4)
                 Image(systemName: "chevron.right")
-                    .font(.caption.bold())
+                    .font(.caption2.bold())
+                    .foregroundStyle(PearColor.accent)
             }
-            .foregroundStyle(PearColor.accent)
-            .padding(12)
-            .frame(maxWidth: .infinity)
+            .padding(10)
+            .frame(maxWidth: .infinity, alignment: .leading)
             .background(PearColor.surface, in: RoundedRectangle(cornerRadius: 12))
             .contentShape(Rectangle())
         }
         .buttonStyle(.plain)
-        .accessibilityHint("Opens the whole shared timeline")
+        .accessibilityElement(children: .ignore)
+        .accessibilityLabel(breakdownAccessibilityLabel)
+        .accessibilityHint("Opens the tallies")
     }
 
-    // MARK: Moments
-
-    /// One tap logs a moment; the strip scrolls once a connection has invented
-    /// enough of its own.
-    ///
-    /// The "More" button is pinned outside the scroll view rather than sitting at
-    /// the end of the strip: four tiles already overflow the screen, so as the
-    /// last scroll item it started off-screen with nothing to hint at it, which
-    /// hid the only way to invent a moment.
-    private var momentStrip: some View {
-        HStack(spacing: 8) {
-            ScrollView(.horizontal, showsIndicators: false) {
-                HStack(spacing: 8) {
-                    ForEach(model.moments) { moment in
-                        Button {
-                            model.tap(moment: moment)
-                        } label: {
-                            VStack(spacing: 4) {
-                                Text(moment.emoji).font(.largeTitle)
-                                Text(moment.label)
-                                    .font(.caption.bold())
-                                    .foregroundStyle(PearColor.textSecondary)
-                                    .lineLimit(1)
-                            }
-                            .frame(width: 88)
-                            .padding(.vertical, 14)
-                            .background(
-                                model.quickSend?.moment.kind == moment.kind
-                                    ? PearColor.accent.opacity(0.18)
-                                    : PearColor.surface,
-                                in: RoundedRectangle(cornerRadius: 12)
-                            )
-                        }
-                        .buttonStyle(.plain)
-                        // Requirement 12.10.
-                        .disabled(model.isBusy)
-                        .accessibilityLabel("Log \(moment.label)")
-                        .accessibilityHint("Sends in \(Int(QuickSend.delay)) seconds unless you add a note")
-                    }
-                }
-            }
-
-            Button {
-                showMomentSheet = true
-            } label: {
-                VStack(spacing: 4) {
-                    Image(systemName: "plus")
-                        .font(.title.bold())
-                        .foregroundStyle(PearColor.accent)
-                    Text("More")
-                        .font(.caption.bold())
-                        .foregroundStyle(PearColor.textSecondary)
-                }
-                .frame(width: 60)
-                .padding(.vertical, 14)
-                .background(PearColor.surface, in: RoundedRectangle(cornerRadius: 12))
-                .overlay(
-                    RoundedRectangle(cornerRadius: 12)
-                        .strokeBorder(PearColor.divider, style: StrokeStyle(lineWidth: 1, dash: [4]))
-                )
-            }
-            .buttonStyle(.plain)
-            .disabled(model.isBusy)
-            .accessibilityLabel("More moments")
-        }
-        .opacity(model.isBusy ? 0.6 : 1)
+    private var breakdownAccessibilityLabel: String {
+        let parts = model.topMoments.map { "\($0.label) \($0.total)" }
+        return parts.isEmpty ? "Moment breakdown" : "Most logged: " + parts.joined(separator: ", ")
     }
 
     /// The undo/annotate window. It says what is about to happen and by when, so
@@ -553,119 +415,9 @@ struct HomeView: View {
         .background(PearColor.accent.opacity(0.08), in: RoundedRectangle(cornerRadius: 14))
     }
 
-    // MARK: Tallies
+    // MARK: Camera
 
-    private var tallyRows: some View {
-        VStack(spacing: 6) {
-            tallyRow(label: "You", tallies: model.myTallies)
-            tallyRow(label: model.othersLabel, tallies: model.partnerTallies)
-            if model.hasMomentBreakdown {
-                breakdownStrip
-            }
-        }
-    }
-
-    /// The tally rows say how many; this says of what. One line, because the home
-    /// screen is meant to fit without scrolling — the full breakdown is a tap away
-    /// rather than inline, since a connection with a dozen invented moments would
-    /// be a dozen rows.
-    private var breakdownStrip: some View {
-        Button {
-            showBreakdown = true
-        } label: {
-            HStack(spacing: 12) {
-                ForEach(model.topMoments) { kind in
-                    HStack(spacing: 3) {
-                        Text(kind.emoji)
-                            .font(.caption)
-                        Text("\(kind.total)")
-                            .font(.caption.weight(.semibold))
-                            .foregroundStyle(PearColor.textPrimary)
-                            .monospacedDigit()
-                    }
-                }
-                Spacer(minLength: 4)
-                Image(systemName: "chevron.right")
-                    .font(.caption2.bold())
-                    .foregroundStyle(PearColor.accent)
-            }
-            .padding(10)
-            .frame(maxWidth: .infinity, alignment: .leading)
-            .background(PearColor.surface, in: RoundedRectangle(cornerRadius: 12))
-            .contentShape(Rectangle())
-        }
-        .buttonStyle(.plain)
-        .accessibilityElement(children: .ignore)
-        .accessibilityLabel(breakdownAccessibilityLabel)
-        .accessibilityHint("Opens the breakdown by moment")
-    }
-
-    private var breakdownAccessibilityLabel: String {
-        let parts = model.topMoments.map { "\($0.label) \($0.total)" }
-        return parts.isEmpty ? "Moment breakdown" : "Most logged: " + parts.joined(separator: ", ")
-    }
-
-    private func tallyRow(label: String, tallies: TallyPeriods) -> some View {
-        HStack(spacing: 8) {
-            Text(label)
-                .font(.caption.bold())
-                .foregroundStyle(PearColor.accent)
-                .frame(width: 60, alignment: .leading)
-            Group {
-                Text("T \(tallies.day)")
-                Text("W \(tallies.week)")
-                Text("M \(tallies.month)")
-                Text("All \(tallies.all)")
-            }
-            .font(.caption.weight(.semibold))
-            .foregroundStyle(PearColor.textPrimary)
-        }
-        .frame(maxWidth: .infinity, alignment: .leading)
-        .padding(10)
-        .background(PearColor.surface, in: RoundedRectangle(cornerRadius: 12))
-        .accessibilityElement(children: .combine)
-        .accessibilityLabel(
-            "\(label): \(tallies.day) today, \(tallies.week) this week, \(tallies.month) this month, \(tallies.all) all time"
-        )
-    }
-
-    // MARK: History
-
-    private var historyList: some View {
-        VStack(alignment: .leading, spacing: 6) {
-            ForEach(model.historyPosts) { post in
-                HStack(alignment: .firstTextBaseline, spacing: 6) {
-                    Text("\(model.authorLabel(for: post)) · \(model.emoji(for: post))")
-                    Text(historyDetail(for: post))
-                        .lineLimit(1)
-                    Spacer(minLength: 4)
-                    if model.pendingSend(for: post) != nil {
-                        Image(systemName: model.isOffline ? "wifi.slash" : "arrow.up.circle")
-                            .font(.caption2)
-                            .foregroundStyle(PearColor.textTertiary)
-                            .accessibilityLabel("not sent yet")
-                    }
-                    Text(ElapsedTime.label(for: post.created))
-                        .font(.caption2)
-                        .foregroundStyle(PearColor.textTertiary)
-                }
-                .font(.footnote)
-                .foregroundStyle(PearColor.textSecondary)
-            }
-        }
-        .padding(12)
-        .frame(maxWidth: .infinity, alignment: .leading)
-        .background(PearColor.surface, in: RoundedRectangle(cornerRadius: 12))
-    }
-
-    private func historyDetail(for post: Post) -> String {
-        if let note = post.displayNote { return note }
-        return model.caption(for: post)
-    }
-
-    // MARK: Actions
-
-    private var cameraButton: some View {
+    private var cameraBar: some View {
         Button {
             Task { await requestCamera() }
         } label: {
@@ -673,37 +425,23 @@ struct HomeView: View {
                 if model.busy == .photo {
                     ProgressView().tint(.white)
                 } else {
-                    Text("📸 Share a moment")
+                    Label("Share a photo", systemImage: "camera.fill")
                         .font(.body.bold())
                         .foregroundStyle(.white)
                 }
             }
             .frame(maxWidth: .infinity, minHeight: 24)
             .padding(.vertical, 14)
-            .background(PearColor.accent, in: RoundedRectangle(cornerRadius: 12))
+            .background(PearColor.accent, in: RoundedRectangle(cornerRadius: 14))
             .contentShape(Rectangle())
         }
         .buttonStyle(.plain)
         .disabled(model.isBusy)
         .accessibilityLabel("Share a photo moment")
-    }
-
-    private var footer: some View {
-        HStack {
-            Button("Sign out") {
-                Task { await app.signOut() }
-            }
-            .foregroundStyle(PearColor.textSecondary)
-
-            Spacer()
-
-            Button(model.isGroup ? "Leave group" : "Un-pear") {
-                showLeaveConfirmation = true
-            }
-            .foregroundStyle(PearColor.error)
-        }
-        .font(.subheadline)
+        .padding(.horizontal, 20)
         .padding(.top, 8)
+        .padding(.bottom, 8)
+        .background(.bar)
     }
 
     /// Requirement 13.1, 13.2.
@@ -729,7 +467,7 @@ struct HomeView: View {
     }
 }
 
-private extension View {
+extension View {
     /// Presents a `HomeModel.AlertContent` as a single-button alert.
     func alert(item: Binding<HomeModel.AlertContent?>) -> some View {
         alert(

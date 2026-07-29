@@ -391,6 +391,58 @@ final class AppModel {
         await widgetSync.sync()
     }
 
+    /// Sets the caller's own photo. Everybody they share a connection with sees
+    /// it, so the connection list is re-read: it carries each member's avatar,
+    /// including the caller's own.
+    func updateProfileAvatar(jpeg data: Data) async {
+        do {
+            profile = try await api.uploadProfileAvatar(jpeg: data)
+        } catch {
+            if await handleIfUnauthorized(error) { return }
+            banner = (error as? APIError)?.localizedDescription ?? error.localizedDescription
+            return
+        }
+        await refreshConnections()
+    }
+
+    /// Removes the caller's own photo, back to initials.
+    func removeProfileAvatar() async {
+        do {
+            profile = try await api.removeProfileAvatar()
+        } catch {
+            if await handleIfUnauthorized(error) { return }
+            banner = (error as? APIError)?.localizedDescription ?? error.localizedDescription
+            return
+        }
+        await refreshConnections()
+    }
+
+    /// Sets a connection's photo. Any member may, exactly as any member may
+    /// rename it.
+    func updateConnectionAvatar(connectionID: String, jpeg data: Data) async {
+        do {
+            _ = try await api.uploadConnectionAvatar(pairID: connectionID, jpeg: data)
+        } catch {
+            if await handleIfUnauthorized(error) { return }
+            banner = (error as? APIError)?.localizedDescription ?? error.localizedDescription
+            return
+        }
+        await refreshConnections()
+    }
+
+    /// Removes a connection's photo. A 1:1 falls back to the other person's, a
+    /// group to its initials.
+    func removeConnectionAvatar(connectionID: String) async {
+        do {
+            _ = try await api.removeConnectionAvatar(pairID: connectionID)
+        } catch {
+            if await handleIfUnauthorized(error) { return }
+            banner = (error as? APIError)?.localizedDescription ?? error.localizedDescription
+            return
+        }
+        await refreshConnections()
+    }
+
     /// Requirement 8.4 — a 401 clears the session and forces re-authentication.
     func clearSessionAndReturnToAuth() async {
         sessionStore.clear()

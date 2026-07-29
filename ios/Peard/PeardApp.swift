@@ -44,7 +44,7 @@ struct RootView: View {
             case .pair(let prefilledCode):
                 PairView(prefilledCode: prefilledCode)
             case .home(let pairID):
-                HomeView(model: HomeModel(app: app, pairID: pairID))
+                MainTabView(model: HomeModel(app: app, pairID: pairID))
                     .id(pairID)
             }
         }

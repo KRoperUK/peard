@@ -110,5 +110,8 @@ func present(user *core.Record) map[string]any {
 		"id":           user.Id,
 		"display_name": user.GetString("display_name"),
 		"email":        user.GetString("email"),
+		// The stored filename; internal/avatars writes it and the client builds
+		// the `/api/files/users/{id}/{filename}` path.
+		"avatar": user.GetString("avatar"),
 	}
 }

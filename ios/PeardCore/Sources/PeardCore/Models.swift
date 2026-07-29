@@ -332,19 +332,48 @@ public struct Connection: Codable, Hashable, Sendable, Identifiable {
         public let name: String
         public let role: MemberRole
         public let isYou: Bool
+        /// Stored filename of their profile photo, empty when they have none.
+        public let avatarFilename: String?
 
         public var id: String { user }
 
         enum CodingKeys: String, CodingKey {
             case user, name, role
             case isYou = "is_you"
+            case avatarFilename = "avatar"
         }
 
-        public init(user: String, name: String, role: MemberRole = .member, isYou: Bool = false) {
+        public init(
+            user: String,
+            name: String,
+            role: MemberRole = .member,
+            isYou: Bool = false,
+            avatarFilename: String? = nil
+        ) {
             self.user = user
             self.name = name
             self.role = role
             self.isYou = isYou
+            self.avatarFilename = avatarFilename
+        }
+
+        public init(from decoder: any Decoder) throws {
+            let container = try decoder.container(keyedBy: CodingKeys.self)
+            user = try container.decode(String.self, forKey: .user)
+            name = try container.decodeIfPresent(String.self, forKey: .name) ?? PartnerLabel.unknown
+            role = try container.decodeIfPresent(MemberRole.self, forKey: .role) ?? .member
+            isYou = try container.decodeIfPresent(Bool.self, forKey: .isYou) ?? false
+            avatarFilename = try container.decodeIfPresent(String.self, forKey: .avatarFilename)
+        }
+
+        /// Their photo, or the initials to draw instead.
+        public var avatar: Avatar {
+            Avatar(
+                owner: .users,
+                recordID: user,
+                filename: avatarFilename,
+                placeholder: .make(name: name, key: user)
+            )
         }
     }
 
@@ -359,6 +388,10 @@ public struct Connection: Codable, Hashable, Sendable, Identifiable {
     /// True when the signed-in user has silenced this connection's pushes. Per
     /// membership, not per user: silencing the noisy group leaves the 1:1 audible.
     public let isMuted: Bool
+    /// Stored filename of the connection's own photo, empty when it has none.
+    /// A group's photo; a 1:1 may also have one, and when it does not the rail
+    /// falls back to the other person's.
+    public let avatarFilename: String?
 
     public var id: String { pair }
 
@@ -366,6 +399,7 @@ public struct Connection: Codable, Hashable, Sendable, Identifiable {
         case pair, name, created, role, members
         case memberCount = "member_count"
         case isMuted = "muted"
+        case avatarFilename = "avatar"
     }
 
     public init(
@@ -375,7 +409,8 @@ public struct Connection: Codable, Hashable, Sendable, Identifiable {
         role: MemberRole = .member,
         memberCount: Int? = nil,
         members: [Member] = [],
-        isMuted: Bool = false
+        isMuted: Bool = false,
+        avatarFilename: String? = nil
     ) {
         self.pair = pair
         self.name = name
@@ -384,6 +419,7 @@ public struct Connection: Codable, Hashable, Sendable, Identifiable {
         self.members = members
         self.memberCount = memberCount ?? max(members.count, 1)
         self.isMuted = isMuted
+        self.avatarFilename = avatarFilename
     }
 
     public init(from decoder: any Decoder) throws {
@@ -394,6 +430,7 @@ public struct Connection: Codable, Hashable, Sendable, Identifiable {
         role = try container.decodeIfPresent(MemberRole.self, forKey: .role) ?? .member
         members = try container.decodeIfPresent([Member].self, forKey: .members) ?? []
         isMuted = try container.decodeIfPresent(Bool.self, forKey: .isMuted) ?? false
+        avatarFilename = try container.decodeIfPresent(String.self, forKey: .avatarFilename)
         let count = try container.decodeIfPresent(Int.self, forKey: .memberCount)
         // A connection always contains at least the signed-in user.
         memberCount = max(count ?? members.count, 1)
@@ -421,6 +458,14 @@ public struct Connection: Codable, Hashable, Sendable, Identifiable {
         return others[0].name
     }
 
+    /// True when you are the only member left.
+    ///
+    /// Reachable in ordinary use: leaving removes a membership row and nothing
+    /// deletes the connection behind it, so the last person standing keeps a
+    /// connection containing only themselves — with everybody's moments still in
+    /// it. Every label that assumed "not a group means two of us" was wrong here.
+    public var isJustYou: Bool { memberCount <= 1 && others.isEmpty }
+
     /// The connection's title, in precedence order: the name somebody set, the
     /// other person's name for a 1:1, the other members for a small group, then
     /// a description of its size.
@@ -429,6 +474,10 @@ public struct Connection: Codable, Hashable, Sendable, Identifiable {
         if let partnerName { return partnerName }
         let names = others.map(\.name)
         switch names.count {
+        // No names *and* nobody else to name: this connection is just you. Distinct
+        // from the case below, where there is somebody but the server could not
+        // resolve them, and "Partner" is the right guess.
+        case 0 where isJustYou: return Self.justYouTitle
         case 0: return PartnerLabel.fallback
         case 1: return names[0]
         case 2: return "\(names[0]) & \(names[1])"
@@ -438,12 +487,66 @@ public struct Connection: Codable, Hashable, Sendable, Identifiable {
 
     /// Sub-label under the title in the connection switcher.
     public var subtitle: String {
-        isGroup ? "\(memberCount) people" : "Just the two of you"
+        if isJustYou { return Self.justYouTitle }
+        return isGroup ? "\(memberCount) people" : "Just the two of you"
+    }
+
+    static let justYouTitle = "Just you"
+
+    /// What to call everybody who is not you — the second tally row, and the
+    /// "others" side of a moment breakdown.
+    ///
+    /// Three cases rather than two. A group has no single partner, so "Others". A
+    /// 1:1 uses the other person's name. But a connection can also have no other
+    /// *current* member while still carrying their moments: leaving deletes the
+    /// membership row, not the posts. There "Partner" is wrong twice over — there
+    /// is no partner, and `PartnerLabel.unknown` is already what the timeline
+    /// calls that same author. Two screens naming one person differently is worse
+    /// than either name on its own.
+    public var othersLabel: String {
+        if isGroup { return "Others" }
+        guard let other = others.first else { return PartnerLabel.unknown }
+        return other.name
     }
 
     /// The display name for a post's author.
     public func name(forUser userID: String) -> String? {
         members.first { $0.user == userID }?.name
+    }
+
+    /// What to draw for this connection in the rail.
+    ///
+    /// A connection's own photo wins. Failing that, a 1:1 borrows the other
+    /// person's — the connection *is* that person, and making somebody upload the
+    /// same picture twice to see a face would be silly. A group with no photo
+    /// falls back to initials of its title, with `isGroup` set so the UI can
+    /// choose a group glyph instead.
+    public var avatar: Avatar {
+        if let avatarFilename, !avatarFilename.isEmpty {
+            return Avatar(
+                owner: .pairs,
+                recordID: pair,
+                filename: avatarFilename,
+                placeholder: .make(name: title(), key: pair, isGroup: isGroup)
+            )
+        }
+        if !isGroup, let other = others.first, other.avatar.hasImage {
+            return other.avatar
+        }
+        return Avatar(
+            owner: .pairs,
+            recordID: pair,
+            filename: nil,
+            placeholder: .make(name: title(), key: pair, isGroup: isGroup)
+        )
+    }
+
+    /// True when somebody has set a photo on the connection itself, as opposed to
+    /// the rail borrowing a member's. Distinguishes "remove the group photo" from
+    /// "there is nothing to remove".
+    public var hasOwnAvatar: Bool {
+        guard let avatarFilename else { return false }
+        return !avatarFilename.isEmpty
     }
 }
 
@@ -874,6 +977,25 @@ public struct AuthResponse: Codable, Hashable, Sendable {
     }
 }
 
+/// Response of `POST`/`DELETE /api/peard/connections/avatar`.
+///
+/// Only the connection's own filename comes back; the rest of the connection is
+/// unchanged, and the caller re-reads the list anyway so every screen agrees.
+public struct ConnectionAvatar: Codable, Hashable, Sendable {
+    public let pair: String
+    public let avatarFilename: String?
+
+    enum CodingKeys: String, CodingKey {
+        case pair
+        case avatarFilename = "avatar"
+    }
+
+    public init(pair: String, avatarFilename: String? = nil) {
+        self.pair = pair
+        self.avatarFilename = avatarFilename
+    }
+}
+
 /// Response of `GET`/`POST /api/peard/profile`.
 ///
 /// Distinct from `UserRecord`: this route is the caller reading and writing their
@@ -883,16 +1005,20 @@ public struct UserProfile: Codable, Hashable, Sendable, Identifiable {
     public let id: String
     public let displayName: String
     public let email: String?
+    /// Stored filename of the caller's own photo, empty when they have none.
+    public let avatarFilename: String?
 
     enum CodingKeys: String, CodingKey {
         case id, email
         case displayName = "display_name"
+        case avatarFilename = "avatar"
     }
 
-    public init(id: String, displayName: String = "", email: String? = nil) {
+    public init(id: String, displayName: String = "", email: String? = nil, avatarFilename: String? = nil) {
         self.id = id
         self.displayName = displayName
         self.email = email
+        self.avatarFilename = avatarFilename
     }
 
     public init(from decoder: any Decoder) throws {
@@ -900,12 +1026,29 @@ public struct UserProfile: Codable, Hashable, Sendable, Identifiable {
         id = try container.decode(String.self, forKey: .id)
         displayName = try container.decodeIfPresent(String.self, forKey: .displayName) ?? ""
         email = try container.decodeIfPresent(String.self, forKey: .email)
+        avatarFilename = try container.decodeIfPresent(String.self, forKey: .avatarFilename)
     }
 
     /// What other members would see today: the set name, else the email's local
     /// part, else the neutral fallback. Mirrors the server's own resolution.
     public var effectiveName: String {
         PartnerLabel.resolve(displayName: displayName.isEmpty ? nil : displayName, email: email)
+    }
+
+    /// The caller's own photo, or the initials to draw instead.
+    public var avatar: Avatar {
+        Avatar(
+            owner: .users,
+            recordID: id,
+            filename: avatarFilename,
+            placeholder: .make(name: effectiveName, key: id)
+        )
+    }
+
+    /// True when there is a photo to offer removing.
+    public var hasAvatar: Bool {
+        guard let avatarFilename else { return false }
+        return !avatarFilename.isEmpty
     }
 }
 

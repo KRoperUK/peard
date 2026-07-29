@@ -404,6 +404,11 @@ func connectionsHandler(app core.App) func(e *core.RequestEvent) error {
 					"name":   displayName(user),
 					"role":   member.GetString("role"),
 					"is_you": userID == e.Auth.Id,
+					// The stored filename, not a URL. The client already builds
+					// `/api/files/...` paths for post media and knows its own base
+					// URL, so sending one here would bake the host into a response
+					// that is cached on the device.
+					"avatar": avatarFilename(user),
 				})
 			}
 
@@ -415,6 +420,7 @@ func connectionsHandler(app core.App) func(e *core.RequestEvent) error {
 				"muted":        membership.GetBool("muted"),
 				"member_count": len(members),
 				"is_group":     len(members) > 2,
+				"avatar":       pair.GetString("avatar"),
 				"members":      people,
 			})
 		}
@@ -438,6 +444,15 @@ func displayName(user *core.Record) string {
 		}
 	}
 	return "Someone"
+}
+
+// avatarFilename is the user's stored avatar file, or empty when they have not
+// set one. Nil-safe because a membership can outlive its user record.
+func avatarFilename(user *core.Record) string {
+	if user == nil {
+		return ""
+	}
+	return user.GetString("avatar")
 }
 
 func addMember(app core.App, pairID, userID, role string) error {

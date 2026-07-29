@@ -274,6 +274,33 @@ public final class APIClient: Sendable {
         )
     }
 
+    /// `POST` multipart to an arbitrary path (the `/api/peard/*` routes).
+    ///
+    /// Distinct from `createMultipart`, which targets a collection. The avatar
+    /// routes need this because a file cannot travel in a JSON body and the
+    /// collection API is not the write path for either `users` or `pairs`.
+    @discardableResult
+    public func postMultipart<Item: Codable & Hashable & Sendable>(
+        path: String,
+        of _: Item.Type = Item.self,
+        fields: [String: String] = [:],
+        file: MultipartFile
+    ) async throws -> Item {
+        try await send(method: "POST", path: path, body: .multipart(fields: fields, file: file))
+    }
+
+    /// `DELETE` an arbitrary path, decoding the response.
+    ///
+    /// A DELETE carries no body, so anything it needs to name goes in the query.
+    @discardableResult
+    public func delete<Item: Codable & Hashable & Sendable>(
+        path: String,
+        of _: Item.Type = Item.self,
+        query: [String: String] = [:]
+    ) async throws -> Item {
+        try await send(method: "DELETE", path: path, query: query)
+    }
+
     /// Raw `GET`, used for the widget feed image and the debug health probe.
     public func data(path: String, query: [String: String] = [:]) async throws -> Data {
         try await sendReturningData(method: "GET", path: path, query: query, body: nil)

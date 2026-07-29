@@ -31,6 +31,45 @@ before the first of those carry an empty string, which the client decodes as
 preserved verbatim by the client and re-encoded unchanged. Adding a new value
 server-side cannot break an installed app.
 
+## Who can see what
+
+One rule, everywhere: **you can read another person's information only if you
+share a connection with them.** It is enforced by collection rules rather than by
+the client, so it holds for anything speaking to the API.
+
+| Collection | List / view rule |
+|---|---|
+| `users` | `id = @request.auth.id` — you only ever read *yourself* |
+| `pairs` | you are a member |
+| `pair_members` | your own row, or a row in a connection you are in |
+| `posts` | the post's connection is one you are in |
+| `reactions` | the reacted-to post's connection is one you are in |
+| `moment_kinds` | the kind's connection is one you are in |
+| `devices`, `widget_tokens` | `user = @request.auth.id` |
+
+Every one of those is prefixed with `@request.auth.id != "" && (…)`, which is not
+decoration. The membership clauses scope through a back-relation such as
+`pair_members_via_pair.user ?= @request.auth.id`, and PocketBase compiles that to
+a LEFT JOIN — so for a connection with **no members** the joined user is NULL, and
+comparing NULL against the empty auth id of an *unauthenticated* request matched.
+A memberless connection, plus its posts, reactions and custom moments, was
+readable with no `Authorization` header at all. A signed-in stranger was never
+affected, since NULL never equals a real id.
+
+Memberless connections are not exotic: leaving deletes a `pair_members` row and
+nothing deletes the connection behind it, so the last person to leave published
+the whole shared timeline, notes included. The guard rejects the empty case before
+the join is considered. The parentheses matter too — several rules are top-level
+`||`, and `a != "" && b || c` binds as `(a != "" && b) || c`, which would leave the
+hole open through `c`.
+
+Because none of this is expressible per-field, two things are routes rather than
+collection access: `GET /api/peard/connections` (member display names, which the
+`users` rule hides) and the avatar endpoints (one field of a record the caller may
+otherwise rewrite entirely). `server/internal/access` holds the suite that proves
+the whole property against the real schema, including that a co-member *does* get
+names and avatars while never getting an email address.
+
 ## Collection records
 
 ### `posts`
@@ -237,10 +276,11 @@ oldest membership first:
       "muted": false,
       "member_count": 3,
       "is_group": true,
+      "avatar": "photo_a1b2c3d4e5.jpg",
       "members": [
-        { "user": "u1", "name": "Ada",   "role": "owner",  "is_you": true },
-        { "user": "u2", "name": "Grace", "role": "member", "is_you": false },
-        { "user": "u3", "name": "Alan",  "role": "member", "is_you": false }
+        { "user": "u1", "name": "Ada",   "role": "owner",  "is_you": true,  "avatar": "ada_f6g7h8i9j0.jpg" },
+        { "user": "u2", "name": "Grace", "role": "member", "is_you": false, "avatar": "" },
+        { "user": "u3", "name": "Alan",  "role": "member", "is_you": false, "avatar": "" }
       ]
     }
   ]
@@ -255,7 +295,54 @@ not also hand out their address. `name` follows `display_name` → email local
 part → `"Someone"`.
 
 The client titles a connection with, in order: `name`, the other person's name
-for a 1:1, `"Grace & Alan"` for a two-other group, then `"Grace +2"`.
+for a 1:1, `"Grace & Alan"` for a two-other group, then `"Grace +2"`. A connection
+holding only you — reachable, since leaving removes a membership and nothing
+removes the connection behind it — is titled `"Just you"`, and its second tally
+row is labelled `"Someone"` rather than `"Partner"`, matching what the timeline
+calls an author who is no longer a member.
+
+### Avatars
+
+Both `avatar` fields are **stored filenames, not URLs**, matching how
+`posts.media` already travels: a URL would bake the host into a response the
+device caches, and the device already knows its own base URL. An empty string
+means nothing has been uploaded.
+
+The client builds `/api/files/<collection>/<record>/<filename>?thumb=<size>`,
+so the connection's own photo is under `pairs/<pair>` and a member's is under
+`users/<user>`. Two thumb sizes exist — `128x128` for the rail and member rows,
+`512x512` for the settings screen. Asking for any other size makes PocketBase
+serve the original, which for a rail of twelve circles is megabytes of nothing.
+
+| Method | Path | Body | Response |
+|---|---|---|---|
+| POST | `/api/peard/profile/avatar` | multipart `avatar` | `{ id, display_name, email, avatar }` |
+| DELETE | `/api/peard/profile/avatar` | — | same, `avatar: ""` |
+| POST | `/api/peard/connections/avatar` | multipart `pair`, `avatar` | `{ pair, avatar }` |
+| DELETE | `/api/peard/connections/avatar?pair=` | — | `{ pair, avatar: "" }` |
+
+Routes rather than collection writes because `users.UpdateRule` is
+`id = @request.auth.id`, which is the *whole record*: a PATCH that can also carry
+`email` or `emailVisibility` is a wider grant than "let me pick a picture", and
+narrowing a rule to one field is not expressible. Any member may set a
+connection's photo, matching rename — a connection's name and face are shared
+property. Clearing is a DELETE rather than an empty POST, because PocketBase
+deletes the previous file when the field is set to nothing, so an accidental
+empty upload would silently erase a photo.
+
+Accepts JPEG, PNG, WebP and HEIC up to 8 MB; the client downscales to 512 points
+and re-encodes as JPEG first, so the limit is not normally reachable.
+
+The two avatar file fields are deliberately **unprotected**, as `posts.media`
+already is. PocketBase only enforces a collection's view rule on files when the
+field is protected, and `users.ViewRule` is `id = @request.auth.id` — so a
+protected avatar would be invisible to exactly the people who need to see it,
+everybody else in the connection. Unprotected means the URL is the capability,
+which is defensible only because PocketBase appends a ten-character random suffix
+to every stored filename: the path cannot be derived from a record id. There is a
+test asserting that, since the whole argument rests on it. The consequence to be
+aware of is that somebody who leaves a connection keeps any avatar URL they
+already had.
 
 `POST /api/peard/connections/mute` with `{ "pair": "<id>", "muted": true }` →
 `{ "ok": true, "muted": true }`. Per membership rather than per user: with 20

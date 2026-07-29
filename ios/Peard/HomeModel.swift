@@ -25,7 +25,6 @@ final class HomeModel {
     private let app: AppModel
     private let api: APIClient
     let pairID: String
-
     // MARK: State
 
     private(set) var posts: [Post] = []
@@ -70,6 +69,9 @@ final class HomeModel {
 
     var signedInUserID: String { app.signedInUserID }
     var serverURL: URL { app.config.serverURL }
+    /// Handed to the timeline tab, which builds its own paged model against the
+    /// same client rather than duplicating the session plumbing.
+    var apiClient: APIClient { api }
 
     var connection: Connection? { app.connections.first { $0.id == pairID } }
     var isGroup: Bool { connection?.isGroup ?? false }
@@ -82,8 +84,12 @@ final class HomeModel {
     /// The pinned header's title: the connection's name, or who is in it.
     var connectionTitle: String { connection?.title() ?? PartnerLabel.fallback }
 
-    /// Who the second tally row belongs to. A group has no single partner.
-    var othersLabel: String { isGroup ? "Others" : shortPartnerName }
+    /// Who the second tally row belongs to. The rule lives on `Connection`, where
+    /// it is pure; this only applies the row's width limit, which is a no-op on
+    /// both neutral labels.
+    var othersLabel: String {
+        PartnerLabel.short(connection?.othersLabel ?? PartnerLabel.unknown)
+    }
 
     // MARK: Tallies
 
@@ -623,6 +629,46 @@ final class HomeModel {
     /// Silences or unsilences this connection.
     func setMuted(_ muted: Bool) async {
         await app.setMuted(connectionID: pairID, muted: muted)
+    }
+
+    /// The connection's photo, or what to draw instead.
+    var connectionAvatar: Avatar {
+        connection?.avatar ?? Avatar(
+            owner: .pairs,
+            recordID: pairID,
+            filename: nil,
+            placeholder: .make(name: connectionTitle, key: pairID, isGroup: isGroup)
+        )
+    }
+
+    /// True when somebody has set a photo on the connection itself, as opposed to
+    /// a 1:1 borrowing the other person's — so "Remove" is only offered when there
+    /// is something to remove.
+    var connectionHasOwnAvatar: Bool { connection?.hasOwnAvatar ?? false }
+
+    /// Sets the connection's photo. Any member may, as with renaming.
+    func updateConnectionAvatar(jpeg data: Data) async {
+        await app.updateConnectionAvatar(connectionID: pairID, jpeg: data)
+    }
+
+    func removeConnectionAvatar() async {
+        await app.removeConnectionAvatar(connectionID: pairID)
+    }
+
+    /// The avatar for a post's author, for the timeline rows.
+    ///
+    /// A former member is not in the list any more, so there is nothing to draw
+    /// but initials — which is consistent with `authorLabel` naming them "Someone".
+    func avatar(forAuthor userID: String) -> Avatar {
+        if let member = connection?.members.first(where: { $0.user == userID }) {
+            return member.avatar
+        }
+        return Avatar(
+            owner: .users,
+            recordID: userID,
+            filename: nil,
+            placeholder: .make(name: PartnerLabel.unknown, key: userID)
+        )
     }
 
     /// Removes somebody from this connection. Their moments stay in the shared

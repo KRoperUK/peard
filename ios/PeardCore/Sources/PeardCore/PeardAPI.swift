@@ -110,6 +110,55 @@ public extension APIClient {
         try await post(path: "/api/peard/profile", fields: ["display_name": name])
     }
 
+    /// `POST /api/peard/profile/avatar` — sets the caller's own photo.
+    ///
+    /// JPEG rather than the original HEIC: the server accepts both, but a JPEG
+    /// re-encode is a fraction of the bytes and every platform can decode it, and
+    /// an avatar is displayed at 128 points.
+    @discardableResult
+    func uploadProfileAvatar(jpeg data: Data) async throws -> UserProfile {
+        try await postMultipart(
+            path: "/api/peard/profile/avatar",
+            file: MultipartFile(
+                field: "avatar",
+                filename: "avatar.jpg",
+                mimeType: "image/jpeg",
+                data: data
+            )
+        )
+    }
+
+    /// `DELETE /api/peard/profile/avatar` — back to initials.
+    @discardableResult
+    func removeProfileAvatar() async throws -> UserProfile {
+        try await delete(path: "/api/peard/profile/avatar")
+    }
+
+    /// `POST /api/peard/connections/avatar` — sets a connection's photo.
+    ///
+    /// Any member may, exactly as any member may rename it: the name and the face
+    /// are shared property, and a group whose owner has left would otherwise be
+    /// stuck with whatever picture it had.
+    @discardableResult
+    func uploadConnectionAvatar(pairID: String, jpeg data: Data) async throws -> ConnectionAvatar {
+        try await postMultipart(
+            path: "/api/peard/connections/avatar",
+            fields: ["pair": pairID],
+            file: MultipartFile(
+                field: "avatar",
+                filename: "avatar.jpg",
+                mimeType: "image/jpeg",
+                data: data
+            )
+        )
+    }
+
+    /// `DELETE /api/peard/connections/avatar?pair=…` — removes a connection's photo.
+    @discardableResult
+    func removeConnectionAvatar(pairID: String) async throws -> ConnectionAvatar {
+        try await delete(path: "/api/peard/connections/avatar", query: ["pair": pairID])
+    }
+
     /// `GET /api/peard/tallies?pair=…` — the connection's counts, computed
     /// server-side.
     ///

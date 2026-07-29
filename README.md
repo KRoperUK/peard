@@ -5,7 +5,16 @@ a counter for the beers, and a nod for the loo.
 
 A **connection** is a shared timeline. Two people is a pair; more than two is a
 group. You can be in several at once (up to 20, each holding up to 12 people) and
-switch between them from the home screen's header.
+switch between them from a rail of faces at the top of the home screen — pairs
+are circles, groups are squircles, and anyone with no photo gets their initials
+over a colour derived from their record id, so the same person is the same colour
+on every screen. Four tabs sit underneath: Home for logging, Timeline for the
+whole shared history, Tallies for the counts and the per-moment breakdown, and
+Settings for the connection's photo, name, members and muting.
+
+You can only see somebody's name or photo if you share a connection with them.
+That is enforced by collection rules on the server, not by the app, and
+`server/internal/access` holds the suite that proves it.
 
 **Moments** are the one-tap things worth saying: `beer`, `loo` and `coffee` are
 built in, and any connection can invent its own — pick from a recommended list or
@@ -419,6 +428,10 @@ receive live pushes.
 | GET  | `/api/peard/tallies?pair=` | user | Per-member moment counts for day/week/month/all time |
 | GET  | `/api/peard/profile` | user | Your own record |
 | POST | `/api/peard/profile` | user | Set the name other members see |
+| POST | `/api/peard/profile/avatar` | user | Set your profile photo (multipart) |
+| DELETE | `/api/peard/profile/avatar` | user | Remove your profile photo |
+| POST | `/api/peard/connections/avatar` | member | Set a connection's photo (multipart) |
+| DELETE | `/api/peard/connections/avatar?pair=` | member | Remove a connection's photo |
 | POST | `/api/peard/pairs/invite` | user | Generate a 6-char invite code; optional `{"pair":"X"}` invites into an existing connection |
 | POST | `/api/peard/pairs/accept` | user | Accept an invite code (body `{"code":"X"}`) |
 | POST | `/api/peard/pairs/leave` | user | Leave a connection; optional `{"pair":"X"}`, required when you're in more than one |
@@ -460,6 +473,13 @@ or can be omitted.
 - [x] Server-side tallies — the device no longer fetches 500 posts to count them
 - [x] Offline send queue, so a moment logged with no signal is not lost
 - [x] The whole shared timeline, paginated, rather than the latest four moments
+- [x] Profile and connection photos, with a rail of faces instead of a menu, and
+      a tab bar so the timeline and the tallies each get a screenful
+- [x] Cross-connection access control, proven rather than assumed — see
+      `server/internal/access`, which found that a memberless connection was
+      world-readable
+- [ ] Delete a connection when its last member leaves, rather than leaving it
+      orphaned with everybody's moments still in it
 - [ ] Live Activity for "instant photo drop" moments (ActivityKit push-to-update)
 - [ ] Android widget (Jetpack Glance) — blocked on the Android client decision above
 - [ ] Media storage (S3 compatible via PB filesystem settings)

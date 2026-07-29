@@ -10,9 +10,10 @@ import SwiftUI
 /// fortnight of dog walks. The server has counted per kind since the tallies
 /// endpoint landed and sends the numbers on every refresh; nothing rendered them.
 ///
-/// Composed rather than written twice: `MomentBreakdownSection` embeds in the
-/// connection's settings `Form`, `MomentBreakdownSheet` presents the same rows
-/// from the home screen's tallies. Both draw `MomentBreakdownRow`.
+/// Composed rather than written inline: `MomentBreakdownRow` draws one moment,
+/// `MomentBreakdownSection` embeds the set of them in a `Form` — the tallies tab and
+/// nothing else, now that the tab bar means the breakdown has a screen of its own
+/// rather than a one-line summary and a sheet.
 struct MomentBreakdownRow: View {
     let kind: ConnectionTallies.Kind
     let window: TallyWindow
@@ -187,98 +188,5 @@ struct MomentBreakdownSection: View {
                 Text(MomentBreakdownCopy.summary(total: total, kinds: kinds.count, window: window))
             }
         }
-    }
-}
-
-/// The breakdown as its own screen, reached from the home screen's tally rows.
-///
-/// A sheet rather than an inline expansion: the home screen deliberately fits
-/// without scrolling at default text size, and a connection with a dozen invented
-/// moments would be a dozen rows pushing the camera button off the bottom.
-struct MomentBreakdownSheet: View {
-    @Environment(\.dismiss) private var dismiss
-
-    let tallies: ConnectionTallies
-    let connectionTitle: String
-    let mineLabel: String
-    let othersLabel: String
-    let isServerSide: Bool
-
-    @State private var window: TallyWindow = .all
-
-    private var kinds: [ConnectionTallies.Kind] { tallies.rankedKinds(in: window) }
-    private var total: Int { tallies.total(in: window) }
-
-    var body: some View {
-        NavigationStack {
-            VStack(spacing: 0) {
-                MomentBreakdownPicker(window: $window)
-                    .padding(.horizontal, 20)
-                    .padding(.vertical, 12)
-
-                content
-            }
-            .background(PearColor.background)
-            .navigationTitle("Moments")
-            .navigationBarTitleDisplayMode(.inline)
-            .toolbar {
-                ToolbarItem(placement: .principal) {
-                    VStack(spacing: 1) {
-                        Text("Moments")
-                            .font(.headline)
-                            .foregroundStyle(PearColor.textPrimary)
-                        Text(connectionTitle)
-                            .font(.caption2)
-                            .foregroundStyle(PearColor.textTertiary)
-                            .lineLimit(1)
-                    }
-                }
-                ToolbarItem(placement: .topBarTrailing) {
-                    Button("Done") { dismiss() }
-                }
-            }
-        }
-    }
-
-    @ViewBuilder
-    private var content: some View {
-        if !isServerSide {
-            message(MomentBreakdownCopy.unavailable)
-        } else if kinds.isEmpty {
-            message(MomentBreakdownCopy.empty(window, callToAction: "Tap one to start."))
-        } else {
-            List {
-                ForEach(kinds) { kind in
-                    MomentBreakdownRow(
-                        kind: kind,
-                        window: window,
-                        windowTotal: total,
-                        mineLabel: mineLabel,
-                        othersLabel: othersLabel
-                    )
-                    .listRowBackground(PearColor.surface)
-                }
-
-                Text(MomentBreakdownCopy.summary(total: total, kinds: kinds.count, window: window))
-                    .font(.footnote)
-                    .foregroundStyle(PearColor.textTertiary)
-                    .frame(maxWidth: .infinity, alignment: .center)
-                    .listRowBackground(Color.clear)
-            }
-            .listStyle(.plain)
-            .scrollContentBackground(.hidden)
-        }
-    }
-
-    private func message(_ text: String) -> some View {
-        VStack(spacing: 10) {
-            Text("🍐").font(.system(size: 44)).accessibilityHidden(true)
-            Text(text)
-                .font(.subheadline)
-                .foregroundStyle(PearColor.textSecondary)
-                .multilineTextAlignment(.center)
-        }
-        .padding(32)
-        .frame(maxWidth: .infinity, maxHeight: .infinity)
     }
 }

@@ -2,16 +2,17 @@ import PeardCore
 import SwiftUI
 
 /// Everything about one connection that is not a moment: who is in it, what it is
-/// called, whether it makes a noise, and how to leave it. Plus the signed-in
-/// user's own name, which is what everybody else sees them as.
+/// called, what it looks like, whether it makes a noise, and how to leave it. Plus
+/// the signed-in user's own name and photo, which are what everybody else sees them
+/// as, and signing out.
 ///
 /// This exists because those controls had nowhere to live. Renaming was buried in
 /// the header menu, there was no member list at all, no way to remove somebody, and
 /// nothing anywhere could set a display name — so a group of four read as a list of
-/// email prefixes.
+/// email prefixes. It is now a tab rather than a sheet, so nothing has to be
+/// dismissed to get back to logging a moment.
 struct ConnectionSettingsView: View {
     @Environment(AppModel.self) private var app
-    @Environment(\.dismiss) private var dismiss
 
     let model: HomeModel
 
@@ -21,35 +22,44 @@ struct ConnectionSettingsView: View {
     @State private var isSavingDisplayName = false
     @State private var memberPendingRemoval: Connection.Member?
     @State private var showLeaveConfirmation = false
+    @State private var showSignOutConfirmation = false
     @State private var showInviteSheet = false
-    /// All time by default: it is the only window guaranteed to have something in
-    /// it, so the section does not open on "nothing logged today yet".
-    @State private var breakdownWindow: TallyWindow = .all
 
     var body: some View {
         NavigationStack {
             Form {
+                identitySection
                 nameSection
-                momentsSection
                 membersSection
                 notificationsSection
                 pendingSection
                 yourNameSection
+                accountSection
                 leaveSection
             }
             .scrollContentBackground(.hidden)
             .background(PearColor.background)
-            .navigationTitle("Connection")
+            .navigationTitle("Settings")
             .navigationBarTitleDisplayMode(.inline)
             .toolbar {
-                ToolbarItem(placement: .topBarTrailing) {
-                    Button("Done") { dismiss() }
+                ToolbarItem(placement: .principal) {
+                    ConnectionToolbarTitle(title: "Settings", subtitle: model.connectionTitle)
                 }
             }
             .task {
                 nameText = model.connection?.displayName ?? ""
                 await app.loadProfile()
                 displayNameText = app.profile?.displayName ?? ""
+            }
+            // The name fields are seeded from state that changes from elsewhere:
+            // another member renames the group, or the display name is saved and
+            // the server normalises it. Without this the field would keep showing
+            // what was typed before the switch.
+            .onChange(of: model.connection?.displayName) { _, name in
+                nameText = name ?? ""
+            }
+            .onChange(of: app.profile?.displayName) { _, name in
+                displayNameText = name ?? ""
             }
             .sheet(isPresented: $showInviteSheet) {
                 InviteSheet(pairID: model.pairID, connectionTitle: model.connectionTitle)
@@ -74,15 +84,24 @@ struct ConnectionSettingsView: View {
                 Text("Their moments stay in the shared timeline.")
             }
             .confirmationDialog(
+                "Sign out?",
+                isPresented: $showSignOutConfirmation,
+                titleVisibility: .visible
+            ) {
+                Button("Sign out", role: .destructive) {
+                    Task { await app.signOut() }
+                }
+                Button("Cancel", role: .cancel) {}
+            } message: {
+                Text("Anything still waiting to send is discarded.")
+            }
+            .confirmationDialog(
                 model.isGroup ? "Leave this group?" : "Un-pear?",
                 isPresented: $showLeaveConfirmation,
                 titleVisibility: .visible
             ) {
                 Button("Leave", role: .destructive) {
-                    Task {
-                        await model.leaveConnection()
-                        dismiss()
-                    }
+                    Task { await model.leaveConnection() }
                 }
                 Button("Cancel", role: .cancel) {}
             } message: {
@@ -97,6 +116,36 @@ struct ConnectionSettingsView: View {
 
     private var removalPrompt: String {
         memberPendingRemoval.map { "Remove \($0.name)?" } ?? "Remove them?"
+    }
+
+    // MARK: Photo
+
+    /// The connection's face. Any member may set it, exactly as any member may
+    /// rename it: the name and the picture are shared property, and a group whose
+    /// only owner has left would otherwise be stuck with whatever it had.
+    private var identitySection: some View {
+        Section {
+            AvatarPickerRow(
+                avatar: model.connectionAvatar,
+                serverURL: model.serverURL,
+                title: model.connectionTitle,
+                subtitle: photoSubtitle,
+                onRemove: model.connectionHasOwnAvatar ? { await model.removeConnectionAvatar() } : nil,
+                onPick: { await model.updateConnectionAvatar(jpeg: $0) }
+            )
+        } header: {
+            Text("Photo")
+        } footer: {
+            Text("Everyone in the connection sees this. Anyone here can change it.")
+        }
+    }
+
+    private var photoSubtitle: String {
+        if model.connectionHasOwnAvatar { return model.connection?.subtitle ?? "" }
+        if !model.isGroup, model.connectionAvatar.hasImage {
+            return "Using \(model.shortPartnerName)'s photo"
+        }
+        return model.connection?.subtitle ?? ""
     }
 
     // MARK: Name
@@ -127,20 +176,6 @@ struct ConnectionSettingsView: View {
         }
     }
 
-    // MARK: Moments
-
-    /// Which moments this connection actually logs. The tally rows on the home
-    /// screen only ever said how many there were in total.
-    private var momentsSection: some View {
-        MomentBreakdownSection(
-            tallies: model.momentTallies,
-            mineLabel: "You",
-            othersLabel: model.othersLabel,
-            isServerSide: model.talliesAreServerSide,
-            window: $breakdownWindow
-        )
-    }
-
     // MARK: Members
 
     private var membersSection: some View {
@@ -167,7 +202,9 @@ struct ConnectionSettingsView: View {
 
     @ViewBuilder
     private func memberRow(_ member: Connection.Member) -> some View {
-        HStack {
+        HStack(spacing: 12) {
+            AvatarView(avatar: member.avatar, serverURL: model.serverURL, size: 32)
+                .accessibilityHidden(true)
             Text(member.name)
                 .foregroundStyle(PearColor.textPrimary)
             if member.isYou {
@@ -182,6 +219,7 @@ struct ConnectionSettingsView: View {
                     .foregroundStyle(PearColor.accent)
             }
         }
+        .accessibilityElement(children: .combine)
         .swipeActions(edge: .trailing) {
             // Removing yourself is leaving, which tidies up an emptied connection
             // and needs no ownership — so it is the button at the bottom, not this.
@@ -268,6 +306,19 @@ struct ConnectionSettingsView: View {
 
     private var yourNameSection: some View {
         Section {
+            if let profile = app.profile {
+                AvatarPickerRow(
+                    avatar: profile.avatar,
+                    serverURL: model.serverURL,
+                    title: profile.effectiveName,
+                    subtitle: profile.hasAvatar
+                        ? "Everyone you're connected with sees this"
+                        : "They see your initials until you add one",
+                    onRemove: profile.hasAvatar ? { await app.removeProfileAvatar() } : nil,
+                    onPick: { await app.updateProfileAvatar(jpeg: $0) }
+                )
+            }
+
             TextField(placeholderName, text: $displayNameText)
                 .textInputAutocapitalization(.words)
                 .accessibilityLabel("Your display name")
@@ -287,9 +338,9 @@ struct ConnectionSettingsView: View {
             }
             .disabled(isSavingDisplayName || displayNameText == (app.profile?.displayName ?? ""))
         } header: {
-            Text("Your name")
+            Text("You")
         } footer: {
-            Text("How you appear to everyone you're connected with. Without one, they see \(placeholderName).")
+            Text("How you appear to everyone you're connected with. Without a name, they see \(placeholderName).")
         }
     }
 
@@ -297,6 +348,24 @@ struct ConnectionSettingsView: View {
     /// server falls back to the local part of the email.
     private var placeholderName: String {
         app.profile?.effectiveName ?? PartnerLabel.fallback
+    }
+
+    // MARK: Account
+
+    /// Signing out lived at the bottom of the home screen, next to "Un-pear", which
+    /// put the two most destructive actions in the app side by side under a moment
+    /// grid. It belongs here.
+    private var accountSection: some View {
+        Section {
+            Button("Sign out") {
+                showSignOutConfirmation = true
+            }
+            .foregroundStyle(PearColor.textPrimary)
+        } footer: {
+            if let email = app.profile?.email, !email.isEmpty {
+                Text("Signed in as \(email).")
+            }
+        }
     }
 
     // MARK: Leave
