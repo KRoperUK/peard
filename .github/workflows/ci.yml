@@ -59,13 +59,19 @@ jobs:
       - uses: actions/checkout@v4
 
       - name: Validate compose files
-        # Parses and interpolates both shapes. Catches a bad ${VAR} default, a
-        # malformed override, and — because the TLS file uses `ports: !override`
-        # — a runner whose Compose predates 2.24.
+        # Parses and interpolates all three shapes. Catches a bad ${VAR} default,
+        # a malformed override, and — because the TLS and cloudflared files use
+        # `ports: !override` — a runner whose Compose predates 2.24. The last
+        # check asserts the cloudflared shape publishes nothing: the tunnel is
+        # meant to be the only ingress, and a stray mapping would be a second,
+        # unauthenticated one. `config` does not require the external network to
+        # exist, so this works on a runner with no cloudflared on it.
         run: |
           docker compose version
           docker compose -f docker-compose.yml config >/dev/null
           docker compose -f docker-compose.yml -f docker-compose.tls.yml config >/dev/null
+          docker compose -f docker-compose.yml -f docker-compose.cloudflared.yml config >/dev/null
+          test -z "$(docker compose -f docker-compose.yml -f docker-compose.cloudflared.yml config --format json | jq -r '.services.server.ports // [] | length | select(. > 0)')"
 
       - name: Build image
         run: docker compose build

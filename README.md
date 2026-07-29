@@ -31,7 +31,8 @@ peard/
 ├── fastlane/     build, test and TestFlight lanes
 ├── docs/         wire contract between app and server
 ├── docker-compose.yml      the server stack (HTTP, proxy in front)
-└── docker-compose.tls.yml  override: PocketBase owns 80/443 and its own cert
+├── docker-compose.tls.yml  override: PocketBase owns 80/443 and its own cert
+└── docker-compose.cloudflared.yml  override: no host port, cloudflared ingress
 ```
 
 `ios/Peard.xcodeproj` is **generated** from `ios/project.yml` and is not
@@ -212,26 +213,67 @@ empty Environment starts and serves.
 docker compose up -d --build                 # HTTP on 8090, proxy in front
 make docker-up                               # same thing
 make docker-up-tls                           # PocketBase owns 80/443 itself
+make docker-up-cloudflared                   # no host port; tunnel is the ingress
 ```
 
 The base file serves plain HTTP on `${PEARD_HTTP_PORT:-8090}` and expects a
 reverse proxy to terminate TLS — the right shape for most Komodo hosts, which
 already run Traefik or Caddy, and it keeps the container off privileged ports.
-To let PocketBase manage its own certificate instead, add the override:
+Two overrides change that, and they are mutually exclusive.
+
+#### Behind a cloudflared tunnel (no host port)
+
+```bash
+docker compose -f docker-compose.yml -f docker-compose.cloudflared.yml up -d --build
+```
+
+This publishes **nothing** on the host and joins the container to the network the
+`cloudflared` container is already on, so the tunnel is the only way in. Then add
+one public hostname to the tunnel — Cloudflare Zero Trust dashboard for a
+token-run tunnel, `config.yml` for a locally configured one:
+
+```
+peard.kroper.uk  ->  HTTP  ->  peard-server:8090
+```
+
+HTTP on the origin leg is correct: Cloudflare terminates TLS at its edge, and the
+hop from `cloudflared` to the container never leaves Docker's network. The app
+still sees `https://peard.kroper.uk`, which is what a Release build requires.
+
+`PEARD_CLOUDFLARED_NETWORK` names the network (default
+`cloudflared_cloudflared`); it is declared `external`, so a wrong name fails at
+`up` rather than creating an empty network with no tunnel on it — which would
+otherwise pass its health check and be unreachable. Find the real name with:
+
+```bash
+docker inspect <cloudflared-container> \
+  --format '{{range $k,$v := .NetworkSettings.Networks}}{{$k}}{{end}}'
+```
+
+Not publishing a port is the point rather than tidiness: a mapped port is a
+second, unauthenticated ingress that bypasses Cloudflare — including for `/_/`,
+the PocketBase dashboard. Outbound still works through the network's gateway,
+which the server needs for Apple's JWKS, APNs and nothing else.
+
+#### PocketBase manages its own certificate
 
 ```bash
 docker compose -f docker-compose.yml -f docker-compose.tls.yml up -d --build
 ```
 
-In Komodo, list both paths in the stack's *Compose file paths*. The override
-replaces the port mapping outright (`ports: !override`, needs Compose 2.24+),
-passes `PEARD_TLS_DOMAIN` as the positional argument, and grants
+The override replaces the port mapping outright (`ports: !override`, needs
+Compose 2.24+), passes `PEARD_TLS_DOMAIN` as the positional argument, and grants
 `NET_BIND_SERVICE` so uid 1000 can bind 80 and 443 — narrower than the usual fix
-of running as root. Do not combine it with a proxy that already owns those ports.
+of running as root. Do not combine it with a proxy that already owns those ports,
+and do not combine it with the cloudflared override: the ACME challenge is
+answered on port 80, which that override no longer publishes. Behind a *proxied*
+Cloudflare DNS record it cannot work either, since Cloudflare intercepts 80.
 
-Variables are in `server/.env.example`, including the four that only the compose
-files read (`PEARD_HTTP_PORT`, `PEARD_TLS_DOMAIN`, `TZ`,
-`PEARD_PB_ENCRYPTION_KEY`). Two are worth knowing before the first deploy:
+In Komodo, list both paths in the stack's *Compose file paths*.
+
+Variables are in `server/.env.example`, including the five that only the compose
+files read (`PEARD_HTTP_PORT`, `PEARD_CLOUDFLARED_NETWORK`, `PEARD_TLS_DOMAIN`,
+`TZ`, `PEARD_PB_ENCRYPTION_KEY`). Two are worth knowing before the first deploy:
 
 **The APNs key travels as content, not a path.** A `.p8` is git-ignored, so a
 repo-based stack cannot carry the file, and bind-mounting a host secret defeats

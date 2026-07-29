@@ -1,0 +1,61 @@
+# Override: publish nothing on the host, and let a cloudflared tunnel reach the
+# container over a shared Docker network instead.
+#
+#   docker compose -f docker-compose.yml -f docker-compose.cloudflared.yml up -d --build
+#
+# In Komodo, list both paths in the stack's "Compose file paths".
+#
+# The network is external and is deliberately not created here: it is the network
+# the cloudflared container is already on, owned by whatever stack runs the
+# tunnel. If this file created it instead, a wrong name would silently produce a
+# fresh, empty network with no tunnel on it — and the stack would come up
+# healthy, pass its health check, and be unreachable. External means a wrong name
+# is an error at `up` time instead. To find it:
+#
+#   docker inspect <cloudflared-container> \
+#     --format '{{range $$k,$$v := .NetworkSettings.Networks}}{{$$k}}{{end}}'
+#
+# Then add a public hostname to the tunnel — Cloudflare Zero Trust dashboard for
+# a token-run tunnel, or config.yml for a locally configured one:
+#
+#   peard.kroper.uk  ->  HTTP  ->  peard-server:8090
+#
+# HTTP, not HTTPS: Cloudflare terminates TLS at its edge, so the tunnel's origin
+# leg is plaintext inside Docker's network and the container needs no
+# certificate. That is also why this must NOT be combined with
+# docker-compose.tls.yml — PocketBase would try to obtain its own certificate
+# over a port 80 that is no longer published, and the ACME challenge could never
+# be answered.
+#
+# PEARD_APP_URL still has to be the public https:// address. It is what the
+# widget feed puts in media URLs, and behind a tunnel the container has no way to
+# discover it.
+
+services:
+  server:
+    # The tunnel resolves its origin by name on the shared network, so the name
+    # is part of the contract rather than cosmetic. Compose also adds an alias
+    # for the service name — plain "server" — which is generic enough to collide
+    # with another stack on the same shared network; point the tunnel at the
+    # alias below, not at that.
+    container_name: peard-server
+
+    # Nothing is published to the host. The tunnel is the only ingress, and a
+    # published port would be a second one, unauthenticated and bypassing
+    # Cloudflare entirely — including for /_/, the PocketBase dashboard.
+    # Replacing rather than appending needs Compose 2.24+.
+    ports: !override []
+
+    # Listing a network here replaces the implicit "default", so the container
+    # ends up on the tunnel's network only. That is enough: outbound still works
+    # through the overlay's gateway, which the server needs for Apple's JWKS and
+    # APNs.
+    networks:
+      cloudflared:
+        aliases:
+          - peard-server
+
+networks:
+  cloudflared:
+    external: true
+    name: ${PEARD_CLOUDFLARED_NETWORK:-cloudflared_cloudflared}

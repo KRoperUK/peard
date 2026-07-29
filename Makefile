@@ -6,7 +6,7 @@ BUILT_APP = ios/build/Build/Products/Debug-iphonesimulator/Peard.app
 
 .PHONY: server migrate app app-release run project test test-app test-integration \
         test-all icons lint clean \
-        docker-build docker-up docker-up-tls docker-down docker-logs
+        docker-build docker-up docker-up-tls docker-up-cloudflared docker-down docker-logs
 
 # --- server ---
 
@@ -104,6 +104,7 @@ lint:
 # that has a perfectly good `docker-compose`.
 COMPOSE := $(shell docker compose version >/dev/null 2>&1 && echo "docker compose" || echo docker-compose)
 COMPOSE_TLS = $(COMPOSE) -f docker-compose.yml -f docker-compose.tls.yml
+COMPOSE_CF = $(COMPOSE) -f docker-compose.yml -f docker-compose.cloudflared.yml
 
 docker-build:
 	$(COMPOSE) build
@@ -116,6 +117,11 @@ docker-up:
 # PocketBase manages its own Let's Encrypt certificate and owns 80 + 443.
 docker-up-tls:
 	$(COMPOSE_TLS) up -d --build
+
+# No host port at all; a cloudflared tunnel reaches the container over the shared
+# network named by PEARD_CLOUDFLARED_NETWORK, which must already exist.
+docker-up-cloudflared:
+	$(COMPOSE_CF) up -d --build
 
 # Stops and removes the container, keeping the pb_data volume. There is no
 # target that passes -v on purpose: that deletes the databases, the uploaded
