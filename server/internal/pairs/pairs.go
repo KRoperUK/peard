@@ -17,6 +17,9 @@
 // An invite without a `pair` creates a new connection when accepted. An invite
 // carrying a `pair` adds the accepting user to that existing connection, which
 // is how a group grows.
+//
+// Losing the last member deletes the connection. That is enforced on the
+// `pair_members` model rather than in the leave route — see lifecycle.go.
 package pairs
 
 import (
@@ -45,6 +48,8 @@ const maxConnections = 20
 
 // Register binds the pairing routes and the invite-expiry cron job.
 func Register(app core.App) {
+	registerLifecycle(app)
+
 	app.OnServe().BindFunc(func(se *core.ServeEvent) error {
 		g := se.Router.Group("/api/peard/pairs")
 		g.POST("/invite", inviteHandler(app)).Bind(apis.RequireAuth())
@@ -263,16 +268,12 @@ func leaveHandler(app core.App) func(e *core.RequestEvent) error {
 			}
 		}
 
+		// Deleting the membership is the whole act. If it was the last one, the
+		// `pair_members` delete hook in lifecycle.go deletes the connection in
+		// the same transaction — see registerLifecycle for why that lives at the
+		// model layer rather than here.
 		if err := app.Delete(mem); err != nil {
 			return e.InternalServerError("failed to leave connection", err)
-		}
-		// Delete the connection once empty (cascades to posts/reactions/kinds).
-		remaining, _ := app.FindRecordsByFilter("pair_members",
-			"pair = {:pair}", "", 1, 0, dbx.Params{"pair": pairID})
-		if len(remaining) == 0 {
-			if pair, err := app.FindRecordById("pairs", pairID); err == nil {
-				_ = app.Delete(pair)
-			}
 		}
 		return e.JSON(http.StatusOK, map[string]any{"ok": true})
 	}
@@ -299,8 +300,8 @@ func removeHandler(app core.App) func(e *core.RequestEvent) error {
 			return e.BadRequestError("pair and user are required", nil)
 		}
 		if userID == e.Auth.Id {
-			// Leaving is not removing: /leave also tidies up the connection when
-			// it empties, and needs no ownership.
+			// Leaving is not removing: /leave needs no ownership, and it is the
+			// only one of the two that can empty a connection.
 			return e.BadRequestError("use leave to remove yourself", nil)
 		}
 
