@@ -735,5 +735,14 @@ final class AppModel {
         // the reachability callback covers a network that returns while the app is
         // running, this covers everything that changed while it was not.
         flushSendQueue()
+        // And re-read the connections, which is where the unread counts live.
+        //
+        // The home screen has its own scenePhase hook that does this, but only
+        // while the home screen exists: background the app from Settings or the
+        // timeline and come back, and the rail's counts and the springboard
+        // badge were whatever they had been when you left. Which tab you happen
+        // to be standing on is not a sensible reason for the badge to be right
+        // or wrong, so this lives at the app level where it applies either way.
+        await refreshConnections()
     }
 }
