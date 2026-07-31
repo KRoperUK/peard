@@ -303,6 +303,11 @@ public final class APIClient: Sendable {
         try await send(method: "DELETE", path: path, query: query)
     }
 
+    /// `DELETE` an arbitrary path, discarding the response body.
+    public func deleteIgnoringResponse(path: String, query: [String: String] = [:]) async throws {
+        _ = try await sendReturningData(method: "DELETE", path: path, query: query, body: nil)
+    }
+
     /// Raw `GET`, used for the widget feed image and the debug health probe.
     public func data(path: String, query: [String: String] = [:]) async throws -> Data {
         try await sendReturningData(method: "GET", path: path, query: query, body: nil)

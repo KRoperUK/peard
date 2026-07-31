@@ -23,6 +23,8 @@ struct ConnectionSettingsView: View {
     @State private var memberPendingRemoval: Connection.Member?
     @State private var showLeaveConfirmation = false
     @State private var showSignOutConfirmation = false
+    @State private var showDeleteAccountConfirmation = false
+    @State private var isDeletingAccount = false
     @State private var showInviteSheet = false
     @State private var isExporting = false
     @State private var exportFileURL: URL?
@@ -125,20 +127,47 @@ struct ConnectionSettingsView: View {
             } message: {
                 Text("Anything still waiting to send is discarded.")
             }
+            // Two ways out rather than one, because "leave" has always meant the
+            // membership goes and the shared history stays — which is right for
+            // a group carrying on without you, and wrong for somebody who wants
+            // their own moments gone. Offering both makes the default explicit
+            // instead of leaving people to guess which one it is.
             .confirmationDialog(
                 model.isGroup ? "Leave this group?" : "Un-pear?",
                 isPresented: $showLeaveConfirmation,
                 titleVisibility: .visible
             ) {
-                Button("Leave", role: .destructive) {
+                Button("Leave, keep my moments", role: .destructive) {
                     Task { await model.leaveConnection() }
+                }
+                Button("Leave and delete my moments", role: .destructive) {
+                    Task { await model.leaveConnection(deletingMoments: true) }
                 }
                 Button("Cancel", role: .cancel) {}
             } message: {
                 Text(
                     model.isGroup
-                        ? "You'll lose this group's shared timeline."
-                        : "You'll both lose the shared timeline."
+                        ? "You'll lose this group's shared timeline. Your own moments in it stay unless you delete them."
+                        : "You'll both lose the shared timeline. Your own moments in it stay unless you delete them."
+                )
+            }
+            .confirmationDialog(
+                "Delete your account?",
+                isPresented: $showDeleteAccountConfirmation,
+                titleVisibility: .visible
+            ) {
+                Button("Delete my account", role: .destructive) {
+                    Task {
+                        isDeletingAccount = true
+                        await app.deleteAccount()
+                        isDeletingAccount = false
+                    }
+                }
+                Button("Cancel", role: .cancel) {}
+            } message: {
+                Text(
+                    "This erases your profile, your moments and every connection you're in, right now and for good. "
+                        + "Export your data first if you want a copy. This can't be undone."
                 )
             }
         }
@@ -468,9 +497,31 @@ struct ConnectionSettingsView: View {
                 showSignOutConfirmation = true
             }
             .foregroundStyle(PearColor.textPrimary)
+
+            // The other half of the privacy policy's deletion promise, which
+            // until now read "email us and we'll action it within 30 days". A
+            // person should not have to ask somebody else to stop holding their
+            // data, so this does it in one tap and no waiting.
+            Button(role: .destructive) {
+                showDeleteAccountConfirmation = true
+            } label: {
+                HStack {
+                    Text("Delete account")
+                    if isDeletingAccount {
+                        Spacer()
+                        ProgressView()
+                    }
+                }
+            }
+            .disabled(isDeletingAccount)
+
+            Link("Privacy policy", destination: PeardLinks.privacyPolicy)
+                .foregroundStyle(PearColor.textPrimary)
         } footer: {
             if let email = app.profile?.email, !email.isEmpty {
-                Text("Signed in as \(email).")
+                Text("Signed in as \(email). Deleting your account erases everything above immediately.")
+            } else {
+                Text("Deleting your account erases everything above immediately.")
             }
         }
     }

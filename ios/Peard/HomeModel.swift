@@ -763,9 +763,10 @@ final class HomeModel {
 
     // MARK: Leaving
 
-    /// Requirement 15.2, 15.3 — leaves this connection only.
-    func leaveConnection() async {
-        await app.leave(connectionID: pairID)
+    /// Requirement 15.2, 15.3 — leaves this connection only, optionally taking
+    /// the caller's own moments in it out of the shared timeline.
+    func leaveConnection(deletingMoments: Bool = false) async {
+        await app.leave(connectionID: pairID, deletingMoments: deletingMoments)
     }
 
     // MARK: Errors

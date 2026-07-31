@@ -72,8 +72,29 @@ public extension APIClient {
 
     /// `POST /api/peard/pairs/leave` (Requirement 15.2). The connection has to
     /// be named once a user can be in several.
-    func leave(pairID: String) async throws {
-        try await postIgnoringResponse(path: "/api/peard/pairs/leave", fields: ["pair": pairID])
+    ///
+    /// `deleteMoments` takes the caller's own moments out of that connection's
+    /// timeline on the way out. It defaults to false because leaving has always
+    /// meant "my membership goes, the shared history stays" — the moments were
+    /// part of somebody else's record of what happened too, and silently
+    /// rewriting it would be the surprising choice. `delete_moments` goes out as
+    /// a real JSON boolean: the server binds it to a Go `bool`, which rejects a
+    /// quoted `"true"`.
+    func leave(pairID: String, deleteMoments: Bool = false) async throws {
+        try await postIgnoringResponse(
+            path: "/api/peard/pairs/leave",
+            typedFields: ["pair": .string(pairID), "delete_moments": .bool(deleteMoments)]
+        )
+    }
+
+    /// `DELETE /api/peard/account` — erases the caller's account and everything
+    /// that cascades from it.
+    ///
+    /// The self-serve half of the privacy policy's deletion promise, next to
+    /// `/api/peard/export`. Nothing is returned worth reading: either it
+    /// succeeded, or it threw.
+    func deleteAccount() async throws {
+        try await deleteIgnoringResponse(path: "/api/peard/account")
     }
 
     /// `POST /api/peard/pairs/remove` — takes somebody else out of a connection.
