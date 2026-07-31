@@ -371,6 +371,51 @@ final class AppModel {
         await widgetSync.sync()
     }
 
+    // MARK: Read state
+
+    /// Marks the connection currently on screen as read, and clears its badge
+    /// locally without waiting for a round trip.
+    ///
+    /// The local clear matters: the count comes from
+    /// `GET /api/peard/connections`, which is not re-fetched on every visit, so
+    /// without this the badge would sit there until something else happened to
+    /// reload the list — looking at a connection and watching its "3 new" stay
+    /// put reads as the app not registering the visit.
+    ///
+    /// A failure is deliberately silent. The stamp is idempotent and re-sent on
+    /// the next visit, and there is nothing a person could usefully do about
+    /// "couldn't mark as read" except see an error where they expected a
+    /// timeline.
+    func markSelectedConnectionSeen() async {
+        guard case .home(let pairID) = phase else { return }
+        guard connections.first(where: { $0.id == pairID })?.hasUnread == true else { return }
+
+        clearUnreadLocally(pairID: pairID)
+        try? await api.markSeen(pairID: pairID)
+    }
+
+    /// Rewrites one connection's count to zero in the local list.
+    ///
+    /// `Connection` is a value type with `let` fields, so this rebuilds the one
+    /// that changed rather than mutating it — cheaper than re-fetching the list
+    /// and, unlike a re-fetch, it cannot briefly show the old number again.
+    private func clearUnreadLocally(pairID: String) {
+        connections = connections.map { connection in
+            guard connection.id == pairID, connection.hasUnread else { return connection }
+            return Connection(
+                pair: connection.pair,
+                name: connection.name,
+                created: connection.created,
+                role: connection.role,
+                memberCount: connection.memberCount,
+                members: connection.members,
+                isMuted: connection.isMuted,
+                avatarFilename: connection.avatarFilename,
+                unreadCount: 0
+            )
+        }
+    }
+
     // MARK: Connection settings
 
     /// Silences or unsilences one connection's notifications.

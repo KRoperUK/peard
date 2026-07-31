@@ -70,6 +70,14 @@ struct ConnectionRail: View {
                             .offset(x: 3, y: 3)
                     }
                 }
+                // Opposite corner to the mute bell on purpose: a connection can
+                // be both muted and unread — that is the normal state of a busy
+                // group you have silenced — and stacking them would hide one.
+                .overlay(alignment: .topTrailing) {
+                    if connection.hasUnread && !isSelected {
+                        unreadBadge(count: connection.unreadCount)
+                    }
+                }
                 // Dimmed rather than hidden: an unselected connection is still
                 // one you are in, and greying the label out entirely made the rail
                 // read as disabled.
@@ -85,9 +93,30 @@ struct ConnectionRail: View {
         .accessibilityAddTraits(isSelected ? [.isSelected, .isButton] : .isButton)
     }
 
+    /// A count, not a bare dot: with up to 20 connections the useful question is
+    /// "which of these has most waiting", and a dot cannot answer it. Capped at
+    /// "9+" so a busy group cannot widen the tile and push the rail around.
+    private func unreadBadge(count: Int) -> some View {
+        Text(count > 9 ? "9+" : "\(count)")
+            .font(.system(size: 10, weight: .bold))
+            .foregroundStyle(.white)
+            .monospacedDigit()
+            .padding(.horizontal, 4)
+            .frame(minWidth: 16, minHeight: 16)
+            .background(PearColor.accent, in: Capsule())
+            .overlay(Capsule().strokeBorder(PearColor.background, lineWidth: 1.5))
+            .offset(x: 4, y: -2)
+            .accessibilityHidden(true)
+    }
+
     private func accessibilityLabel(for connection: Connection, isSelected: Bool) -> String {
         var parts = [connection.title()]
         parts.append(connection.subtitle)
+        // Spelled out rather than read as the bare number the badge draws, which
+        // VoiceOver would announce with no indication of what it counts.
+        if connection.hasUnread && !isSelected {
+            parts.append(connection.unreadCount == 1 ? "1 new moment" : "\(connection.unreadCount) new moments")
+        }
         if connection.isMuted { parts.append("muted") }
         if isSelected { parts.append("showing") }
         return parts.joined(separator: ", ")

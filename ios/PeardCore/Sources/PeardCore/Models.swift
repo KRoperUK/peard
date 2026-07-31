@@ -392,6 +392,13 @@ public struct Connection: Codable, Hashable, Sendable, Identifiable {
     /// A group's photo; a 1:1 may also have one, and when it does not the rail
     /// falls back to the other person's.
     public let avatarFilename: String?
+    /// Moments other people have posted here since you last opened it.
+    ///
+    /// Server-counted, per connection, and never includes your own moments —
+    /// logging something is not news to the person who logged it. Muted
+    /// connections still report a count: muting silences the alert, it does not
+    /// mean "stop telling me anything happened".
+    public let unreadCount: Int
 
     public var id: String { pair }
 
@@ -400,6 +407,7 @@ public struct Connection: Codable, Hashable, Sendable, Identifiable {
         case memberCount = "member_count"
         case isMuted = "muted"
         case avatarFilename = "avatar"
+        case unreadCount = "unread"
     }
 
     public init(
@@ -410,7 +418,8 @@ public struct Connection: Codable, Hashable, Sendable, Identifiable {
         memberCount: Int? = nil,
         members: [Member] = [],
         isMuted: Bool = false,
-        avatarFilename: String? = nil
+        avatarFilename: String? = nil,
+        unreadCount: Int = 0
     ) {
         self.pair = pair
         self.name = name
@@ -420,6 +429,7 @@ public struct Connection: Codable, Hashable, Sendable, Identifiable {
         self.memberCount = memberCount ?? max(members.count, 1)
         self.isMuted = isMuted
         self.avatarFilename = avatarFilename
+        self.unreadCount = unreadCount
     }
 
     public init(from decoder: any Decoder) throws {
@@ -431,10 +441,18 @@ public struct Connection: Codable, Hashable, Sendable, Identifiable {
         members = try container.decodeIfPresent([Member].self, forKey: .members) ?? []
         isMuted = try container.decodeIfPresent(Bool.self, forKey: .isMuted) ?? false
         avatarFilename = try container.decodeIfPresent(String.self, forKey: .avatarFilename)
+        // Absent from a server older than read state, which reads as "nothing
+        // new" rather than as an error — the same rule the rest of this decoder
+        // follows. Negatives are clamped: a count below zero has no meaning and
+        // would draw a badge saying "-1".
+        unreadCount = max(try container.decodeIfPresent(Int.self, forKey: .unreadCount) ?? 0, 0)
         let count = try container.decodeIfPresent(Int.self, forKey: .memberCount)
         // A connection always contains at least the signed-in user.
         memberCount = max(count ?? members.count, 1)
     }
+
+    /// True when somebody else has posted here since you last looked.
+    public var hasUnread: Bool { unreadCount > 0 }
 
     /// True when the signed-in user owns the connection, and so may remove
     /// somebody from it.

@@ -274,6 +274,7 @@ oldest membership first:
       "created": "2026-07-20 09:00:00.000Z",
       "role": "owner",
       "muted": false,
+      "unread": 2,
       "member_count": 3,
       "is_group": true,
       "avatar": "photo_a1b2c3d4e5.jpg",
@@ -350,6 +351,28 @@ connections of up to 12 people each, the useful control is "this group is too
 noisy", not "stop notifying me". A muted connection still delivers moments and
 still appears in the widget — it just stops making a sound, and its reactions go
 quiet too.
+
+`POST /api/peard/connections/seen` with `{ "pair": "<id>" }` →
+`{ "ok": true, "last_seen_at": "2026-07-31 16:04:00.000Z" }`. Marks the caller's
+membership read up to now, which is what `unread` above counts from. `404` if you
+are not a member of that connection.
+
+The stamp is the server's clock, and a timestamp in the body is ignored. It is
+compared against `posts.created`, which the server also writes, so honouring a
+device's idea of "now" would let a phone running fast mark moments read before
+they were posted — and one running slow leave them unread forever.
+
+`unread` counts moments in that connection, authored by somebody other than the
+caller, created after that stamp. With no stamp — you have never opened the
+connection — the cut-off is the membership's own `created`, so joining a
+five-year-old group does not hand you a badge of everything ever posted in it.
+Your own moments never count: logging something is not news to the person who
+logged it.
+
+Muted connections still report `unread`; muting silences the alert, it does not
+mean "stop telling me anything happened". The APNs badge is the one place muted
+connections are excluded, because the badge accompanies an alert a muted
+connection would not have produced.
 
 ## Tally routes
 

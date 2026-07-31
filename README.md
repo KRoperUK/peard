@@ -444,6 +444,7 @@ receive live pushes.
 | POST | `/api/peard/auth/apple/notifications` | Apple JWT | Apple's server-to-server notifications (not called by the app) |
 | GET  | `/api/peard/connections` | user | Your connections, with members' display names and mute state |
 | POST | `/api/peard/connections/mute` | user | Silence one connection's notifications |
+| POST | `/api/peard/connections/seen` | member | Mark one connection read up to now |
 | GET  | `/api/peard/tallies?pair=` | user | Per-member moment counts for day/week/month/all time |
 | GET  | `/api/peard/profile` | user | Your own record |
 | POST | `/api/peard/profile` | user | Set the name other members see |
@@ -500,13 +501,24 @@ or can be omitted.
 - [x] Cross-connection access control, proven rather than assumed — see
       `server/internal/access`, which found that a memberless connection was
       world-readable
-- [ ] Delete a connection when its last member leaves, rather than leaving it
-      orphaned with everybody's moments still in it
+- [x] Delete a connection when its last member leaves, rather than leaving it
+      orphaned with everybody's moments still in it — enforced at the model
+      layer in `server/internal/pairs/lifecycle.go`, because a membership row
+      disappears through four different doors and `/pairs/leave` is only one
+- [x] Find friends from your contacts, without a contact ever arriving in the
+      clear, and a discoverability switch that is off by default
+- [x] Quick-send from an iMessage thread, without leaving the conversation
+- [x] Export your own data, delete your own account, and delete your own moments
+      from a connection when you leave it — the privacy policy's promises made
+      self-serve rather than "email us and we'll action it within 30 days"
+- [x] Agree to the privacy policy before anything leaves the device — a phase
+      ahead of sign-in, versioned so a changed policy asks again
+- [ ] Read state, so the push badge can mean "unread" exactly rather than
+      "somebody posted in the last day" — which is what it means today, so it
+      reads 3 when you have seen all three and 0 when you have seen none
 - [ ] Live Activity for "instant photo drop" moments (ActivityKit push-to-update)
 - [ ] Android widget (Jetpack Glance) — blocked on the Android client decision above
 - [ ] Media storage (S3 compatible via PB filesystem settings)
-- [ ] Read state, so the push badge can mean "unread" exactly rather than
-      "posted in the last day"
 
 ## Licence
 

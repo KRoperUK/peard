@@ -249,6 +249,10 @@ final class HomeModel {
         await refresh()
         await refreshTallies()
         isLoading = false
+        // After the posts are in, not before: the stamp means "you have seen up
+        // to here", and claiming it while the request that fetches them could
+        // still fail would clear a badge for moments never actually shown.
+        await app.markSelectedConnectionSeen()
     }
 
     /// Requirement 11.1, 11.11 – 11.13.

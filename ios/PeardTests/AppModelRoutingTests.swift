@@ -162,6 +162,18 @@ final class AppModelRoutingTests: XCTestCase {
         XCTAssertEqual(remaining, 1)
     }
 
+    // MARK: Read state
+
+    /// Marking seen is called from the home screen's load, which can run before
+    /// membership has resolved. With no connection on screen there is nothing to
+    /// stamp, and it must not reach for the network to discover that.
+    func testMarkingSeenWithoutAConnectionDoesNothing() async {
+        await app.markSelectedConnectionSeen()
+
+        XCTAssertEqual(app.phase, .loading)
+        XCTAssertTrue(app.connections.isEmpty)
+    }
+
     // MARK: Queue plumbing
 
     func testEnqueuedSendIsVisibleToTheUI() async {

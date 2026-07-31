@@ -120,6 +120,20 @@ public extension APIClient {
         )
     }
 
+    /// `POST /api/peard/connections/seen` — marks this connection read up to now.
+    ///
+    /// The server stamps its own clock rather than accepting one from here: the
+    /// stamp is compared against `posts.created`, which the server also writes,
+    /// so a device clock running fast would otherwise mark moments read before
+    /// they were posted.
+    ///
+    /// Idempotent, and called on every visit to a connection, so it is cheap by
+    /// design and its failure is not worth reporting — the count simply stays up
+    /// until the next visit.
+    func markSeen(pairID: String) async throws {
+        try await postIgnoringResponse(path: "/api/peard/connections/seen", fields: ["pair": pairID])
+    }
+
     /// `GET /api/peard/profile` — the caller's own record.
     func profile() async throws -> UserProfile {
         try await get(path: "/api/peard/profile")

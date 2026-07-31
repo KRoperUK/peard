@@ -21,9 +21,12 @@ import (
 	"log"
 	"os"
 	"strings"
-	"time"
 
 	"peard/internal/moments"
+	// For UnreadCount/UnreadSince. The badge and the in-app rail have to agree
+	// on what "unread" means, and the only way to guarantee that is one
+	// definition. `pairs` imports nothing internal, so there is no cycle.
+	"peard/internal/pairs"
 
 	"github.com/pocketbase/dbx"
 	"github.com/pocketbase/pocketbase/core"
@@ -233,9 +236,22 @@ func truncate(value string, max int) string {
 }
 
 // unseenCount is how many moments other people have posted, across every
-// connection the user is in, in the last day — the badge's meaning is "there is
-// this much new", not an exact unread ledger, which would need per-user read
-// state the app does not keep.
+// connection the user is in, that the user has not looked at yet.
+//
+// This used to count everything posted in the last 24 hours, which was not a
+// count of anything: it read 3 when you had already opened the app and seen all
+// three, and 0 the next day when you had seen none of them. The badge is the
+// most prominent thing the app puts in front of somebody, and it was reliably
+// wrong in both directions.
+//
+// Summed per membership rather than in one query across every pair, because the
+// cut-off is per membership — each has its own `last_seen_at`, falling back to
+// its own join date. `maxConnections` bounds the loop at 20.
+//
+// Muted memberships are excluded here but not from `GET /api/peard/connections`.
+// The badge accompanies an alert the muted connection would not have produced,
+// so counting it would put a number on the icon for something that deliberately
+// made no noise; the in-app rail has no such problem and shows it.
 func unseenCount(app core.App, userID string) int {
 	memberships, err := app.FindRecordsByFilter("pair_members",
 		"user = {:user} && muted != true", "", maxConnections, 0,
@@ -243,23 +259,10 @@ func unseenCount(app core.App, userID string) int {
 	if err != nil || len(memberships) == 0 {
 		return 0
 	}
-	pairIDs := make([]any, 0, len(memberships))
-	for _, m := range memberships {
-		pairIDs = append(pairIDs, m.GetString("pair"))
-	}
 
 	var total int
-	err = app.DB().
-		Select("COUNT(*)").
-		From("posts").
-		Where(dbx.In("pair", pairIDs...)).
-		AndWhere(dbx.NewExp("author != {:user}", dbx.Params{"user": userID})).
-		AndWhere(dbx.NewExp("created >= {:since}", dbx.Params{
-			"since": time.Now().Add(-24 * time.Hour).UTC().Format("2006-01-02 15:04:05.000Z"),
-		})).
-		Row(&total)
-	if err != nil {
-		return 0
+	for _, membership := range memberships {
+		total += pairs.UnreadCount(app, membership, userID)
 	}
 	return total
 }

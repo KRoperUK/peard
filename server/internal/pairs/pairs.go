@@ -8,6 +8,7 @@
 //	POST /api/peard/pairs/remove      { pair, user }   -> { ok }
 //	GET  /api/peard/connections                        -> { connections: [...] }
 //	POST /api/peard/connections/mute  { pair, muted }  -> { ok, muted }
+//	POST /api/peard/connections/seen  { pair }         -> { ok, last_seen_at }
 //
 // A "connection" is a `pairs` row plus its `pair_members`. Two members is the
 // 1:1 case the app started with; more than two is a group, which is why
@@ -63,6 +64,7 @@ func Register(app core.App) {
 		// acting on one.
 		se.Router.GET("/api/peard/connections", connectionsHandler(app)).Bind(apis.RequireAuth())
 		se.Router.POST("/api/peard/connections/mute", muteHandler(app)).Bind(apis.RequireAuth())
+		se.Router.POST("/api/peard/connections/seen", seenHandler(app)).Bind(apis.RequireAuth())
 		return se.Next()
 	})
 
@@ -396,6 +398,79 @@ func muteHandler(app core.App) func(e *core.RequestEvent) error {
 	}
 }
 
+// seenHandler stamps the caller's membership as read up to now.
+//
+// Deliberately server-clocked rather than taking a timestamp from the body. The
+// stamp is compared against `posts.created`, which the server writes from its
+// own clock, so accepting a device's idea of "now" would let a phone whose clock
+// runs fast mark moments read before they were posted — and one running slow
+// leave moments unread forever.
+//
+// Idempotent, and the app calls it on every visit to a connection, so it is
+// deliberately cheap: one indexed lookup and one field write.
+func seenHandler(app core.App) func(e *core.RequestEvent) error {
+	return func(e *core.RequestEvent) error {
+		var body struct {
+			Pair string `json:"pair" form:"pair"`
+		}
+		if err := e.BindBody(&body); err != nil {
+			return e.BadRequestError("invalid request body", err)
+		}
+		pairID := strings.TrimSpace(body.Pair)
+		if pairID == "" {
+			return e.BadRequestError("pair is required", nil)
+		}
+
+		mem, err := app.FindFirstRecordByFilter("pair_members",
+			"pair = {:pair} && user = {:user}",
+			dbx.Params{"pair": pairID, "user": e.Auth.Id})
+		if err != nil || mem == nil {
+			return e.NotFoundError("you are not a member of that connection", err)
+		}
+		now := types.NowDateTime()
+		mem.Set("last_seen_at", now)
+		if err := app.Save(mem); err != nil {
+			return e.InternalServerError("failed to save read state", err)
+		}
+		return e.JSON(http.StatusOK, map[string]any{"ok": true, "last_seen_at": now.String()})
+	}
+}
+
+// UnreadSince is the point a membership counts moments as new from: the last
+// time the member opened that connection, or — having never opened it — the
+// moment they joined.
+//
+// The join-date fallback is what stops a new member of a five-year-old group
+// being handed a badge of every moment ever posted in it. Exported because the
+// push package needs the identical rule for the badge: two definitions of
+// "unread" that could drift apart is precisely the bug this replaces.
+func UnreadSince(membership *core.Record) types.DateTime {
+	if seen := membership.GetDateTime("last_seen_at"); !seen.IsZero() {
+		return seen
+	}
+	return membership.GetDateTime("created")
+}
+
+// UnreadCount is how many moments other people have posted in one connection
+// since the caller last looked.
+//
+// Authored-by-somebody-else on purpose: your own moment is not news to you, and
+// counting it would make the badge tick up as you logged.
+func UnreadCount(app core.App, membership *core.Record, userID string) int {
+	var total int
+	err := app.DB().
+		Select("COUNT(*)").
+		From("posts").
+		Where(dbx.NewExp("pair = {:pair}", dbx.Params{"pair": membership.GetString("pair")})).
+		AndWhere(dbx.NewExp("author != {:user}", dbx.Params{"user": userID})).
+		AndWhere(dbx.NewExp("created > {:since}", dbx.Params{"since": UnreadSince(membership).String()})).
+		Row(&total)
+	if err != nil {
+		return 0
+	}
+	return total
+}
+
 // connectionsHandler describes every connection the caller belongs to, including
 // the other members' display names.
 //
@@ -446,11 +521,17 @@ func connectionsHandler(app core.App) func(e *core.RequestEvent) error {
 			}
 
 			out = append(out, map[string]any{
-				"pair":         pairID,
-				"name":         pair.GetString("name"),
-				"created":      pair.GetString("created"),
-				"role":         membership.GetString("role"),
-				"muted":        membership.GetBool("muted"),
+				"pair":    pairID,
+				"name":    pair.GetString("name"),
+				"created": pair.GetString("created"),
+				"role":    membership.GetString("role"),
+				"muted":   membership.GetBool("muted"),
+				// Counted per connection rather than summed, because the rail
+				// marks each face individually — a single total could not say
+				// which of five connections the new moments are in. Muted
+				// connections still report their count: muting silences the
+				// alert, it does not mean "stop telling me anything happened".
+				"unread":       UnreadCount(app, membership, e.Auth.Id),
 				"member_count": len(members),
 				"is_group":     len(members) > 2,
 				"avatar":       pair.GetString("avatar"),
