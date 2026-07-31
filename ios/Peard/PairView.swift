@@ -19,6 +19,47 @@ struct PairView: View {
     private var canAccept: Bool { code.count == 6 && busy == nil }
 
     var body: some View {
+        // Scrollable for the same reason the sign-in screen is: this is a tall
+        // screen — title, invite code, share button, find-friends, divider, code
+        // field, accept button, and up to two more rows for an error and a retry
+        // — and entering a code raises the keyboard over the bottom half of it.
+        // A fixed VStack simply clipped, with nothing to indicate the accept
+        // button was below the fold.
+        ScrollView {
+            content
+                .padding(32)
+                .frame(maxWidth: .infinity)
+        }
+        .scrollDismissesKeyboard(.interactively)
+        .frame(maxWidth: .infinity, maxHeight: .infinity)
+        .background(PearColor.background)
+        .pearAnimation(value: invite?.code ?? "")
+        .onAppear {
+            if let prefilledCode, code.isEmpty {
+                code = prefilledCode.uppercased()
+            }
+        }
+        .onChange(of: prefilledCode) { _, newValue in
+            if let newValue { code = newValue.uppercased() }
+        }
+        .confirmationDialog(
+            "Sign out?",
+            isPresented: $showSignOutConfirmation,
+            titleVisibility: .visible
+        ) {
+            Button("Sign out", role: .destructive) {
+                Task { await app.signOut() }
+            }
+            Button("Cancel", role: .cancel) {}
+        } message: {
+            Text("Anything still waiting to send is discarded.")
+        }
+        .sheet(isPresented: $showFindFriends) {
+            FindFriendsView()
+        }
+    }
+
+    private var content: some View {
         VStack(spacing: 0) {
             if app.canReturnHome {
                 HStack {
@@ -80,42 +121,18 @@ struct PairView: View {
             }
 
             if !app.canReturnHome {
-                Spacer()
+                // A plain gap rather than a Spacer: inside a ScrollView a
+                // Spacer has no fixed height to expand into and collapses to
+                // nothing, which would put "Sign out" directly under the accept
+                // button.
+                Color.clear.frame(height: 40)
 
                 Button("Sign out") {
                     showSignOutConfirmation = true
                 }
                 .font(.footnote.bold())
                 .foregroundStyle(PearColor.textSecondary)
-                .padding(.top, 24)
             }
-        }
-        .padding(32)
-        .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .center)
-        .background(PearColor.background)
-        .pearAnimation(value: invite?.code ?? "")
-        .onAppear {
-            if let prefilledCode, code.isEmpty {
-                code = prefilledCode.uppercased()
-            }
-        }
-        .onChange(of: prefilledCode) { _, newValue in
-            if let newValue { code = newValue.uppercased() }
-        }
-        .confirmationDialog(
-            "Sign out?",
-            isPresented: $showSignOutConfirmation,
-            titleVisibility: .visible
-        ) {
-            Button("Sign out", role: .destructive) {
-                Task { await app.signOut() }
-            }
-            Button("Cancel", role: .cancel) {}
-        } message: {
-            Text("Anything still waiting to send is discarded.")
-        }
-        .sheet(isPresented: $showFindFriends) {
-            FindFriendsView()
         }
     }
 
