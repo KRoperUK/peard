@@ -179,6 +179,14 @@ targets:
         buildPhase: none
       - path: PearMessages/PearMessages.entitlements
         buildPhase: none
+      # PearMessages/Assets.xcassets is picked up by the directory above. Its
+      # "iMessage App Icon" set is entirely generated — see
+      # ios/Tools/GenerateMessagesIcon.swift, and note that it is the classic
+      # explicit per-idiom, per-scale set rather than the single-size
+      # "universal" form the main AppIcon uses: App Store Connect rejects the
+      # universal form for a Messages extension ("Missing App Icon... must be
+      # 148x110 pixels"), and the build stays green either way, so nothing but
+      # an upload catches it.
       - path: Shared/Colors.xcassets
     dependencies:
       - package: PeardCore

@@ -64,11 +64,15 @@ run: $(PROJECT)
 
 # --- assets ---
 
-# Redraws the app icon (light, dark and tinted) into AppIcon.appiconset.
-# Only needed after editing ios/Tools/GenerateAppIcon.swift; the PNGs are
-# committed.
+# Redraws the app icon (light, dark and tinted) into AppIcon.appiconset, then
+# derives the iMessage extension's icon set from it. Only needed after editing
+# either generator; the PNGs are committed.
+#
+# Order matters: GenerateMessagesIcon reads AppIcon-1024.png rather than
+# redrawing the pear, so it has to run second.
 icons:
 	swift ios/Tools/GenerateAppIcon.swift
+	swift ios/Tools/GenerateMessagesIcon.swift
 
 # --- tests ---
 
