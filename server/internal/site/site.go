@@ -205,14 +205,20 @@ const privacyBody = `
 
     <h2>What we collect</h2>
     <ul>
-      <li><strong>Account info</strong> — an identifier and email address from Sign in with Apple or Google, whichever you use.</li>
+      <li><strong>Account info</strong> — an identifier and email address from Sign in with Apple, Google, or your own email and password.</li>
       <li><strong>Profile</strong> — the display name and photo you optionally set, shown to people you share a connection with.</li>
       <li><strong>Moments</strong> — the events you log, including any note or photo you attach.</li>
       <li><strong>Push token</strong> — a device token used only to deliver notifications from your connections.</li>
+      <li><strong>Phone number (optional)</strong> — only ever asked for if you turn on "let people find me" in Settings; nothing else asks for one.</li>
     </ul>
 
     <h2>Who can see it</h2>
     <p>Only people you share a connection with — a pair or group you have joined — can see your name, photo or moments. This is enforced by rules on the server, not only by the app.</p>
+
+    <h2>Finding friends from your contacts</h2>
+    <p>Pear'd can check whether people in your contacts are already on Pear'd. Before anything leaves your device, each contact's email and phone number is turned into a one-way hash (SHA-256) — the app never sends your contacts' actual details anywhere, including for people who aren't on Pear'd at all. The server compares those hashes against hashes it already holds for accounts that turned on "let people find me," and never learns which of your contacts, if any, produced a match.</p>
+    <p>Searching your own contacts needs no opt-in from you. Being found by someone else's search does — it's off by default, and turning it on is what lets your email (and phone number, if you add one) be matched at all.</p>
+    <p>This isn't a cryptographic guarantee: an unsalted hash of a phone number can, in principle, be reversed by brute force by someone motivated enough to try. It's meaningfully better than sending contacts in the clear, not a promise of anonymity — a trade-off we'd rather state plainly than gloss over.</p>
 
     <h2>Who we share it with</h2>
     <p>We don't sell or share your data with advertisers, and we don't run analytics or tracking in the app. Data passes through:</p>
@@ -226,7 +232,7 @@ const privacyBody = `
     <p>Moments you post stay part of a connection's shared history even if you later leave it — leaving removes your membership, not the record of what already happened. Your account data is kept for as long as your account exists.</p>
 
     <h2>Your rights</h2>
-    <p>You can sign out at any time from the app. To request a copy of your data or to have your account deleted, email us at <a href="mailto:` + contactEmail + `">` + contactEmail + `</a> — we'll action deletion requests within 30 days.</p>
+    <p>You can sign out at any time from the app, and download a copy of your own profile, connections and moments any time from Settings → Export your data. To have your account deleted outright, email us at <a href="mailto:` + contactEmail + `">` + contactEmail + `</a> — we'll action deletion requests within 30 days.</p>
 
     <h2>Children</h2>
     <p>Pear'd is not directed at children under 13, and we don't knowingly collect data from them.</p>

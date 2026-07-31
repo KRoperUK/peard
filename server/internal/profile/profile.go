@@ -113,5 +113,10 @@ func present(user *core.Record) map[string]any {
 		// The stored filename; internal/avatars writes it and the client builds
 		// the `/api/files/users/{id}/{filename}` path.
 		"avatar": user.GetString("avatar"),
+		// Set via internal/contacts' settings route, surfaced here so the
+		// Settings screen's toggle reflects the real, current value rather
+		// than always opening on its default.
+		"discoverable": user.GetBool("discoverable"),
+		"phone":        user.GetString("phone"),
 	}
 }
