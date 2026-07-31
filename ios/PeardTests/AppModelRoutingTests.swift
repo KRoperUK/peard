@@ -12,20 +12,86 @@ final class AppModelRoutingTests: XCTestCase {
     private var app: AppModel!
     private var queue: SendQueue!
     private var storeURL: URL!
+    private var suiteName: String!
+    private var shared: SharedStore!
 
     override func setUp() async throws {
         try await super.setUp()
         storeURL = URL(fileURLWithPath: NSTemporaryDirectory())
             .appendingPathComponent("peard-routing-\(UUID().uuidString).json")
         queue = SendQueue(store: FilePendingSendStore(url: storeURL))
-        app = AppModel(sendQueue: queue)
+        // A throwaway defaults suite rather than the real App Group: the privacy
+        // gate reads from it, so sharing the device's container would make these
+        // tests pass or fail depending on whether whoever ran them last had
+        // agreed to the policy in the simulator.
+        suiteName = "peard-routing-\(UUID().uuidString)"
+        shared = SharedStore(defaults: UserDefaults(suiteName: suiteName))
+        shared.recordPrivacyConsent()
+        app = AppModel(sharedStore: shared, sendQueue: queue)
     }
 
     override func tearDown() async throws {
         try? FileManager.default.removeItem(at: storeURL)
+        UserDefaults().removePersistentDomain(forName: suiteName)
         app = nil
         queue = nil
+        shared = nil
+        suiteName = nil
         try await super.tearDown()
+    }
+
+    // MARK: Privacy gate
+
+    /// The promise the consent screen makes is that nothing leaves the device
+    /// first. `bootstrap` is where that is kept or broken, so it is asserted
+    /// here rather than left to the screen's copy.
+    func testLaunchWithoutConsentStopsAtTheGate() async {
+        shared.clearPrivacyConsent()
+
+        await app.bootstrap()
+
+        XCTAssertEqual(app.phase, .consent)
+        XCTAssertTrue(app.isFirstPrivacyPrompt)
+    }
+
+    func testAgreeingContinuesTheLaunch() async {
+        shared.clearPrivacyConsent()
+        await app.bootstrap()
+
+        await app.agreeToPrivacyPolicy()
+
+        XCTAssertTrue(app.hasAgreedToPrivacyPolicy)
+        XCTAssertEqual(app.phase, .auth, "with consent and no session, the launch lands on sign-in")
+    }
+
+    /// An invite link is the one route into the app that skips launch routing.
+    /// Following it on a fresh install would open the pairing screen, which
+    /// immediately redeems the code against the server.
+    func testDeepLinkWithoutConsentIsHeldAtTheGate() {
+        shared.clearPrivacyConsent()
+
+        app.handle(url: URL(string: "peard://pair/ABC123")!)
+
+        XCTAssertEqual(app.phase, .consent)
+    }
+
+    /// Agreeing once is enough. Signing out drops the session, not the record.
+    func testSigningOutKeepsTheAgreement() async {
+        await app.signOut()
+
+        XCTAssertTrue(app.hasAgreedToPrivacyPolicy)
+        XCTAssertEqual(app.phase, .auth)
+    }
+
+    /// A policy the user has not seen puts the gate back, and the screen knows
+    /// to say "updated" rather than "before you sign in".
+    func testASupersededAgreementReopensTheGate() async {
+        shared.recordPrivacyConsent(version: "1970-01-01")
+
+        await app.bootstrap()
+
+        XCTAssertEqual(app.phase, .consent)
+        XCTAssertFalse(app.isFirstPrivacyPrompt)
     }
 
     // MARK: Phase

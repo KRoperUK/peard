@@ -13,6 +13,8 @@ public final class SharedStore: @unchecked Sendable {
         public static let devicePushToken = "devicePushToken"
         public static let selectedConnectionID = "selectedConnectionId"
         public static let pendingWidgetLog = "pendingWidgetLog"
+        public static let privacyPolicyAcceptedVersion = "privacyPolicyAcceptedVersion"
+        public static let privacyPolicyAcceptedAt = "privacyPolicyAcceptedAt"
     }
 
     public static let appGroupIdentifier = "group.com.peard.app"
@@ -91,6 +93,41 @@ public final class SharedStore: @unchecked Sendable {
             }
             defaults?.set(data, forKey: Key.pendingWidgetLog)
         }
+    }
+
+    // MARK: Privacy consent
+
+    /// What this installation has agreed to. See `PrivacyConsent` for why it is
+    /// held per installation rather than per account.
+    ///
+    /// In the App Group container rather than the app's own defaults so that a
+    /// future extension can ask the same question without inventing a second
+    /// answer. Not auth material, so this does not conflict with the rule that
+    /// tokens live only in the Keychain (Requirement 8.5).
+    public var privacyConsent: PrivacyConsent {
+        PrivacyConsent(
+            acceptedVersion: defaults?.string(forKey: Key.privacyPolicyAcceptedVersion),
+            acceptedAt: defaults?.object(forKey: Key.privacyPolicyAcceptedAt) as? Date
+        )
+    }
+
+    /// Records agreement to a policy version. `date` is injected so the record
+    /// is testable.
+    public func recordPrivacyConsent(
+        version: String = PrivacyConsent.currentVersion,
+        at date: Date = Date()
+    ) {
+        defaults?.set(version, forKey: Key.privacyPolicyAcceptedVersion)
+        defaults?.set(date, forKey: Key.privacyPolicyAcceptedAt)
+    }
+
+    /// Forgets the agreement, putting the gate back in front of the next
+    /// launch. Nothing in the app calls this — it exists for tests and for a
+    /// hand-run reset, because a consent record with no way to clear it is
+    /// impossible to check.
+    public func clearPrivacyConsent() {
+        defaults?.removeObject(forKey: Key.privacyPolicyAcceptedVersion)
+        defaults?.removeObject(forKey: Key.privacyPolicyAcceptedAt)
     }
 
     // MARK: Push

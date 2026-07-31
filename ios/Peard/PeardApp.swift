@@ -26,7 +26,8 @@ struct PeardApp: App {
     }
 }
 
-/// Root routing between the four phases (Requirement 9).
+/// Root routing between the phases (Requirement 9), with the privacy gate ahead
+/// of all of them — see `PrivacyConsentView`.
 struct RootView: View {
     @Environment(AppModel.self) private var app
 
@@ -39,6 +40,8 @@ struct RootView: View {
                     .tint(PearColor.accent)
                     .frame(maxWidth: .infinity, maxHeight: .infinity)
                     .background(PearColor.background)
+            case .consent:
+                PrivacyConsentView()
             case .auth:
                 AuthView()
             case .pair(let prefilledCode):
@@ -55,6 +58,7 @@ struct RootView: View {
     private var phaseIdentity: String {
         switch app.phase {
         case .loading: return "loading"
+        case .consent: return "consent"
         case .auth: return "auth"
         case .pair: return "pair"
         case .home(let pairID): return "home-\(pairID)"

@@ -203,6 +203,9 @@ const privacyBody = `
 
     <p>Pear'd ("we", "us") is a small, independently-run app for sharing moments and tallies with people you choose to connect with. This page explains what we collect, why, and how to get it deleted.</p>
 
+    <h2>Your agreement comes first</h2>
+    <p>The app asks you to agree to this policy before it sends anything anywhere — before you sign in, not alongside it. Signing in is itself the first thing that leaves your device, so the question has to come before the button. If we change this policy in a way you should see, the app asks again on the next launch rather than assuming your old answer still stands.</p>
+
     <h2>What we collect</h2>
     <ul>
       <li><strong>Account info</strong> — an identifier and email address from Sign in with Apple, Google, or your own email and password.</li>
@@ -229,10 +232,12 @@ const privacyBody = `
     </ul>
 
     <h2>Retention</h2>
-    <p>Moments you post stay part of a connection's shared history even if you later leave it — leaving removes your membership, not the record of what already happened. Your account data is kept for as long as your account exists.</p>
+    <p>By default, moments you post stay part of a connection's shared history even if you later leave it — leaving removes your membership, not the record of what already happened, which was somebody else's record of it too. When you leave, the app offers to delete your own moments from that connection instead; choosing that removes them for everyone in it. Your account data is kept for as long as your account exists.</p>
 
     <h2>Your rights</h2>
-    <p>You can sign out at any time from the app, and download a copy of your own profile, connections and moments any time from Settings → Export your data. To have your account deleted outright, email us at <a href="mailto:` + contactEmail + `">` + contactEmail + `</a> — we'll action deletion requests within 30 days.</p>
+    <p>You can sign out at any time from the app, and download a copy of your own profile, connections and moments any time from Settings → Export your data.</p>
+    <p>You can delete your account from Settings → Delete account. It happens immediately and takes your profile, your photo, your moments across every connection, your reactions and your push registration with it — you don't have to ask us, and there's nothing to wait for. Any connection you leave behind that still has other people in it keeps its shared history minus your moments; one that had only you is deleted outright.</p>
+    <p>If you'd rather we did it, or you want to ask what we hold, email <a href="mailto:` + contactEmail + `">` + contactEmail + `</a> — we'll action requests within 30 days.</p>
 
     <h2>Children</h2>
     <p>Pear'd is not directed at children under 13, and we don't knowingly collect data from them.</p>

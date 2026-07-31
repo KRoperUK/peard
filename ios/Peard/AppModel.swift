@@ -9,6 +9,9 @@ import SwiftUI
 final class AppModel {
     enum Phase: Equatable {
         case loading
+        /// The privacy policy has not been agreed to. Nothing reaches the
+        /// network from here — see `bootstrap()`.
+        case consent
         case auth
         case pair(prefilledCode: String?)
         case home(pairID: String)
@@ -98,8 +101,19 @@ final class AppModel {
     // MARK: Launch
 
     /// Requirement 9.1, 9.2, 9.3.
+    ///
+    /// The privacy gate is the first thing here, and it returns before anything
+    /// touches the network — not after, and not in parallel. Everything below it
+    /// talks to the server: the health probe, the membership fetch, the send
+    /// queue's flush. Putting the check anywhere else would mean the promise
+    /// ("nothing leaves your device until you agree") was true of the sign-in
+    /// button but not of launch.
     func bootstrap() async {
         phase = .loading
+        guard hasAgreedToPrivacyPolicy else {
+            phase = .consent
+            return
+        }
         sessionStore.load()
         await attachSendQueue()
 
@@ -115,6 +129,26 @@ final class AppModel {
         // Anything logged while the app was closed, or while the last session was
         // offline, goes out now.
         flushSendQueue()
+    }
+
+    // MARK: Privacy consent
+
+    /// Whether this installation has agreed to the current policy. A previously
+    /// accepted, now-superseded version reads as false and puts the gate back.
+    var hasAgreedToPrivacyPolicy: Bool {
+        sharedStore.privacyConsent.hasAcceptedCurrentVersion
+    }
+
+    /// True the first time the gate is shown, false when it is back because the
+    /// policy changed — the screen says different things in the two cases.
+    var isFirstPrivacyPrompt: Bool { sharedStore.privacyConsent.isFirstRun }
+
+    /// Records agreement and carries on with the launch that was interrupted.
+    /// Re-entering `bootstrap` rather than duplicating its steps: the gate is a
+    /// pause in the launch sequence, not a branch of it.
+    func agreeToPrivacyPolicy() async {
+        sharedStore.recordPrivacyConsent()
+        await bootstrap()
     }
 
     // MARK: Send queue
@@ -318,9 +352,14 @@ final class AppModel {
     }
 
     /// Requirement 15.2, 15.3 — leaves one connection, keeping the others.
-    func leave(connectionID: String) async {
+    ///
+    /// `deletingMoments` is the leave-time choice: off, the shared timeline keeps
+    /// what the caller logged; on, their own moments in this one connection go
+    /// with them. Scoped to this connection only — erasing everything everywhere
+    /// is account deletion, which is a different button in a different place.
+    func leave(connectionID: String, deletingMoments: Bool = false) async {
         do {
-            try await api.leave(pairID: connectionID)
+            try await api.leave(pairID: connectionID, deleteMoments: deletingMoments)
         } catch {
             if await handleIfUnauthorized(error) { return }
             banner = (error as? APIError)?.localizedDescription ?? error.localizedDescription
@@ -466,6 +505,46 @@ final class AppModel {
         await refreshConnections()
     }
 
+    // MARK: Account deletion
+
+    /// Erases the account on the server, then tears the session down locally.
+    ///
+    /// The order matters: the delete needs the token, so the local cleanup can
+    /// only follow it. A failure leaves the session intact and reports itself,
+    /// because the alternative — signing somebody out of an account that still
+    /// exists while telling them it is gone — is worse than an error message.
+    ///
+    /// The push registration is deleted first, and separately, so an account
+    /// that has gone cannot leave a `devices` row pointed at this handset. It
+    /// cascades server-side too; doing both means neither has to be trusted
+    /// alone.
+    ///
+    /// Returns true when the account is gone, so the caller knows whether to
+    /// dismiss its confirmation.
+    @discardableResult
+    func deleteAccount() async -> Bool {
+        do {
+            await push.deleteRegistration()
+            try await api.deleteAccount()
+        } catch {
+            banner = (error as? APIError)?.localizedDescription ?? error.localizedDescription
+            return false
+        }
+        // Deliberately not `signOut()`: that deletes the push registration again
+        // against an account that no longer exists, which just produces a 404.
+        await sendQueue.removeAll()
+        await refreshPendingSends()
+        sessionStore.clear()
+        widgetSync.clear()
+        connections = []
+        profile = nil
+        sharedStore.selectedConnectionID = nil
+        focusedPostID = nil
+        hasRequestedPushThisSession = false
+        phase = .auth
+        return true
+    }
+
     /// Requirement 8.4 — a 401 clears the session and forces re-authentication.
     func clearSessionAndReturnToAuth() async {
         sessionStore.clear()
@@ -525,8 +604,17 @@ final class AppModel {
     // MARK: Deep links
 
     /// Requirement 19.
+    ///
+    /// A deep link is the one way into the app that skips launch routing, so the
+    /// privacy gate is repeated here: an invite link tapped on a fresh install
+    /// would otherwise open straight onto the pairing screen, whose first act is
+    /// to redeem the code against the server.
     func handle(url: URL) {
         guard let link = DeepLink.parse(url) else { return }
+        guard hasAgreedToPrivacyPolicy else {
+            phase = .consent
+            return
+        }
         switch link {
         case .pair(let code):
             phase = .pair(prefilledCode: code)
