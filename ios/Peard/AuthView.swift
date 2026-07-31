@@ -11,67 +11,101 @@ struct AuthView: View {
         var id: String { rawValue }
     }
 
+    /// Whether the email and password fields sign in or create an account.
+    ///
+    /// A mode rather than a second screen: the two differ by one button and one
+    /// line of copy, and a separate screen would mean somebody who guessed wrong
+    /// had to go back and retype what they had already entered.
+    private enum EmailMode: String, CaseIterable, Identifiable {
+        case signIn, signUp
+        var id: String { rawValue }
+        var title: String { self == .signIn ? "Sign in" : "Create account" }
+    }
+
     @State private var busy: Provider?
     @State private var errorMessage: String?
     @State private var email = ""
     @State private var password = ""
+    @State private var emailMode: EmailMode = .signIn
 
     var body: some View {
-        VStack(spacing: 12) {
-            Spacer()
-
-            Text("🍐")
-                .font(.system(size: 72))
-                .accessibilityHidden(true)
-            Text("Pear'd")
-                .font(.largeTitle.bold())
-                .foregroundStyle(PearColor.textPrimary)
-            Text("Moments & tallies, shared with your favourite people.")
-                .font(.subheadline)
-                .foregroundStyle(PearColor.textSecondary)
-                .multilineTextAlignment(.center)
-                .padding(.bottom, 28)
-
-            appleButton
-
-            #if DEBUG
-            googleButton
-            #else
-            if app.config.hasGoogleClientID {
-                googleButton
-            }
-            #endif
-
-            Divider()
-                .background(PearColor.divider)
-                .padding(.vertical, 12)
-
-            emailFields
-            passwordSignInButton
-
-            #if DEBUG
-            testUserButton
-            #endif
-
-            if let errorMessage {
-                Text(errorMessage)
-                    .font(.footnote)
-                    .foregroundStyle(PearColor.error)
+        // Scrollable, because this screen is now taller than a small phone with
+        // the keyboard up. It used to rely on two Spacers absorbing the
+        // difference, which stops working once the content exceeds the space:
+        // the password field and the button it needs were simply unreachable on
+        // an SE, with no indication anything was below the fold.
+        ScrollView {
+            VStack(spacing: 12) {
+                Text("🍐")
+                    .font(.system(size: 72))
+                    .accessibilityHidden(true)
+                Text("Pear'd")
+                    .font(.largeTitle.bold())
+                    .foregroundStyle(PearColor.textPrimary)
+                Text("Moments & tallies, shared with your favourite people.")
+                    .font(.subheadline)
+                    .foregroundStyle(PearColor.textSecondary)
                     .multilineTextAlignment(.center)
-                    .padding(.top, 8)
-                    .pearTransition()
+                    .padding(.bottom, 28)
+
+                appleButton
+
+                #if DEBUG
+                googleButton
+                #else
+                if app.config.hasGoogleClientID {
+                    googleButton
+                }
+                #endif
+
+                Divider()
+                    .background(PearColor.divider)
+                    .padding(.vertical, 12)
+
+                modePicker
+                emailFields
+                emailSubmitButton
+
+                #if DEBUG
+                testUserButton
+                #endif
+
+                if let errorMessage {
+                    Text(errorMessage)
+                        .font(.footnote)
+                        .foregroundStyle(PearColor.error)
+                        .multilineTextAlignment(.center)
+                        .padding(.top, 8)
+                        .pearTransition()
+                }
+
+                Link("Privacy Policy", destination: PeardLinks.privacyPolicy)
+                    .font(.footnote)
+                    .foregroundStyle(PearColor.textSecondary)
+                    .padding(.top, 24)
             }
-
-            Spacer()
-
-            Link("Privacy Policy", destination: PeardLinks.privacyPolicy)
-                .font(.footnote)
-                .foregroundStyle(PearColor.textSecondary)
+            .padding(32)
+            .frame(maxWidth: .infinity)
         }
-        .padding(32)
+        .scrollDismissesKeyboard(.interactively)
         .frame(maxWidth: .infinity, maxHeight: .infinity)
         .background(PearColor.background)
         .pearAnimation(value: errorMessage ?? "")
+    }
+
+    /// Switching modes clears the error: "that email and password don't match an
+    /// account" is stale advice the moment somebody acts on it by switching to
+    /// Create account, and leaving it up makes the new screen look broken.
+    private var modePicker: some View {
+        Picker("", selection: $emailMode) {
+            ForEach(EmailMode.allCases) { mode in
+                Text(mode.title).tag(mode)
+            }
+        }
+        .pickerStyle(.segmented)
+        .disabled(busy != nil)
+        .onChange(of: emailMode) { _, _ in errorMessage = nil }
+        .accessibilityLabel("Email and password mode")
     }
 
     // MARK: Buttons
@@ -133,31 +167,56 @@ struct AuthView: View {
                 .overlay(RoundedRectangle(cornerRadius: 12).strokeBorder(PearColor.divider))
 
             SecureField("", text: $password, prompt: Text("Password").foregroundStyle(PearColor.textTertiary))
-                .textContentType(.password)
+                // `.newPassword` on sign-up so the keychain offers to generate
+                // and save one rather than searching for an existing entry that
+                // by definition does not exist yet.
+                .textContentType(emailMode == .signUp ? .newPassword : .password)
                 .foregroundStyle(PearColor.textPrimary)
                 .padding(14)
                 .background(PearColor.surface, in: RoundedRectangle(cornerRadius: 12))
                 .overlay(RoundedRectangle(cornerRadius: 12).strokeBorder(PearColor.divider))
+
+            if emailMode == .signUp {
+                // Stated up front rather than discovered by being rejected:
+                // PocketBase enforces eight, and finding that out by submitting
+                // is a wasted round trip and a needless error message.
+                Text("At least 8 characters.")
+                    .font(.caption2)
+                    .foregroundStyle(PearColor.textTertiary)
+                    .frame(maxWidth: .infinity, alignment: .leading)
+                    .pearTransition()
+            }
         }
         .padding(.bottom, 8)
     }
 
-    private var canSignInWithPassword: Bool {
-        !email.trimmingCharacters(in: .whitespaces).isEmpty && !password.isEmpty && busy == nil
+    private var trimmedEmail: String { email.trimmingCharacters(in: .whitespaces) }
+
+    /// Sign-in accepts any non-empty password, because an existing account may
+    /// predate the eight-character minimum and refusing to *submit* it would
+    /// lock somebody out of their own account.
+    private var canSubmitEmail: Bool {
+        guard !trimmedEmail.isEmpty, busy == nil else { return false }
+        return emailMode == .signUp ? password.count >= 8 : !password.isEmpty
     }
 
-    private var passwordSignInButton: some View {
+    private var emailSubmitButton: some View {
         Button {
-            let identity = email.trimmingCharacters(in: .whitespaces)
-            let submittedPassword = password
-            signIn(.password) { try await coordinator.signInWithPassword(identity: identity, password: submittedPassword) }
+            let identity = trimmedEmail
+            let submitted = password
+            let mode = emailMode
+            signIn(.password) {
+                mode == .signUp
+                    ? try await coordinator.signUpWithPassword(email: identity, password: submitted)
+                    : try await coordinator.signInWithPassword(identity: identity, password: submitted)
+            }
         } label: {
-            label(for: .password, title: "Continue", tint: .white)
+            label(for: .password, title: emailMode == .signUp ? "Create account" : "Continue", tint: .white)
         }
         .buttonStyle(.plain)
         .background(PearColor.accent, in: RoundedRectangle(cornerRadius: 12))
-        .disabled(!canSignInWithPassword)
-        .opacity(canSignInWithPassword ? 1 : 0.5)
+        .disabled(!canSubmitEmail)
+        .opacity(canSubmitEmail ? 1 : 0.5)
     }
 
     #if DEBUG

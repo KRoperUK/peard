@@ -164,8 +164,43 @@ final class AuthCoordinator {
             )
             return Session(token: response.token, user: response.record)
         } catch let error as APIError {
-            throw AuthError.message(error.localizedDescription)
+            throw AuthError.message(AuthMessage.forSignIn(error))
         }
+    }
+
+    /// Creates an account, then signs into it.
+    ///
+    /// The sign-in screen offered an email and a password field and a Continue
+    /// button that could only ever *authenticate*. There was no way to create an
+    /// account with them, so a new user typing their details got "Failed to
+    /// authenticate" and no route forward — a whole advertised sign-in method
+    /// that only worked for accounts which could not be made in the app.
+    ///
+    /// `users` already permits public creation (its CreateRule is empty) and
+    /// requires no verification to authenticate (its AuthRule is empty), so the
+    /// two calls below are all it takes. The immediate sign-in matters: creating
+    /// a record returns no token, and leaving somebody at the sign-in screen
+    /// after they just made an account is a dead end that reads like a failure.
+    ///
+    /// `passwordConfirm` is sent because PocketBase requires it on create; the
+    /// screen collects it once and passes it twice rather than asking the user
+    /// to type their password out again, which is a checkbox for form design
+    /// rather than for security on a field they can reveal.
+    func signUpWithPassword(email: String, password: String) async throws -> Session {
+        do {
+            let _: UserRecord = try await api.create("users", fields: [
+                "email": email,
+                "password": password,
+                "passwordConfirm": password,
+                // Without this the address is private even to its owner, and
+                // `GET /api/peard/profile` returns an empty email — so Settings
+                // would say "Signed in as ." to somebody who had just typed it.
+                "emailVisibility": "true",
+            ])
+        } catch let error as APIError {
+            throw AuthError.message(AuthMessage.forSignUp(error))
+        }
+        return try await signInWithPassword(identity: email, password: password)
     }
 
     /// Delivers a `peard://auth/google` URL to the pending session

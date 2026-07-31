@@ -400,6 +400,23 @@ PocketBase's `auth-with-oauth2`. PocketBase links by verified email.
   Dashboard (*Collections > users > Options > OAuth2 > Google*).
 - Set `PEARD_GOOGLE_IOS_CLIENT_ID` in `ios/Config.xcconfig`.
 
+### Email and password
+
+The sign-in screen's email and password fields switch between **Sign in** and
+**Create account**. Sign-up creates the `users` record and immediately
+authenticates it, because creating a record returns no token and leaving somebody
+on the sign-in screen right after they made an account reads as a failure.
+
+The `users` collection already permitted this — its CreateRule is empty (public)
+and its AuthRule is empty (no verification required to sign in) — so no server
+change was needed. `emailVisibility` is set on create, or `GET /api/peard/profile`
+returns an empty email and Settings says "Signed in as ." to somebody who has just
+typed their address.
+
+There is deliberately **no password reset**: this server sends no email at all
+(see the Apple notification section below), so a reset link would go nowhere. A
+forgotten password means signing in with Apple or Google instead.
+
 ## WidgetKit
 
 The home-screen widget shows the latest moment somebody else shared and today's
