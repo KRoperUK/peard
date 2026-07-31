@@ -4,7 +4,7 @@
 //
 //	POST /api/peard/pairs/invite      { pair? }        -> { code, deep_link, expires, pair? }
 //	POST /api/peard/pairs/accept      { code }         -> { pair }
-//	POST /api/peard/pairs/leave       { pair? }        -> { ok }
+//	POST /api/peard/pairs/leave       { pair?, delete_moments? } -> { ok }
 //	POST /api/peard/pairs/remove      { pair, user }   -> { ok }
 //	GET  /api/peard/connections                        -> { connections: [...] }
 //	POST /api/peard/connections/mute  { pair, muted }  -> { ok, muted }
@@ -236,6 +236,10 @@ func leaveHandler(app core.App) func(e *core.RequestEvent) error {
 	return func(e *core.RequestEvent) error {
 		var body struct {
 			Pair string `json:"pair" form:"pair"`
+			// Requirement (leave-time choice): default false, so an older
+			// client that has never heard of this field keeps today's
+			// behaviour — moments stay part of the connection's history.
+			DeleteMoments bool `json:"delete_moments" form:"delete_moments"`
 		}
 		if e.Request.ContentLength > 0 {
 			if err := e.BindBody(&body); err != nil {
@@ -268,6 +272,16 @@ func leaveHandler(app core.App) func(e *core.RequestEvent) error {
 			}
 		}
 
+		// Ahead of the membership going, while it and the connection can
+		// still be named unambiguously. If this was the last member the
+		// posts are already gone a moment later via the pair's own cascade —
+		// deleting them explicitly first just makes that not depend on it.
+		if body.DeleteMoments {
+			if err := deleteAuthoredPosts(app, pairID, e.Auth.Id); err != nil {
+				return e.InternalServerError("failed to delete your moments", err)
+			}
+		}
+
 		// Deleting the membership is the whole act. If it was the last one, the
 		// `pair_members` delete hook in lifecycle.go deletes the connection in
 		// the same transaction — see registerLifecycle for why that lives at the
@@ -277,6 +291,24 @@ func leaveHandler(app core.App) func(e *core.RequestEvent) error {
 		}
 		return e.JSON(http.StatusOK, map[string]any{"ok": true})
 	}
+}
+
+// deleteAuthoredPosts removes one member's own moments from one connection —
+// the leave-time choice, scoped to a single pair rather than every
+// connection the way account deletion is.
+func deleteAuthoredPosts(app core.App, pairID, userID string) error {
+	posts, err := app.FindRecordsByFilter("posts",
+		"pair = {:pair} && author = {:author}", "", 5000, 0,
+		dbx.Params{"pair": pairID, "author": userID})
+	if err != nil {
+		return err
+	}
+	for _, post := range posts {
+		if err := app.Delete(post); err != nil {
+			return err
+		}
+	}
+	return nil
 }
 
 // removeHandler lets an owner remove somebody else from a connection.

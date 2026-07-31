@@ -1,7 +1,9 @@
-// Package profile lets a signed-in user set the name other people see.
+// Package profile lets a signed-in user set the name other people see, and
+// delete their own account outright.
 //
-//	GET  /api/peard/profile                    -> { id, display_name, email }
-//	POST /api/peard/profile { display_name }   -> { id, display_name, email }
+//	GET    /api/peard/profile                    -> { id, display_name, email }
+//	POST   /api/peard/profile { display_name }   -> { id, display_name, email }
+//	DELETE /api/peard/account                    -> { ok }
 //
 // Names matter more than they look: `GET /api/peard/connections` resolves every
 // member to a display name, and with none set it falls back to the local part of
@@ -31,8 +33,35 @@ func Register(app core.App) {
 		g := se.Router.Group("/api/peard/profile")
 		g.GET("", readHandler(app)).Bind(apis.RequireAuth())
 		g.POST("", writeHandler(app)).Bind(apis.RequireAuth())
+
+		se.Router.DELETE("/api/peard/account", deleteAccountHandler(app)).Bind(apis.RequireAuth())
 		return se.Next()
 	})
+}
+
+// deleteAccountHandler erases the caller's account outright.
+//
+// Deleting the `users` record is the whole act: every relation that points at
+// a user — pair_members, posts (a person's moments in every connection),
+// reactions, pair_invites, devices, widget_tokens — was declared with
+// CascadeDelete: true (see 1785110400_peard_init.go), and losing the last
+// member of a connection already deletes that connection's own posts,
+// reactions and custom moments through registerLifecycle in
+// internal/pairs/lifecycle.go, whose own doc comment names this exact route
+// as the reason that hook lives at the model layer rather than behind
+// /pairs/leave. A connection that still has other members keeps its shared
+// history; only the deleted account's own moments in it go.
+func deleteAccountHandler(app core.App) func(e *core.RequestEvent) error {
+	return func(e *core.RequestEvent) error {
+		user, err := app.FindRecordById("users", e.Auth.Id)
+		if err != nil {
+			return e.NotFoundError("user not found", err)
+		}
+		if err := app.Delete(user); err != nil {
+			return e.InternalServerError("failed to delete your account", err)
+		}
+		return e.JSON(http.StatusOK, map[string]any{"ok": true})
+	}
 }
 
 func readHandler(app core.App) func(e *core.RequestEvent) error {

@@ -427,6 +427,23 @@ and it is truncated to 80 **runes** — a byte truncation could split a multi-by
 character into invalid UTF-8. An empty value is a deliberate reset back to the
 email fallback, not an error.
 
+## Account routes
+
+`GET /api/peard/export` → a JSON snapshot of the caller's own profile,
+connections and authored moments. The app writes it to a file and hands it to the
+share sheet.
+
+`DELETE /api/peard/account` (no body) → `{ "ok": true }`. Deleting the `users`
+record is the whole act: every relation pointing at a user — `pair_members`,
+`posts`, `reactions`, `pair_invites`, `devices`, `widget_tokens` — was declared
+`CascadeDelete: true`, and losing the last member of a connection deletes that
+connection's own posts, reactions and moment kinds through the `pair_members`
+delete hook. A connection that still has other members keeps its shared history;
+only the deleted account's moments in it go.
+
+The two together are the self-serve half of the privacy policy's promise: take a
+copy, then leave, without asking anybody.
+
 ## Pairing routes
 
 `POST /api/peard/pairs/invite` with an optional body:
@@ -455,13 +472,20 @@ already in all answer `400`.
 `POST /api/peard/pairs/leave` with an optional body:
 
 ```json
-{ "pair": "abc123def456ghi" }
+{ "pair": "abc123def456ghi", "delete_moments": false }
 ```
 
 → `{ "ok": true }`. Omitting `pair` is only unambiguous when the caller belongs
 to exactly one connection; with more than one the answer is `400`. Leaving
 deletes the membership, and deletes the connection itself once the last member
 goes, cascading to its posts, reactions and moment kinds.
+
+`delete_moments` is a real JSON boolean (a quoted `"true"` is rejected with
+`400`) and defaults to `false`, so a client that has never heard of the field
+keeps the original behaviour: the caller's moments stay in the shared timeline,
+because they were part of everybody else's record of what happened too. Sent
+`true`, the caller's own posts in *that connection* are deleted first, while the
+membership still names them — scoped to one connection, unlike account deletion.
 
 `POST /api/peard/pairs/remove` with `{ "pair": "<id>", "user": "<id>" }` →
 `{ "ok": true }`. Takes somebody *else* out of a connection, and only the owner

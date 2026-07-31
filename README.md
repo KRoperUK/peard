@@ -325,6 +325,25 @@ between app and server. It replaces the former `shared/types.ts`, which was
 `ios/PeardCore/Sources/PeardCore/Models.swift` are now the only client mirror of
 the contract, and their round-trip behaviour is covered by tests.
 
+## Privacy consent
+
+Nothing reaches the network until the privacy policy has been agreed to. The gate
+is a phase of its own (`AppModel.Phase.consent`) that `bootstrap()` returns from
+*before* loading the session, starting the send queue or probing health, and that
+`handle(url:)` repeats — a `peard://pair/CODE` link is the one route into the app
+that skips launch routing, and the pairing screen's first act is to redeem the
+code against the server.
+
+It sits ahead of the sign-in screen rather than on it: Apple, Google and
+email/password all send an identifier off the device before there is an account
+to attach it to, so a checkbox beside the buttons would already be too late.
+
+The answer is stored per installation in the App Group container
+(`SharedStore.privacyConsent`) as the accepted policy *version*, not a boolean —
+`PrivacyConsent.currentVersion` tracks the "Last updated" date rendered by
+`/privacy`, so changing the policy puts the gate back in front of everyone on
+their next launch. It deliberately survives sign-out.
+
 ## Auth providers
 
 ### Sign in with Apple (native)
@@ -434,8 +453,11 @@ receive live pushes.
 | DELETE | `/api/peard/connections/avatar?pair=` | member | Remove a connection's photo |
 | POST | `/api/peard/pairs/invite` | user | Generate a 6-char invite code; optional `{"pair":"X"}` invites into an existing connection |
 | POST | `/api/peard/pairs/accept` | user | Accept an invite code (body `{"code":"X"}`) |
-| POST | `/api/peard/pairs/leave` | user | Leave a connection; optional `{"pair":"X"}`, required when you're in more than one |
+| POST | `/api/peard/pairs/leave` | user | Leave a connection; optional `{"pair":"X"}`, required when you're in more than one, plus optional `{"delete_moments":true}` to take your own moments out of it on the way |
 | POST | `/api/peard/pairs/remove` | owner | Remove somebody else from a connection |
+| POST | `/api/peard/contacts/match` | user | Which of the supplied contact hashes belong to discoverable accounts |
+| GET  | `/api/peard/export` | user | JSON snapshot of your profile, connections and moments |
+| DELETE | `/api/peard/account` | user | Delete your account and everything that cascades from it |
 | GET  | `/api/peard/widget/feed?token=` | widget | Latest moment + today's tallies; optional `&pair=` pins a connection |
 | GET  | `/api/peard/widget/connections?token=` | widget | Choices for the configurable widget's picker |
 | POST | `/api/peard/widget/moment` | widget | Log a moment from a widget button |
