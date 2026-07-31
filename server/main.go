@@ -24,6 +24,7 @@ import (
 	"peard/internal/pairs"
 	"peard/internal/profile"
 	"peard/internal/push"
+	"peard/internal/site"
 	"peard/internal/tallies"
 	"peard/internal/widget"
 	_ "peard/migrations"
@@ -43,6 +44,7 @@ func main() {
 		if u := os.Getenv("PEARD_APP_URL"); u != "" {
 			e.App.Settings().Meta.AppURL = strings.TrimRight(u, "/")
 		}
+		e.App.Settings().Meta.AppName = "Pear'd"
 		return e.Next()
 	})
 
@@ -53,6 +55,7 @@ func main() {
 	tallies.Register(app)
 	widget.Register(app)
 	push.Register(app)
+	site.Register(app)
 
 	if err := app.Start(); err != nil {
 		log.Fatal(err)
