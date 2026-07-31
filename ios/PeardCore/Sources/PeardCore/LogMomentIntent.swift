@@ -9,9 +9,26 @@ import WidgetKit
 /// No three-second window here: on the home screen that window exists so a note
 /// can be typed, and there is nowhere to type one from a widget button or a
 /// spoken phrase. The gesture is the whole thing, so it commits immediately.
-enum MomentLogging {
-    static func perform(kind: EventKind, pairID: String?, emoji: String, label: String) async {
-        let store = SharedStore.shared
+public enum MomentLogging {
+    /// Logs a moment, and reports whether the server took it.
+    ///
+    /// The result exists for the Messages extension, which — unlike a widget
+    /// button or a spoken phrase — puts a message into somebody's conversation
+    /// saying the moment was logged. It used to insert that bubble whether or
+    /// not anything had been logged, so a tap with no signal produced a bubble
+    /// asserting something untrue into a chat with another person. Callers with
+    /// nowhere to show an error still ignore it, which is what the widget and
+    /// Siri do.
+    /// `store` is injected so the not-signed-in path can be tested. It defaults
+    /// to the real App Group container, which is what every caller passes.
+    @discardableResult
+    public static func perform(
+        kind: EventKind,
+        pairID: String?,
+        emoji: String,
+        label: String,
+        store: SharedStore = .shared
+    ) async -> Bool {
         guard
             let token = store.widgetToken, !token.isEmpty,
             let baseURL = store.apiBaseURL
@@ -20,7 +37,7 @@ enum MomentLogging {
             // button or Siri. Reloading gets the timeline back to its
             // "pear up" state.
             WidgetCenter.shared.reloadAllTimelines()
-            return
+            return false
         }
 
         // Shows an immediate "logged" acknowledgement (see PearEntry.pendingLog)
@@ -31,8 +48,10 @@ enum MomentLogging {
         WidgetCenter.shared.reloadAllTimelines()
 
         let api = APIClient(baseURL: baseURL)
+        var accepted = false
         do {
             try await api.logWidgetMoment(token: token, kind: kind, pairID: pairID)
+            accepted = true
         } catch {
             // A failed tap is not worth an error dialog over a home-screen button.
             // The reload below redraws from the server, so the widget never shows a
@@ -40,6 +59,7 @@ enum MomentLogging {
         }
         store.pendingWidgetLog = nil
         WidgetCenter.shared.reloadAllTimelines()
+        return accepted
     }
 }
 

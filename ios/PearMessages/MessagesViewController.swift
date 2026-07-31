@@ -15,6 +15,11 @@ import UIKit
 /// is never lost even if the bubble is discarded.
 final class MessagesViewController: MSMessagesAppViewController {
     private var hostingController: UIHostingController<MomentTrayView>?
+    /// Drives the tray's spinner and its result line. Held here rather than in
+    /// the view because the view is rebuilt from scratch on every update.
+    private var status: MomentTrayView.Status = .idle {
+        didSet { presentTray() }
+    }
 
     override func viewDidLoad() {
         super.viewDidLoad()
@@ -22,16 +27,18 @@ final class MessagesViewController: MSMessagesAppViewController {
     }
 
     private func presentTray() {
-        if let hostingController {
-            hostingController.willMove(toParent: nil)
-            hostingController.view.removeFromSuperview()
-            hostingController.removeFromParent()
-        }
-
         let store = SharedStore.shared
         let isSignedIn = !(store.widgetToken ?? "").isEmpty && store.apiBaseURL != nil
-        let tray = MomentTrayView(isSignedIn: isSignedIn) { [weak self] moment in
+        let tray = MomentTrayView(isSignedIn: isSignedIn, status: status) { [weak self] moment in
             self?.log(moment)
+        }
+
+        // Update the existing host in place where there is one. Tearing it down
+        // and rebuilding on every status change would restart the transition and
+        // drop the keyboard focus Messages hands the extension.
+        if let hostingController {
+            hostingController.rootView = tray
+            return
         }
 
         let hosting = UIHostingController(rootView: tray)
@@ -43,10 +50,28 @@ final class MessagesViewController: MSMessagesAppViewController {
         hostingController = hosting
     }
 
+    /// Logs the moment, then — only if the server took it — offers the bubble.
+    ///
+    /// The bubble used to go in regardless of the result, so a tap with no
+    /// signal put a message reading "🍺 Beer logged" into a conversation with
+    /// another person when nothing had been logged at all. Inserting it only on
+    /// success means the thread never asserts something untrue, and the tray
+    /// says what went wrong instead.
     private func log(_ moment: MomentTrayView.Moment) {
-        Task {
-            let intent = LogMomentIntent(kind: moment.eventKind, pairID: nil, emoji: moment.emoji, label: moment.label)
-            _ = try? await intent.perform()
+        guard case .idle = status else { return }
+        status = .logging(moment.id)
+        Task { @MainActor in
+            let logged = await MomentLogging.perform(
+                kind: moment.eventKind,
+                pairID: nil,
+                emoji: moment.emoji,
+                label: moment.label
+            )
+            guard logged else {
+                status = .failed
+                return
+            }
+            status = .logged(moment.label)
             insertBubble(for: moment)
         }
     }
@@ -59,8 +84,8 @@ final class MessagesViewController: MSMessagesAppViewController {
         message.layout = layout
         conversation.insert(message) { error in
             if let error {
-                // Best effort — the moment is already logged either way; only
-                // the visible acknowledgement in the thread is at stake here.
+                // Best effort — the moment is logged either way by this point;
+                // only the visible acknowledgement in the thread is at stake.
                 print("[PearMessages] could not insert bubble: \(error)")
             }
         }
