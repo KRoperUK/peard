@@ -63,6 +63,10 @@ struct AuthView: View {
             }
 
             Spacer()
+
+            Link("Privacy Policy", destination: PeardLinks.privacyPolicy)
+                .font(.footnote)
+                .foregroundStyle(PearColor.textSecondary)
         }
         .padding(32)
         .frame(maxWidth: .infinity, maxHeight: .infinity)
