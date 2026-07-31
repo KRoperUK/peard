@@ -901,6 +901,9 @@ public struct WidgetFeed: Codable, Hashable, Sendable {
     public let post: FeedPost?
     /// Absent on a server that predates interactive widget buttons.
     public let moments: [AvailableMoment]?
+    /// Moments other people have posted in this connection since you last opened
+    /// it. Absent on a server that predates read state, which decodes as zero.
+    public let unreadCount: Int
 
     public init(
         state: FeedState,
@@ -909,7 +912,8 @@ public struct WidgetFeed: Codable, Hashable, Sendable {
         counts: Counts? = nil,
         tallies: [Tally]? = nil,
         post: FeedPost? = nil,
-        moments: [AvailableMoment]? = nil
+        moments: [AvailableMoment]? = nil,
+        unreadCount: Int = 0
     ) {
         self.state = state
         self.partner = partner
@@ -918,6 +922,34 @@ public struct WidgetFeed: Codable, Hashable, Sendable {
         self.tallies = tallies
         self.post = post
         self.moments = moments
+        self.unreadCount = unreadCount
+    }
+
+    /// True when the moment on the widget is one the user has not seen in the
+    /// app yet.
+    public var hasUnread: Bool { unreadCount > 0 }
+
+    // Explicit rather than synthesised, because `unread` is the one field whose
+    // JSON name differs from its property name. Synthesis would look for
+    // "unreadCount", never find it, and — since the property is not optional —
+    // fail the decode of the *entire* feed. That is the whole widget going blank
+    // to add a number to it.
+    enum CodingKeys: String, CodingKey {
+        case state, partner, connection, counts, tallies, post, moments
+        case unreadCount = "unread"
+    }
+
+    public init(from decoder: any Decoder) throws {
+        let container = try decoder.container(keyedBy: CodingKeys.self)
+        state = try container.decode(FeedState.self, forKey: .state)
+        partner = try container.decodeIfPresent(Partner.self, forKey: .partner)
+        connection = try container.decodeIfPresent(ConnectionInfo.self, forKey: .connection)
+        counts = try container.decodeIfPresent(Counts.self, forKey: .counts)
+        tallies = try container.decodeIfPresent([Tally].self, forKey: .tallies)
+        post = try container.decodeIfPresent(FeedPost.self, forKey: .post)
+        moments = try container.decodeIfPresent([AvailableMoment].self, forKey: .moments)
+        // Absent on a server predating read state: nothing new, not an error.
+        unreadCount = max(try container.decodeIfPresent(Int.self, forKey: .unreadCount) ?? 0, 0)
     }
 
     /// The moments to offer as buttons, falling back to the built-ins so a widget

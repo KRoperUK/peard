@@ -102,6 +102,10 @@ struct PearEntry: TimelineEntry {
     /// A moment fired from this widget's own buttons in the last few seconds,
     /// shown as an immediate acknowledgement while the real fetch is in flight.
     let pendingLog: PendingWidgetLog?
+    /// Moments waiting in this connection that the user has not opened the app
+    /// to see. The widget was the one surface that could not say whether what it
+    /// was showing was new.
+    let unreadCount: Int
 
     /// Rendered when the credentials are missing or the request fails
     /// (Requirement 17.4, 17.5).
@@ -120,7 +124,8 @@ struct PearEntry: TimelineEntry {
         moments: MomentCatalogue.builtin.map {
             WidgetFeed.AvailableMoment(kind: $0.kind, emoji: $0.emoji, label: $0.label)
         },
-        pendingLog: nil
+        pendingLog: nil,
+        unreadCount: 0
     )
 }
 
@@ -168,7 +173,8 @@ struct PearTimelineProvider: AppIntentTimelineProvider {
                 image: await image(for: feed),
                 pairID: resolvedPairID,
                 moments: feed.buttonMoments,
-                pendingLog: (pending?.isFresh == true && pending?.pairID == resolvedPairID) ? pending : nil
+                pendingLog: (pending?.isFresh == true && pending?.pairID == resolvedPairID) ? pending : nil,
+                unreadCount: feed.unreadCount
             )
         } catch {
             return .placeholder
@@ -214,7 +220,34 @@ struct PearWidgetEntryView: View {
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity)
         .foregroundStyle(PearColor.textPrimary)
+        // Top-trailing, matching the connection rail in the app, so the same
+        // signal is in the same place on both surfaces.
+        .overlay(alignment: .topTrailing) {
+            if entry.unreadCount > 0 {
+                unreadBadge
+            }
+        }
         .containerBackground(PearColor.background, for: .widget)
+    }
+
+    /// A dot with a count, drawn small: the widget is already dense, and the
+    /// question it answers here is only "is what I am looking at new".
+    ///
+    /// Not applied to the `.unpaired` state, which has no connection to count
+    /// for — the overlay sits outside that branch because `entry.unreadCount` is
+    /// zero there anyway, and an extra condition would state the same thing
+    /// twice.
+    private var unreadBadge: some View {
+        Text(entry.unreadCount > 9 ? "9+" : "\(entry.unreadCount)")
+            .font(.system(size: 10, weight: .bold))
+            .foregroundStyle(.white)
+            .monospacedDigit()
+            .padding(.horizontal, 4)
+            .frame(minWidth: 16, minHeight: 16)
+            .background(PearColor.accent, in: Capsule())
+            .accessibilityLabel(
+                entry.unreadCount == 1 ? "1 new moment" : "\(entry.unreadCount) new moments"
+            )
     }
 
     /// Even with nothing to show, the buttons are worth having: logging the first

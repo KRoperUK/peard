@@ -548,6 +548,7 @@ visually ambiguous characters).
   "partner": { "name": "Ada" },
   "connection": { "id": "abc123def456ghi", "name": "Flatmates", "member_count": 3, "is_group": true },
   "counts": { "beer": 2, "loo": 1 },
+  "unread": 2,
   "tallies": [
     { "kind": "beer", "emoji": "🍺", "count": 2, "label": "Beer" },
     { "kind": "tea",  "emoji": "🫖", "count": 1, "label": "Tea" }

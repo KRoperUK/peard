@@ -111,4 +111,58 @@ final class UnreadTests: XCTestCase {
 
         XCTAssertEqual(connections.totalUnreadForBadge, 0)
     }
+
+    // MARK: Widget feed
+
+    private func decodeFeed(_ json: String) throws -> WidgetFeed {
+        try JSONDecoder.peard.decode(WidgetFeed.self, from: Data(json.utf8))
+    }
+
+    func testWidgetFeedDecodesUnread() throws {
+        let feed = try decodeFeed(#"{"state":"ok","unread":3}"#)
+
+        XCTAssertEqual(feed.unreadCount, 3)
+        XCTAssertTrue(feed.hasUnread)
+    }
+
+    /// The trap this guards: `unreadCount` is not optional, and the JSON key is
+    /// `unread`. Left to synthesised Codable it would look for "unreadCount",
+    /// never find it, and fail the decode of the *whole* feed — the entire
+    /// widget going blank in order to add a number to it. Any server that omits
+    /// the field, old or new, must still render.
+    func testWidgetFeedWithoutUnreadStillDecodes() throws {
+        let feed = try decodeFeed(#"{"state":"ok","partner":{"name":"Sam"}}"#)
+
+        XCTAssertEqual(feed.unreadCount, 0)
+        XCTAssertFalse(feed.hasUnread)
+        XCTAssertEqual(feed.partnerName, "Sam", "the rest of the feed must survive")
+    }
+
+    func testWidgetFeedClampsANegativeCount() throws {
+        XCTAssertEqual(try decodeFeed(#"{"state":"ok","unread":-2}"#).unreadCount, 0)
+    }
+
+    /// The custom decoder has to keep decoding everything the synthesised one
+    /// did; a field dropped from it would go silently missing.
+    func testWidgetFeedStillDecodesItsOtherFields() throws {
+        let json = """
+        {"state":"ok","partner":{"name":"Sam"},
+         "connection":{"id":"p1","name":"Flatmates","member_count":3,"is_group":true},
+         "counts":{"beer":2,"loo":1},
+         "post":{"id":"x","type":"event","event_kind":"beer","note":"pub"},
+         "moments":[{"kind":"beer","emoji":"🍺","label":"Beer"}],
+         "unread":1}
+        """
+
+        let feed = try decodeFeed(json)
+
+        XCTAssertEqual(feed.partnerName, "Sam")
+        XCTAssertEqual(feed.connection?.name, "Flatmates")
+        XCTAssertTrue(feed.isGroup)
+        XCTAssertEqual(feed.beerCount, 2)
+        XCTAssertEqual(feed.looCount, 1)
+        XCTAssertEqual(feed.post?.id, "x")
+        XCTAssertEqual(feed.moments?.count, 1)
+        XCTAssertEqual(feed.unreadCount, 1)
+    }
 }

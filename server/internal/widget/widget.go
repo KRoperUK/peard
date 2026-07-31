@@ -27,6 +27,9 @@ import (
 	"time"
 
 	"peard/internal/moments"
+	// For UnreadCount — one definition of "unread" shared with the connections
+	// route and the push badge. `pairs` imports nothing internal, so no cycle.
+	"peard/internal/pairs"
 
 	"github.com/pocketbase/dbx"
 	"github.com/pocketbase/pocketbase/apis"
@@ -324,6 +327,11 @@ func feedHandler(app core.App) func(e *core.RequestEvent) error {
 			"connection": connectionInfo(app, chosenPair, len(others)+1),
 			"counts":     todayCounts(app, chosenPair, userID),
 			"tallies":    todayTallies(app, chosenPair, userID),
+			// The same count the rail and the badge use, for the connection this
+			// widget is showing. Without it the widget was the one surface that
+			// could not tell you whether the moment on it was one you had already
+			// seen — which is most of what a home-screen widget is *for*.
+			"unread": unreadForWidget(app, chosenPair, userID),
 			// What the widget's own buttons may log, resolved here so the extension
 			// does not need the connection's catalogue.
 			"moments": availableMoments(app, chosenPair),
@@ -478,6 +486,24 @@ func connectionInfo(app core.App, pairID string, memberCount int) map[string]any
 
 // todayCounts keeps the original beer/loo shape so a widget build that predates
 // generalised tallies keeps working.
+// unreadForWidget is the connection's unread count for this user, via the same
+// helpers the connections route and the push badge use.
+//
+// Routed through `pairs` rather than reimplemented on the membership here for
+// the reason stated at `pairs.UnreadSince`: three definitions of "unread" that
+// can drift apart is worse than an import. Zero when the membership cannot be
+// read, which matches the rest of this file — the widget degrades to showing
+// less, never to showing something wrong.
+func unreadForWidget(app core.App, pairID, userID string) int {
+	membership, err := app.FindFirstRecordByFilter("pair_members",
+		"pair = {:pair} && user = {:user}",
+		dbx.Params{"pair": pairID, "user": userID})
+	if err != nil || membership == nil {
+		return 0
+	}
+	return pairs.UnreadCount(app, membership, userID)
+}
+
 func todayCounts(app core.App, pairID, userID string) map[string]int {
 	return map[string]int{
 		"beer": len(todayPosts(app, pairID, userID, "beer")),
