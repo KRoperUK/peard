@@ -110,6 +110,29 @@ public extension APIClient {
         try await post(path: "/api/peard/profile", fields: ["display_name": name])
     }
 
+    /// `POST /api/peard/contacts/match` — Pear'd accounts, among the given
+    /// contact hashes, that opted into discoverability. The hashes are all
+    /// this ever sends; `ContactHashing` is what produces them.
+    func matchContacts(hashes: [String]) async throws -> [ContactMatch] {
+        let list: ContactMatchList = try await post(
+            path: "/api/peard/contacts/match",
+            typedFields: ["hashes": .stringArray(hashes)]
+        )
+        return list.matches
+    }
+
+    /// `POST /api/peard/contacts/settings` — opts in or out of being found by
+    /// contact search, optionally adding a phone number to match against
+    /// too. `phone` is never required: leaving it empty still lets email
+    /// matching work.
+    @discardableResult
+    func updateDiscoverability(discoverable: Bool, phone: String) async throws -> DiscoverabilityStatus {
+        try await post(
+            path: "/api/peard/contacts/settings",
+            typedFields: ["discoverable": .bool(discoverable), "phone": .string(phone)]
+        )
+    }
+
     /// `POST /api/peard/profile/avatar` — sets the caller's own photo.
     ///
     /// JPEG rather than the original HEIC: the server accepts both, but a JPEG

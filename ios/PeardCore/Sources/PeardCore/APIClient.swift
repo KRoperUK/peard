@@ -60,6 +60,7 @@ public enum JSONField: Hashable, Sendable, Encodable {
     case bool(Bool)
     case int(Int)
     case double(Double)
+    case stringArray([String])
     case null
 
     public func encode(to encoder: any Encoder) throws {
@@ -69,6 +70,7 @@ public enum JSONField: Hashable, Sendable, Encodable {
         case .bool(let value): try container.encode(value)
         case .int(let value): try container.encode(value)
         case .double(let value): try container.encode(value)
+        case .stringArray(let value): try container.encode(value)
         case .null: try container.encodeNil()
         }
     }

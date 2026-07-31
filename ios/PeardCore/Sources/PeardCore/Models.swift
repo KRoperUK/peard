@@ -1033,18 +1033,32 @@ public struct UserProfile: Codable, Hashable, Sendable, Identifiable {
     public let email: String?
     /// Stored filename of the caller's own photo, empty when they have none.
     public let avatarFilename: String?
+    /// Whether contact search can surface this account to someone else — see
+    /// `updateDiscoverability(discoverable:phone:)`.
+    public let discoverable: Bool
+    /// Only ever set via the discoverability settings route, never at signup.
+    public let phone: String
 
     enum CodingKeys: String, CodingKey {
-        case id, email
+        case id, email, discoverable, phone
         case displayName = "display_name"
         case avatarFilename = "avatar"
     }
 
-    public init(id: String, displayName: String = "", email: String? = nil, avatarFilename: String? = nil) {
+    public init(
+        id: String,
+        displayName: String = "",
+        email: String? = nil,
+        avatarFilename: String? = nil,
+        discoverable: Bool = false,
+        phone: String = ""
+    ) {
         self.id = id
         self.displayName = displayName
         self.email = email
         self.avatarFilename = avatarFilename
+        self.discoverable = discoverable
+        self.phone = phone
     }
 
     public init(from decoder: any Decoder) throws {
@@ -1053,6 +1067,8 @@ public struct UserProfile: Codable, Hashable, Sendable, Identifiable {
         displayName = try container.decodeIfPresent(String.self, forKey: .displayName) ?? ""
         email = try container.decodeIfPresent(String.self, forKey: .email)
         avatarFilename = try container.decodeIfPresent(String.self, forKey: .avatarFilename)
+        discoverable = try container.decodeIfPresent(Bool.self, forKey: .discoverable) ?? false
+        phone = try container.decodeIfPresent(String.self, forKey: .phone) ?? ""
     }
 
     /// What other members would see today: the set name, else the email's local
@@ -1098,6 +1114,50 @@ public struct PostPage: Hashable, Sendable {
     public var hasMore: Bool { page < totalPages }
 
     public var nextPage: Int { page + 1 }
+}
+
+/// One result from `POST /api/peard/contacts/match` — a Pear'd account that
+/// opted into discoverability and matched one of the caller's contacts.
+/// Deliberately thin: just enough to show who they are and invite them,
+/// never which contact field matched or the value that matched it.
+public struct ContactMatch: Codable, Hashable, Sendable, Identifiable {
+    public let id: String
+    public let displayName: String
+    public let avatar: String?
+    /// One of the hashes this device submitted — since it is the caller's
+    /// own hash, echoing it back is how the app maps an anonymous match back
+    /// to "this is your contact Alex", without the server ever saying which
+    /// contact field matched.
+    public let hash: String
+
+    enum CodingKeys: String, CodingKey {
+        case id
+        case displayName = "display_name"
+        case avatar
+        case hash
+    }
+
+    public init(id: String, displayName: String, avatar: String? = nil, hash: String) {
+        self.id = id
+        self.displayName = displayName
+        self.avatar = avatar
+        self.hash = hash
+    }
+}
+
+struct ContactMatchList: Codable, Hashable, Sendable {
+    let matches: [ContactMatch]
+}
+
+/// Response of `POST /api/peard/contacts/settings`.
+public struct DiscoverabilityStatus: Codable, Hashable, Sendable {
+    public let discoverable: Bool
+    public let phone: String
+
+    public init(discoverable: Bool, phone: String) {
+        self.discoverable = discoverable
+        self.phone = phone
+    }
 }
 
 /// PocketBase paged list envelope.
