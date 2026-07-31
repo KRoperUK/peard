@@ -7,12 +7,14 @@ struct AuthView: View {
     @Environment(AppModel.self) private var app
 
     private enum Provider: String, Identifiable {
-        case apple, google, test
+        case apple, google, password, test
         var id: String { rawValue }
     }
 
     @State private var busy: Provider?
     @State private var errorMessage: String?
+    @State private var email = ""
+    @State private var password = ""
 
     var body: some View {
         VStack(spacing: 12) {
@@ -31,7 +33,21 @@ struct AuthView: View {
                 .padding(.bottom, 28)
 
             appleButton
+
+            #if DEBUG
             googleButton
+            #else
+            if app.config.hasGoogleClientID {
+                googleButton
+            }
+            #endif
+
+            Divider()
+                .background(PearColor.divider)
+                .padding(.vertical, 12)
+
+            emailFields
+            passwordSignInButton
 
             #if DEBUG
             testUserButton
@@ -84,6 +100,46 @@ struct AuthView: View {
         )
         .disabled(busy != nil)
         .accessibilityLabel("Continue with Google")
+    }
+
+    private var emailFields: some View {
+        VStack(spacing: 8) {
+            TextField("", text: $email, prompt: Text("Email").foregroundStyle(PearColor.textTertiary))
+                .textContentType(.username)
+                .keyboardType(.emailAddress)
+                .textInputAutocapitalization(.never)
+                .autocorrectionDisabled()
+                .foregroundStyle(PearColor.textPrimary)
+                .padding(14)
+                .background(PearColor.surface, in: RoundedRectangle(cornerRadius: 12))
+                .overlay(RoundedRectangle(cornerRadius: 12).strokeBorder(PearColor.divider))
+
+            SecureField("", text: $password, prompt: Text("Password").foregroundStyle(PearColor.textTertiary))
+                .textContentType(.password)
+                .foregroundStyle(PearColor.textPrimary)
+                .padding(14)
+                .background(PearColor.surface, in: RoundedRectangle(cornerRadius: 12))
+                .overlay(RoundedRectangle(cornerRadius: 12).strokeBorder(PearColor.divider))
+        }
+        .padding(.bottom, 8)
+    }
+
+    private var canSignInWithPassword: Bool {
+        !email.trimmingCharacters(in: .whitespaces).isEmpty && !password.isEmpty && busy == nil
+    }
+
+    private var passwordSignInButton: some View {
+        Button {
+            let identity = email.trimmingCharacters(in: .whitespaces)
+            let submittedPassword = password
+            signIn(.password) { try await coordinator.signInWithPassword(identity: identity, password: submittedPassword) }
+        } label: {
+            label(for: .password, title: "Continue", tint: .white)
+        }
+        .buttonStyle(.plain)
+        .background(PearColor.accent, in: RoundedRectangle(cornerRadius: 12))
+        .disabled(!canSignInWithPassword)
+        .opacity(canSignInWithPassword ? 1 : 0.5)
     }
 
     #if DEBUG

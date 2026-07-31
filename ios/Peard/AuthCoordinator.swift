@@ -154,6 +154,20 @@ final class AuthCoordinator {
         }
     }
 
+    // MARK: Email
+
+    func signInWithPassword(identity: String, password: String) async throws -> Session {
+        do {
+            let response: AuthResponse = try await api.post(
+                path: "/api/collections/users/auth-with-password",
+                fields: ["identity": identity, "password": password]
+            )
+            return Session(token: response.token, user: response.record)
+        } catch let error as APIError {
+            throw AuthError.message(error.localizedDescription)
+        }
+    }
+
     /// Delivers a `peard://auth/google` URL to the pending session
     /// (Requirement 19.4). `ASWebAuthenticationSession` normally consumes the
     /// callback itself, so this is a no-op safety net.
