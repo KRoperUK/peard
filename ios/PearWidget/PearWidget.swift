@@ -76,74 +76,11 @@ struct ConnectionQuery: EntityQuery {
     }
 }
 
-// MARK: - Quick-send intent
-
-/// Logs a moment from a widget button.
-///
-/// No three-second window here: on the home screen that window exists so a note
-/// can be typed, and there is nowhere to type one from a widget. A tap is the whole
-/// gesture, so it commits immediately.
-struct LogMomentIntent: AppIntent {
-    static var title: LocalizedStringResource = "Log a moment"
-    static var description = IntentDescription("Logs a moment in a Pear'd connection.")
-    /// Keeps the app closed: the point is logging without a launch.
-    static var openAppWhenRun = false
-
-    @Parameter(title: "Moment")
-    var kind: String
-
-    @Parameter(title: "Connection")
-    var pairID: String?
-
-    @Parameter(title: "Emoji")
-    var emoji: String
-
-    @Parameter(title: "Label")
-    var label: String
-
-    init() {}
-
-    init(kind: EventKind, pairID: String?, emoji: String, label: String) {
-        self.kind = kind.rawValue
-        self.pairID = pairID
-        self.emoji = emoji
-        self.label = label
-    }
-
-    func perform() async throws -> some IntentResult {
-        let store = SharedStore.shared
-        guard
-            let token = store.widgetToken, !token.isEmpty,
-            let baseURL = store.apiBaseURL
-        else {
-            // Not signed in: nothing to do, and no way to say so from a widget
-            // button. Reloading gets the timeline back to its "pear up" state.
-            WidgetCenter.shared.reloadAllTimelines()
-            return .result()
-        }
-
-        // Shows an immediate "logged" acknowledgement (see PearEntry.pendingLog)
-        // before the round trip below even starts — otherwise the only sign of
-        // life is the tallies changing once the real fetch lands, which on a
-        // slow connection reads as a button that did nothing.
-        store.pendingWidgetLog = PendingWidgetLog(pairID: pairID, emoji: emoji, label: label, at: Date())
-        WidgetCenter.shared.reloadAllTimelines()
-
-        let api = APIClient(baseURL: baseURL)
-        do {
-            try await api.logWidgetMoment(token: token, kind: EventKind(rawValue: kind), pairID: pairID)
-        } catch {
-            // A failed tap is not worth an error dialog over a home-screen button.
-            // The reload below redraws from the server, so the widget never shows a
-            // moment that did not land.
-        }
-        store.pendingWidgetLog = nil
-        WidgetCenter.shared.reloadAllTimelines()
-        return .result()
-    }
-}
-
 // MARK: - Timeline
+//
+// LogMomentIntent — the quick-send App Intent behind every button below —
+// lives in PeardCore now, shared with the main app target's Siri/Shortcuts
+// exposure (see PeardShortcuts.swift and LogBuiltinMomentIntent).
 
 struct PearEntry: TimelineEntry {
     let date: Date
