@@ -64,6 +64,18 @@ final class AppModel {
 
     private var hasRequestedPushThisSession = false
     private var flushTask: Task<Void, Never>?
+    /// An invite code from a link that arrived mid-launch, held until the launch
+    /// has finished routing — see `handle(url:)` and `applyPendingPairCode()`.
+    ///
+    /// Survives the sign-in screen on purpose: a link tapped by somebody who has
+    /// never opened the app sends them to sign in first, and the code has to
+    /// still be there afterwards or the invite is lost at the one moment it is
+    /// most likely to be used.
+    ///
+    /// Readable so the tests can assert it is *held* rather than applied: with
+    /// no session there is nothing to redeem an invite against, so the correct
+    /// behaviour is to land on sign-in with the code still in hand.
+    private(set) var pendingPairCode: String?
 
     init(
         config: PeardConfig = .current,
@@ -134,10 +146,26 @@ final class AppModel {
             return
         }
         await resolveMembership()
+        applyPendingPairCode()
         // Anything logged while the app was closed, or while the last session was
         // offline, goes out now.
         flushSendQueue()
     }
+
+    /// Routes to an invite code that arrived while the launch was still running.
+    ///
+    /// Last, so it wins over whatever membership resolution decided — which is
+    /// the point: somebody who taps an invite link wants the pairing screen with
+    /// the code in it, not the home screen they would have got anyway.
+    private func applyPendingPairCode() {
+        guard let code = pendingPairCode else { return }
+        pendingPairCode = nil
+        phase = .pair(prefilledCode: code)
+    }
+
+    /// Test seam for the above, which is private because nothing outside the
+    /// launch sequence should be deciding when an invite code is spent.
+    func applyPendingPairCodeForTesting() { applyPendingPairCode() }
 
     // MARK: Privacy consent
 
@@ -259,6 +287,7 @@ final class AppModel {
         try sessionStore.save(token: session.token, userID: session.userID)
         await widgetSync.sync()
         await resolveMembership()
+        applyPendingPairCode()
     }
 
     /// Requirement 9.3 – 9.6. A user may belong to several connections, so this
@@ -612,6 +641,16 @@ final class AppModel {
         do {
             await push.deleteRegistration()
             try await api.deleteAccount()
+        } catch let error as APIError where error.status == 404 {
+            // The route is missing, which means the app is talking to a server
+            // older than this feature. Worth its own message: "Not found" tells
+            // somebody trying to delete their account nothing at all, and the
+            // fallback the privacy policy still documents — emailing us — does
+            // work. An installed app cannot assume the server has caught up
+            // with it, and this is the one request where failing opaquely is
+            // least acceptable.
+            banner = "This server can't delete accounts in-app yet. Email \(PeardLinks.supportEmail) and we'll do it for you."
+            return false
         } catch {
             banner = (error as? APIError)?.localizedDescription ?? error.localizedDescription
             return false
@@ -706,7 +745,15 @@ final class AppModel {
         }
         switch link {
         case .pair(let code):
-            phase = .pair(prefilledCode: code)
+            // While the launch is still running, setting the phase here is
+            // pointless: `bootstrap` sets it again the moment membership
+            // resolves, and the code is gone. Hand it over instead, and let the
+            // launch apply it when it has finished deciding where to land.
+            guard case .loading = phase else {
+                phase = .pair(prefilledCode: code)
+                return
+            }
+            pendingPairCode = code
         case .home:
             // Requirement 19.2, 19.3 — only land on home when a pair exists.
             if case .home = phase { return }
