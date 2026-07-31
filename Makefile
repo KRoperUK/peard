@@ -5,7 +5,7 @@ XCODEBUILD = xcodebuild -project $(PROJECT) -scheme Peard
 BUILT_APP = ios/build/Build/Products/Debug-iphonesimulator/Peard.app
 
 .PHONY: server migrate app app-release run project test test-app test-integration \
-        test-all icons lint clean \
+        test-all icons lint fmt clean \
         docker-build docker-up docker-up-tls docker-up-cloudflared docker-down docker-logs
 
 # --- server ---
@@ -96,9 +96,21 @@ test-integration:
 
 # --- checks ---
 
+# Mirrors what CI checks, so a green `make lint` means a green pipeline. gofmt
+# was missing here while CI enforced it, which is a lint target that lets exactly
+# the failure it exists to prevent through to the pipeline.
 lint:
 	cd server && go vet ./...
+	@cd server && unformatted=$$(gofmt -l .); \
+		if [ -n "$$unformatted" ]; then \
+			echo "These files are not gofmt'd (run: make fmt):"; \
+			echo "$$unformatted"; \
+			exit 1; \
+		fi
 	cd ios && xcodegen generate --spec project.yml --use-cache
+
+fmt:
+	cd server && gofmt -w .
 
 # --- docker ---
 

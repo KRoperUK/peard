@@ -60,7 +60,7 @@ func backdate(t *testing.T, w *lifeWorld, collection string, record *core.Record
 	t.Helper()
 	want := types.NowDateTime().Add(-by)
 	_, err := w.app.DB().
-		NewQuery("UPDATE {{"+collection+"}} SET [[created]] = {:t} WHERE [[id]] = {:id}").
+		NewQuery("UPDATE {{" + collection + "}} SET [[created]] = {:t} WHERE [[id]] = {:id}").
 		Bind(map[string]any{"t": want.String(), "id": record.Id}).
 		Execute()
 	if err != nil {
