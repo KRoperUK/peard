@@ -20,11 +20,25 @@ RUN go mod download
 
 COPY . .
 
+# Which build this is, reported by GET /api/peard/status.
+#
+# PEARD_COMMIT has to be passed in: the build context is ./server, so there is no
+# .git here to read it from, and Go's automatic VCS stamping is therefore blank
+# too. A deploy that does not supply it gets "unknown", which is why the build
+# time below is computed here instead of being passed — it needs nothing from
+# the caller and so is always right. That alone distinguishes two builds, which
+# is most of what this is for.
+ARG PEARD_COMMIT=unknown
+
 # -trimpath keeps absolute build paths out of the binary; -s -w drop the symbol
 # table and DWARF, which is most of the size. CGO_ENABLED=0 is load-bearing, not
 # hygiene: without it the binary would link against musl and fail on any other
 # base image.
-RUN CGO_ENABLED=0 GOOS=linux go build -trimpath -ldflags="-s -w" -o /out/peard-server .
+RUN CGO_ENABLED=0 GOOS=linux go build -trimpath \
+    -ldflags="-s -w \
+      -X 'peard/internal/version.Commit=${PEARD_COMMIT}' \
+      -X 'peard/internal/version.BuiltAt=$(date -u +%Y-%m-%dT%H:%M:%SZ)'" \
+    -o /out/peard-server .
 
 # --- runtime ----------------------------------------------------------------
 FROM alpine:3.23

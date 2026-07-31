@@ -22,6 +22,12 @@ services:
     build:
       context: ./server
       dockerfile: Dockerfile
+      args:
+        # Surfaced by GET /api/peard/status. Optional: an unset one leaves the
+        # commit as "unknown" while the build time — stamped inside the build —
+        # still identifies the binary. Set it where the deploy knows the
+        # revision; `make docker-up` does it for you.
+        PEARD_COMMIT: ${PEARD_COMMIT:-unknown}
     image: peard-server:latest
     restart: unless-stopped
 

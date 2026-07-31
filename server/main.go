@@ -9,6 +9,7 @@
 //   - widget:  token-authenticated feed for the WidgetKit extension
 //   - push:    APNs delivery triggered by record hooks
 //   - limits:  request rate limiting (PEARD_RATE_LIMITS=off disables it)
+//   - version: GET /api/peard/status — which build is actually running
 package main
 
 import (
@@ -30,6 +31,7 @@ import (
 	"peard/internal/push"
 	"peard/internal/site"
 	"peard/internal/tallies"
+	"peard/internal/version"
 	"peard/internal/widget"
 	_ "peard/migrations"
 )
@@ -63,6 +65,7 @@ func main() {
 	site.Register(app)
 	export.Register(app)
 	contacts.Register(app)
+	version.Register(app)
 
 	if err := app.Start(); err != nil {
 		log.Fatal(err)

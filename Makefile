@@ -122,6 +122,12 @@ COMPOSE := $(shell docker compose version >/dev/null 2>&1 && echo "docker compos
 COMPOSE_TLS = $(COMPOSE) -f docker-compose.yml -f docker-compose.tls.yml
 COMPOSE_CF = $(COMPOSE) -f docker-compose.yml -f docker-compose.cloudflared.yml
 
+# PEARD_COMMIT is stamped into the binary and reported by GET /api/peard/status,
+# so a deploy can be identified without shelling into the host. Exported for
+# every compose target below rather than just one, because the useful property
+# is that it is always right, not that it is available when remembered.
+export PEARD_COMMIT := $(shell git rev-parse --short HEAD 2>/dev/null || echo unknown)
+
 docker-build:
 	$(COMPOSE) build
 
