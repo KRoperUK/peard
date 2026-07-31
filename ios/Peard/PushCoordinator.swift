@@ -28,6 +28,58 @@ final class PushCoordinator {
         self.center = center
     }
 
+    // MARK: Notification categories
+
+    /// Identifier of the category the server tags a new-moment push with
+    /// (`push.momentCategory` server-side) — this is what makes iOS offer the
+    /// reaction actions below instead of a plain banner.
+    static let momentCategoryIdentifier = "MOMENT"
+    private static let reactionActionPrefix = "REACT_"
+
+    /// Registers the reaction quick actions so a new-moment notification can
+    /// be reacted to without opening the app. Safe to call before
+    /// authorization is granted or even decided — it only shapes what a
+    /// notification looks like once one is actually shown.
+    static func registerNotificationCategories(center: UNUserNotificationCenter = .current()) {
+        let actions = ReactionKind.allCases.map { kind in
+            UNNotificationAction(
+                identifier: reactionActionPrefix + kind.rawValue,
+                title: "\(kind.emoji) \(kind.accessibilityLabel)",
+                options: []
+            )
+        }
+        let category = UNNotificationCategory(
+            identifier: momentCategoryIdentifier,
+            actions: actions,
+            intentIdentifiers: [],
+            options: []
+        )
+        center.setNotificationCategories([category])
+    }
+
+    /// Records a reaction fired from a notification's quick actions. Mirrors
+    /// `HomeModel.react(kind:)` but has no view to update or error to show —
+    /// this can run with no UI on screen at all, so it is best effort.
+    func handleNotificationAction(_ actionIdentifier: String, postID: String) async {
+        guard
+            actionIdentifier.hasPrefix(Self.reactionActionPrefix),
+            !postID.isEmpty,
+            let userID = session.userID, !userID.isEmpty
+        else { return }
+
+        let kind = ReactionKind(rawValue: String(actionIdentifier.dropFirst(Self.reactionActionPrefix.count)))
+        do {
+            let _: Reaction = try await api.create("reactions", fields: [
+                "post": postID,
+                "user": userID,
+                "kind": kind.rawValue,
+            ])
+        } catch {
+            // Nowhere to surface a failure from here; the in-app reaction
+            // picker on the post itself still works.
+        }
+    }
+
     // MARK: Authorization
 
     /// Requests authorization at most once per installation unless the user

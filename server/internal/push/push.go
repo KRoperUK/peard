@@ -48,6 +48,11 @@ const maxConnections = 20
 // apnsCollapseIDMaxBytes is Apple's limit on the apns-collapse-id header.
 const apnsCollapseIDMaxBytes = 64
 
+// momentCategory matches the UNNotificationCategory the app registers, which
+// is what makes iOS offer its reaction actions on this notification rather
+// than showing a plain banner.
+const momentCategory = "MOMENT"
+
 var n *notifier
 
 // Register configures the APNs client and binds the record hooks.
@@ -183,6 +188,7 @@ func notifyPairMembers(app core.App, post *core.Record) {
 				Sound("default").MutableContent().
 				ThreadID(threadID).
 				Badge(badge).
+				Category(momentCategory).
 				Custom("post_id", post.Id).
 				Custom("pair_id", pairID)
 			n.send(t, visible, apns2.PushTypeAlert, apns2.PriorityHigh, collapseID)

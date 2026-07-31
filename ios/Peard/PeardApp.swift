@@ -72,6 +72,7 @@ final class AppDelegate: NSObject, UIApplicationDelegate, UNUserNotificationCent
         didFinishLaunchingWithOptions launchOptions: [UIApplication.LaunchOptionsKey: Any]? = nil
     ) -> Bool {
         UNUserNotificationCenter.current().delegate = self
+        PushCoordinator.registerNotificationCategories()
         return true
     }
 
@@ -111,18 +112,28 @@ final class AppDelegate: NSObject, UIApplicationDelegate, UNUserNotificationCent
         return await model.push.handleBackgroundNotification(contentAvailable: contentAvailable)
     }
 
-    /// The user tapped a notification (Requirement 18.7).
+    /// The user tapped a notification, or one of its quick actions
+    /// (Requirement 18.7).
     nonisolated func userNotificationCenter(
         _ center: UNUserNotificationCenter,
         didReceive response: UNNotificationResponse
     ) async {
         let postID = response.notification.request.content.userInfo["post_id"] as? String
-        await openPost(postID)
+        if response.actionIdentifier == UNNotificationDefaultActionIdentifier {
+            await openPost(postID)
+        } else {
+            await reactFromNotification(actionIdentifier: response.actionIdentifier, postID: postID)
+        }
     }
 
     private func openPost(_ postID: String?) {
         guard let postID, !postID.isEmpty else { return }
         model?.push.handleNotificationSelection(postID: postID)
+    }
+
+    private func reactFromNotification(actionIdentifier: String, postID: String?) async {
+        guard let postID, !postID.isEmpty else { return }
+        await model?.push.handleNotificationAction(actionIdentifier, postID: postID)
     }
 
     /// Show alerts while the app is in the foreground.
