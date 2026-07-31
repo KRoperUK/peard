@@ -76,7 +76,21 @@ struct AuthView: View {
         Button {
             signIn(.apple) { try await coordinator.signInWithApple() }
         } label: {
-            label(for: .apple, title: " Sign in with Apple", tint: .white)
+            ZStack {
+                if busy == .apple {
+                    ProgressView().tint(.white)
+                } else {
+                    HStack(spacing: 6) {
+                        Image(systemName: "apple.logo")
+                        Text("Sign in with Apple")
+                    }
+                    .font(.body.weight(.semibold))
+                    .foregroundStyle(.white)
+                }
+            }
+            .frame(maxWidth: .infinity, minHeight: 24)
+            .padding(.vertical, 14)
+            .contentShape(Rectangle())
         }
         .buttonStyle(.plain)
         .background(Color.black, in: RoundedRectangle(cornerRadius: 12))
