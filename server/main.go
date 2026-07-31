@@ -8,6 +8,7 @@
 //   - tallies: server-side moment counts for one connection
 //   - widget:  token-authenticated feed for the WidgetKit extension
 //   - push:    APNs delivery triggered by record hooks
+//   - limits:  request rate limiting (PEARD_RATE_LIMITS=off disables it)
 package main
 
 import (
@@ -23,6 +24,7 @@ import (
 	"peard/internal/avatars"
 	"peard/internal/contacts"
 	"peard/internal/export"
+	"peard/internal/limits"
 	"peard/internal/pairs"
 	"peard/internal/profile"
 	"peard/internal/push"
@@ -50,6 +52,7 @@ func main() {
 		return e.Next()
 	})
 
+	limits.Register(app)
 	peardauth.Register(app)
 	pairs.Register(app)
 	profile.Register(app)

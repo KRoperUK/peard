@@ -209,6 +209,23 @@ prefers. `PEARD_APNS_PRODUCTION=true` is the one that is easy to miss and silent
 when wrong: TestFlight builds carry `aps-environment=production`, so their device
 tokens only resolve on Apple's production APNs host.
 
+### Rate limiting
+
+On by default, configured in code (`server/internal/limits`) rather than in the
+PB dashboard — the settings are rewritten on every boot, the same way the app
+name and URL are, so dashboard edits will not stick.
+
+The limits are deliberately loose: the goal is to stop a script, not to interrupt
+anybody. A limit that fires during ordinary use is worse than no limit, because a
+request rejected for no visible reason is indistinguishable from a broken server.
+The one that matters is `users:create` — account creation is the only public
+write — at 5/minute for guests only, so it can never affect a signed-in user.
+
+**`PEARD_RATE_LIMITS=off` disables the lot without a redeploy.** That exists
+because these were switched on without a load test to size them against, and a
+limit that misfires in production needs a way out that is not an emergency
+commit.
+
 ### Docker, and Komodo repo-based stacks
 
 `docker-compose.yml` at the repo root builds `server/Dockerfile` and is the whole
