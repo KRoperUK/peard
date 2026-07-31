@@ -38,7 +38,15 @@ final class AppModel {
 
     private(set) var phase: Phase = .loading
     /// Every connection the signed-in user belongs to, oldest first.
-    private(set) var connections: [Connection] = []
+    ///
+    /// The observer keeps the springboard badge honest. Doing it here rather
+    /// than at each assignment is deliberate: `connections` is rewritten from
+    /// six places — membership resolution, refresh, the local unread clear,
+    /// sign-out, account deletion and the 401 path — and a badge that is only
+    /// right at five of them is a badge nobody can trust.
+    private(set) var connections: [Connection] = [] {
+        didSet { syncBadge() }
+    }
     /// Drives the retry control shown when membership resolution failed
     /// (Requirement 9.6).
     private(set) var membershipFailed = false
@@ -392,6 +400,14 @@ final class AppModel {
 
         clearUnreadLocally(pairID: pairID)
         try? await api.markSeen(pairID: pairID)
+    }
+
+    /// What the springboard badge should say — see `totalUnreadForBadge`, which
+    /// holds the rule so it can be tested without a live server.
+    var badgeCount: Int { connections.totalUnreadForBadge }
+
+    private func syncBadge() {
+        Task { [push, badgeCount] in await push.setBadgeCount(badgeCount) }
     }
 
     /// Rewrites one connection's count to zero in the local list.

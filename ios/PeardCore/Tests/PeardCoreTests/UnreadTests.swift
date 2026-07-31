@@ -69,4 +69,46 @@ final class UnreadTests: XCTestCase {
     func testUnreadDefaultsToZeroWhenConstructedInCode() {
         XCTAssertEqual(Connection(pair: "p1").unreadCount, 0)
     }
+
+    // MARK: Badge total
+
+    func testBadgeSumsEveryConnection() {
+        let connections = [
+            Connection(pair: "p1", unreadCount: 2),
+            Connection(pair: "p2", unreadCount: 3),
+            Connection(pair: "p3", unreadCount: 0),
+        ]
+
+        XCTAssertEqual(connections.totalUnreadForBadge, 5)
+    }
+
+    /// The badge accompanies an alert a muted connection would not have
+    /// produced, so counting it would put a number on the icon that opening
+    /// anything cannot account for. The server's `unseenCount` excludes muted
+    /// memberships for the same reason; these two disagreeing is the failure
+    /// this guards.
+    func testBadgeSkipsMutedConnections() {
+        let connections = [
+            Connection(pair: "p1", unreadCount: 2),
+            Connection(pair: "p2", isMuted: true, unreadCount: 100),
+        ]
+
+        XCTAssertEqual(connections.totalUnreadForBadge, 2)
+    }
+
+    func testBadgeIsZeroWithNoConnections() {
+        XCTAssertEqual([Connection]().totalUnreadForBadge, 0)
+    }
+
+    /// Reading everything has to take the badge to zero on its own. The whole
+    /// point of setting it from the app is that iOS otherwise leaves whatever
+    /// the last push put there until another one arrives.
+    func testBadgeIsZeroOnceEverythingIsRead() {
+        let connections = [
+            Connection(pair: "p1", unreadCount: 0),
+            Connection(pair: "p2", isMuted: true, unreadCount: 0),
+        ]
+
+        XCTAssertEqual(connections.totalUnreadForBadge, 0)
+    }
 }

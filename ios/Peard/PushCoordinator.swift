@@ -167,6 +167,23 @@ final class PushCoordinator {
         }
     }
 
+    // MARK: Badge
+
+    /// Sets the springboard badge.
+    ///
+    /// Nothing did this before read state, and the omission was the same bug the
+    /// count itself had: iOS only changes a badge when a push carries a new one
+    /// or the app sets it. The server sends an accurate number with every alert,
+    /// then the user opens the app, reads everything — and the icon keeps saying
+    /// "3" until somebody else happens to post. The app knows the answer the
+    /// moment it loads its connections, so it says so.
+    ///
+    /// Best effort by design: a denied badge permission makes this a no-op, and
+    /// that is not worth telling anybody about.
+    func setBadgeCount(_ count: Int) async {
+        try? await center.setBadgeCount(max(count, 0))
+    }
+
     // MARK: Received notifications
 
     /// Silent `content-available` push (Requirement 18.6).

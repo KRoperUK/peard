@@ -574,6 +574,24 @@ public struct ConnectionList: Codable, Hashable, Sendable {
     public init(connections: [Connection]) { self.connections = connections }
 }
 
+public extension Collection where Element == Connection {
+    /// What the springboard badge should say.
+    ///
+    /// Muted connections are excluded, which mirrors `unseenCount` in the
+    /// server's `internal/push` — the badge accompanies an alert a muted
+    /// connection would not have produced, so counting it would put a number on
+    /// the icon that the user cannot account for by opening anything. The rail
+    /// inside the app shows muted counts, because there it sits next to the face
+    /// that explains it.
+    ///
+    /// Lives here rather than on `AppModel` so it can be tested directly: the
+    /// app's connection list is `private(set)` and only fillable from a live
+    /// server, and this rule is worth more coverage than that allows.
+    var totalUnreadForBadge: Int {
+        filter { !$0.isMuted }.reduce(0) { $0 + $1.unreadCount }
+    }
+}
+
 /// A record in the `pair_members` collection.
 public struct PairMember: Codable, Hashable, Sendable, Identifiable {
     public let id: String
