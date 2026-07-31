@@ -21,6 +21,7 @@ import (
 
 	peardauth "peard/internal/auth"
 	"peard/internal/avatars"
+	"peard/internal/export"
 	"peard/internal/pairs"
 	"peard/internal/profile"
 	"peard/internal/push"
@@ -56,6 +57,7 @@ func main() {
 	widget.Register(app)
 	push.Register(app)
 	site.Register(app)
+	export.Register(app)
 
 	if err := app.Start(); err != nil {
 		log.Fatal(err)

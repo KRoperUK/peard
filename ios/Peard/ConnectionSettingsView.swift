@@ -24,6 +24,9 @@ struct ConnectionSettingsView: View {
     @State private var showLeaveConfirmation = false
     @State private var showSignOutConfirmation = false
     @State private var showInviteSheet = false
+    @State private var isExporting = false
+    @State private var exportFileURL: URL?
+    @State private var exportError: String?
     @FocusState private var nameFieldFocused: Bool
     @FocusState private var displayNameFieldFocused: Bool
 
@@ -66,6 +69,23 @@ struct ConnectionSettingsView: View {
             }
             .sheet(isPresented: $showInviteSheet) {
                 InviteSheet(pairID: model.pairID, connectionTitle: model.connectionTitle)
+            }
+            .sheet(isPresented: Binding(
+                get: { exportFileURL != nil },
+                set: { if !$0 { exportFileURL = nil } }
+            )) {
+                if let exportFileURL {
+                    ActivityView(activityItems: [exportFileURL])
+                }
+            }
+            .alert(
+                "Export failed",
+                isPresented: Binding(get: { exportError != nil }, set: { if !$0 { exportError = nil } }),
+                presenting: exportError
+            ) { _ in
+                Button("OK") {}
+            } message: { message in
+                Text(message)
             }
             .confirmationDialog(
                 removalPrompt,
@@ -368,6 +388,20 @@ struct ConnectionSettingsView: View {
     /// grid. It belongs here.
     private var accountSection: some View {
         Section {
+            Button {
+                Task { await exportData() }
+            } label: {
+                HStack {
+                    Text("Export your data")
+                    if isExporting {
+                        Spacer()
+                        ProgressView()
+                    }
+                }
+            }
+            .foregroundStyle(PearColor.textPrimary)
+            .disabled(isExporting)
+
             Button("Sign out") {
                 showSignOutConfirmation = true
             }
@@ -376,6 +410,24 @@ struct ConnectionSettingsView: View {
             if let email = app.profile?.email, !email.isEmpty {
                 Text("Signed in as \(email).")
             }
+        }
+    }
+
+    /// Downloads a JSON snapshot of the profile, connections and moments this
+    /// account owns, then hands it to the system share sheet — save to Files,
+    /// AirDrop, email, whatever the person wants to do with their own data.
+    private func exportData() async {
+        isExporting = true
+        defer { isExporting = false }
+        do {
+            let data = try await app.api.data(path: "/api/peard/export")
+            let url = FileManager.default.temporaryDirectory
+                .appendingPathComponent("peard-export-\(Int(Date().timeIntervalSince1970))")
+                .appendingPathExtension("json")
+            try data.write(to: url, options: .atomic)
+            exportFileURL = url
+        } catch {
+            exportError = (error as? APIError)?.localizedDescription ?? error.localizedDescription
         }
     }
 
