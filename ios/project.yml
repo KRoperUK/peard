@@ -92,6 +92,7 @@ targets:
     dependencies:
       - package: PeardCore
       - target: PearWidgetExtension
+      - target: PearMessagesExtension
     settings:
       base:
         ASSETCATALOG_COMPILER_APPICON_NAME: AppIcon
@@ -166,6 +167,43 @@ targets:
           - "@executable_path/Frameworks"
           - "@executable_path/../../Frameworks"
 
+  PearMessagesExtension:
+    type: app-extension.messages
+    platform: iOS
+    sources:
+      - path: PearMessages
+        excludes:
+          - Info.plist
+          - PearMessages.entitlements
+      - path: PearMessages/Info.plist
+        buildPhase: none
+      - path: PearMessages/PearMessages.entitlements
+        buildPhase: none
+      - path: Shared/Colors.xcassets
+    dependencies:
+      - package: PeardCore
+    settings:
+      base:
+        ASSETCATALOG_COMPILER_APPICON_NAME: "iMessage App Icon"
+        CODE_SIGN_ENTITLEMENTS: PearMessages/PearMessages.entitlements
+        CODE_SIGN_STYLE: Automatic
+        CURRENT_PROJECT_VERSION: 1
+        DEVELOPMENT_TEAM: 72Q6R744M4
+        GENERATE_INFOPLIST_FILE: NO
+        INFOPLIST_FILE: PearMessages/Info.plist
+        # Must equal the app's MARKETING_VERSION: App Store validation rejects an
+        # appex whose short version differs from its host.
+        MARKETING_VERSION: "1.0"
+        PRODUCT_BUNDLE_IDENTIFIER: com.peard.app.PearMessages
+        PRODUCT_NAME: $(TARGET_NAME)
+        SKIP_INSTALL: YES
+        SWIFT_EMIT_LOC_STRINGS: YES
+        TARGETED_DEVICE_FAMILY: "1,2"
+        LD_RUNPATH_SEARCH_PATHS:
+          - $(inherited)
+          - "@executable_path/Frameworks"
+          - "@executable_path/../../Frameworks"
+
   # Logic that needs UIKit/SwiftUI or the app's own types, so it cannot live in
   # PeardCore's `swift test` suite: the quick-send countdown, the hold-on-note
   # rule, and the phase routing.
@@ -190,6 +228,7 @@ schemes:
       targets:
         Peard: all
         PearWidgetExtension: all
+        PearMessagesExtension: all
         PeardTests: [test]
     run:
       config: Debug
