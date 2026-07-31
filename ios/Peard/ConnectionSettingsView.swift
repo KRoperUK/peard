@@ -27,8 +27,12 @@ struct ConnectionSettingsView: View {
     @State private var isExporting = false
     @State private var exportFileURL: URL?
     @State private var exportError: String?
+    @State private var discoverable = false
+    @State private var phoneText = ""
+    @State private var isSavingDiscoverability = false
     @FocusState private var nameFieldFocused: Bool
     @FocusState private var displayNameFieldFocused: Bool
+    @FocusState private var phoneFieldFocused: Bool
 
     var body: some View {
         NavigationStack {
@@ -39,6 +43,7 @@ struct ConnectionSettingsView: View {
                 notificationsSection
                 pendingSection
                 yourNameSection
+                discoverabilitySection
                 accountSection
                 leaveSection
             }
@@ -56,6 +61,8 @@ struct ConnectionSettingsView: View {
                 nameText = model.connection?.displayName ?? ""
                 await app.loadProfile()
                 displayNameText = app.profile?.displayName ?? ""
+                discoverable = app.profile?.discoverable ?? false
+                phoneText = app.profile?.phone ?? ""
             }
             // The name fields are seeded from state that changes from elsewhere:
             // another member renames the group, or the display name is saved and
@@ -379,6 +386,61 @@ struct ConnectionSettingsView: View {
     /// server falls back to the local part of the email.
     private var placeholderName: String {
         app.profile?.effectiveName ?? PartnerLabel.fallback
+    }
+
+    // MARK: Discoverability
+
+    /// Searching your own contacts (PairView's "Find friends") needs none of
+    /// this — this section only governs whether *this* account can turn up
+    /// in someone else's search.
+    private var discoverabilitySection: some View {
+        Section {
+            Toggle("Let people who have you in their contacts find you", isOn: $discoverable)
+                .tint(PearColor.accent)
+                .onChange(of: discoverable) { _, newValue in
+                    Task { await saveDiscoverability(discoverable: newValue) }
+                }
+
+            if discoverable {
+                TextField("Phone number (optional)", text: $phoneText)
+                    .keyboardType(.phonePad)
+                    .focused($phoneFieldFocused)
+                    .submitLabel(.done)
+                    .onSubmit { saveDiscoverabilityIfChanged() }
+                    .accessibilityLabel("Your phone number")
+                Button {
+                    phoneFieldFocused = false
+                    saveDiscoverabilityIfChanged()
+                } label: {
+                    if isSavingDiscoverability {
+                        ProgressView()
+                    } else {
+                        Text("Save phone number")
+                    }
+                }
+                .disabled(isSavingDiscoverability || phoneText == (app.profile?.phone ?? ""))
+            }
+        } header: {
+            Text("Discoverable")
+        } footer: {
+            Text(
+                "Pear'd compares one-way hashes of contact info, never raw emails or phone numbers, "
+                    + "and only for people who've turned this on. Your email is always included; "
+                    + "adding a phone number lets people who only have that find you too."
+            )
+        }
+    }
+
+    private func saveDiscoverabilityIfChanged() {
+        guard phoneText != (app.profile?.phone ?? "") else { return }
+        Task { await saveDiscoverability(discoverable: discoverable) }
+    }
+
+    private func saveDiscoverability(discoverable: Bool) async {
+        isSavingDiscoverability = true
+        await app.updateDiscoverability(discoverable: discoverable, phone: phoneText)
+        phoneText = app.profile?.phone ?? phoneText
+        isSavingDiscoverability = false
     }
 
     // MARK: Account

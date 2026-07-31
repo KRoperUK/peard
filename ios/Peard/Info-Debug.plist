@@ -73,6 +73,8 @@
 	<string>Take a photo to share a moment with your partner.</string>
 	<key>NSPhotoLibraryUsageDescription</key>
 	<string>Pick a photo to share with your partner.</string>
+	<key>NSContactsUsageDescription</key>
+	<string>Find friends already on Pear'd by matching your contacts — only one-way hashes ever leave this device.</string>
 	<key>ITSAppUsesNonExemptEncryption</key>
 	<false/>
 	<key>NSAppTransportSecurity</key>

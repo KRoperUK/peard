@@ -12,6 +12,7 @@ struct PairView: View {
     @State private var busy: Busy?
     @State private var errorMessage: String?
     @State private var showSignOutConfirmation = false
+    @State private var showFindFriends = false
 
     private enum Busy: Equatable { case invite, accept }
 
@@ -44,6 +45,15 @@ struct PairView: View {
                 .padding(.bottom, 32)
 
             inviteSection
+
+            Button {
+                showFindFriends = true
+            } label: {
+                Text("Find friends from your contacts")
+                    .font(.footnote.bold())
+                    .foregroundStyle(PearColor.accent)
+            }
+            .padding(.top, 16)
 
             Divider()
                 .background(PearColor.divider)
@@ -103,6 +113,9 @@ struct PairView: View {
             Button("Cancel", role: .cancel) {}
         } message: {
             Text("Anything still waiting to send is discarded.")
+        }
+        .sheet(isPresented: $showFindFriends) {
+            FindFriendsView()
         }
     }
 

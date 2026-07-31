@@ -391,6 +391,29 @@ final class AppModel {
         await widgetSync.sync()
     }
 
+    /// Opts in or out of contact search — see
+    /// `APIClient.updateDiscoverability(discoverable:phone:)`. Searching your
+    /// own contacts needs none of this; it only governs whether this account
+    /// can appear in someone *else's* results.
+    func updateDiscoverability(discoverable: Bool, phone: String) async {
+        do {
+            let status = try await api.updateDiscoverability(discoverable: discoverable, phone: phone)
+            profile = profile.map {
+                UserProfile(
+                    id: $0.id,
+                    displayName: $0.displayName,
+                    email: $0.email,
+                    avatarFilename: $0.avatarFilename,
+                    discoverable: status.discoverable,
+                    phone: status.phone
+                )
+            }
+        } catch {
+            if await handleIfUnauthorized(error) { return }
+            banner = (error as? APIError)?.localizedDescription ?? error.localizedDescription
+        }
+    }
+
     /// Sets the caller's own photo. Everybody they share a connection with sees
     /// it, so the connection list is re-read: it carries each member's avatar,
     /// including the caller's own.
