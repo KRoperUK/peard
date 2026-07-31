@@ -11,6 +11,8 @@
 # rather than a comment in the README: forgetting it is the one way these lanes
 # fail confusingly.
 
+require "shellwords"
+
 default_platform(:ios)
 
 PROJECT     = "ios/Peard.xcodeproj"
@@ -110,7 +112,6 @@ platform :ios do
   lane :archive do
     require_distribution_credentials!
     generate
-    increment_build_number_if_requested
     build_app(
       project: PROJECT,
       scheme: SCHEME,
@@ -122,7 +123,7 @@ platform :ios do
       # Automatic signing, matching the project: there is no match/sigh setup, so
       # Xcode resolves the profile from the team on the machine or from the
       # App Store Connect API key in CI.
-      xcargs: "-allowProvisioningUpdates"
+      xcargs: ["-allowProvisioningUpdates", build_number_xcarg].compact.join(" ")
     )
   end
 
@@ -178,12 +179,21 @@ platform :ios do
   end
 
   # CI sets PEARD_BUILD_NUMBER from the run number so every upload is unique;
-  # locally the committed value is used unchanged.
-  def increment_build_number_if_requested
+  # locally the committed value (CURRENT_PROJECT_VERSION in ios/project.yml) is
+  # used unchanged.
+  #
+  # Passed as an xcarg rather than through `increment_build_number`. That action
+  # runs agvtool, which rewrites `$(CURRENT_PROJECT_VERSION)` in every target's
+  # Info.plist to a literal — so an archive left four tracked plists dirty with
+  # a build number in them, and the next developer to run `make app` got that
+  # number baked in silently. An xcarg applies to all three targets at once
+  # (they must agree, or App Store validation rejects the appexes), touches
+  # nothing on disk, and leaves the plists saying what they mean.
+  def build_number_xcarg
     number = ENV["PEARD_BUILD_NUMBER"]
-    return if number.nil? || number.empty?
+    return nil if number.nil? || number.empty?
 
-    increment_build_number(build_number: number, xcodeproj: PROJECT)
+    "CURRENT_PROJECT_VERSION=#{number.shellescape}"
   end
 
   def changelog_or_nil
