@@ -72,6 +72,8 @@ func Register(app core.App) {
 		notifyPostAuthor(app, e.Record)
 		return e.Next()
 	})
+
+	registerWeeklyRecap(app)
 }
 
 func newNotifier() *notifier {
