@@ -12,6 +12,7 @@ public final class SharedStore: @unchecked Sendable {
         public static let notificationAuthorizationRequested = "notificationAuthorizationRequested"
         public static let devicePushToken = "devicePushToken"
         public static let selectedConnectionID = "selectedConnectionId"
+        public static let pendingWidgetLog = "pendingWidgetLog"
     }
 
     public static let appGroupIdentifier = "group.com.peard.app"
@@ -68,6 +69,28 @@ public final class SharedStore: @unchecked Sendable {
     public var selectedConnectionID: String? {
         get { defaults?.string(forKey: Key.selectedConnectionID) }
         set { set(newValue, forKey: Key.selectedConnectionID) }
+    }
+
+    // MARK: Widget optimistic feedback
+
+    /// A moment a widget button just logged, kept only long enough for the
+    /// widget's own re-render to show it before the real server fetch
+    /// (triggered right after) replaces it with the true tallies. Without
+    /// this a tap gives no visible sign of having registered until the
+    /// network round-trip completes — which, on a bad connection, can look
+    /// exactly like a button that does nothing.
+    public var pendingWidgetLog: PendingWidgetLog? {
+        get {
+            guard let data = defaults?.data(forKey: Key.pendingWidgetLog) else { return nil }
+            return try? JSONDecoder().decode(PendingWidgetLog.self, from: data)
+        }
+        set {
+            guard let newValue, let data = try? JSONEncoder().encode(newValue) else {
+                defaults?.removeObject(forKey: Key.pendingWidgetLog)
+                return
+            }
+            defaults?.set(data, forKey: Key.pendingWidgetLog)
+        }
     }
 
     // MARK: Push

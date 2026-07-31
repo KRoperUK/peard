@@ -966,6 +966,32 @@ public struct WidgetMomentResult: Codable, Hashable, Sendable {
     }
 }
 
+/// A moment a widget button just fired off, kept in the App Group container
+/// only long enough to give the tap an instant visual acknowledgement before
+/// the real, server-confirmed refresh replaces it.
+public struct PendingWidgetLog: Codable, Hashable, Sendable {
+    public let pairID: String?
+    public let emoji: String
+    public let label: String
+    public let at: Date
+
+    public init(pairID: String?, emoji: String, label: String, at: Date) {
+        self.pairID = pairID
+        self.emoji = emoji
+        self.label = label
+        self.at = at
+    }
+
+    /// Stale after this long, so a widget that never got a chance to clear it
+    /// (the extension was suspended, the reload was dropped) does not show a
+    /// "just logged" badge from an hour ago.
+    public static let maxAge: TimeInterval = 10
+
+    public var isFresh: Bool {
+        Date().timeIntervalSince(at) < Self.maxAge
+    }
+}
+
 /// Response of the auth endpoints (`/api/peard/auth/apple`,
 /// `/api/collections/users/auth-with-oauth2`, `auth-with-password`).
 public struct AuthResponse: Codable, Hashable, Sendable {

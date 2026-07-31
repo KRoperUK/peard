@@ -95,11 +95,19 @@ struct LogMomentIntent: AppIntent {
     @Parameter(title: "Connection")
     var pairID: String?
 
+    @Parameter(title: "Emoji")
+    var emoji: String
+
+    @Parameter(title: "Label")
+    var label: String
+
     init() {}
 
-    init(kind: EventKind, pairID: String?) {
+    init(kind: EventKind, pairID: String?, emoji: String, label: String) {
         self.kind = kind.rawValue
         self.pairID = pairID
+        self.emoji = emoji
+        self.label = label
     }
 
     func perform() async throws -> some IntentResult {
@@ -114,6 +122,13 @@ struct LogMomentIntent: AppIntent {
             return .result()
         }
 
+        // Shows an immediate "logged" acknowledgement (see PearEntry.pendingLog)
+        // before the round trip below even starts — otherwise the only sign of
+        // life is the tallies changing once the real fetch lands, which on a
+        // slow connection reads as a button that did nothing.
+        store.pendingWidgetLog = PendingWidgetLog(pairID: pairID, emoji: emoji, label: label, at: Date())
+        WidgetCenter.shared.reloadAllTimelines()
+
         let api = APIClient(baseURL: baseURL)
         do {
             try await api.logWidgetMoment(token: token, kind: EventKind(rawValue: kind), pairID: pairID)
@@ -122,6 +137,7 @@ struct LogMomentIntent: AppIntent {
             // The reload below redraws from the server, so the widget never shows a
             // moment that did not land.
         }
+        store.pendingWidgetLog = nil
         WidgetCenter.shared.reloadAllTimelines()
         return .result()
     }
@@ -146,6 +162,9 @@ struct PearEntry: TimelineEntry {
     let pairID: String?
     /// What the buttons offer.
     let moments: [WidgetFeed.AvailableMoment]
+    /// A moment fired from this widget's own buttons in the last few seconds,
+    /// shown as an immediate acknowledgement while the real fetch is in flight.
+    let pendingLog: PendingWidgetLog?
 
     /// Rendered when the credentials are missing or the request fails
     /// (Requirement 17.4, 17.5).
@@ -163,7 +182,8 @@ struct PearEntry: TimelineEntry {
         pairID: nil,
         moments: MomentCatalogue.builtin.map {
             WidgetFeed.AvailableMoment(kind: $0.kind, emoji: $0.emoji, label: $0.label)
-        }
+        },
+        pendingLog: nil
     )
 }
 
@@ -194,6 +214,10 @@ struct PearTimelineProvider: AppIntentTimelineProvider {
 
         do {
             let feed = try await APIClient(baseURL: baseURL).widgetFeed(token: token, pairID: pairID)
+            // The configured pair when there is one, else whichever the server
+            // chose — so a button logs into the connection on screen.
+            let resolvedPairID = pairID ?? feed.connection?.id
+            let pending = store.pendingWidgetLog
             return PearEntry(
                 date: Date(),
                 state: feed.state,
@@ -205,10 +229,9 @@ struct PearTimelineProvider: AppIntentTimelineProvider {
                 created: feed.post?.created ?? nil,
                 tallies: feed.displayTallies,
                 image: await image(for: feed),
-                // The configured pair when there is one, else whichever the server
-                // chose — so a button logs into the connection on screen.
-                pairID: pairID ?? feed.connection?.id,
-                moments: feed.buttonMoments
+                pairID: resolvedPairID,
+                moments: feed.buttonMoments,
+                pendingLog: (pending?.isFresh == true && pending?.pairID == resolvedPairID) ? pending : nil
             )
         } catch {
             return .placeholder
@@ -261,10 +284,14 @@ struct PearWidgetEntryView: View {
     /// moment is exactly what this state needs.
     private var emptyState: some View {
         VStack(spacing: 6) {
-            Text("Waiting for \(entry.partnerName)'s first pear…")
-                .font(.caption2)
-                .multilineTextAlignment(.center)
-                .lineLimit(2)
+            if let pendingLog = entry.pendingLog {
+                pendingBadge(for: pendingLog)
+            } else {
+                Text("Waiting for \(entry.partnerName)'s first pear…")
+                    .font(.caption2)
+                    .multilineTextAlignment(.center)
+                    .lineLimit(2)
+            }
             momentButtons
         }
         .padding(8)
@@ -275,11 +302,32 @@ struct PearWidgetEntryView: View {
             // Only the moment area opens the app; the buttons must stay tappable,
             // and a widgetURL on the whole widget would swallow them.
             Link(destination: URL(string: "peard://home")!) {
-                content
+                if let pendingLog = entry.pendingLog {
+                    pendingBadge(for: pendingLog)
+                } else {
+                    content
+                }
             }
             momentButtons
         }
         .padding(8)
+    }
+
+    /// Stands in for the usual content for the few seconds between a widget
+    /// button tap and the real, server-confirmed refresh — see
+    /// `PendingWidgetLog`. Without this the only feedback a tap gets is the
+    /// tallies eventually changing, which looks identical to a tap that
+    /// silently failed until that happens.
+    private func pendingBadge(for pendingLog: PendingWidgetLog) -> some View {
+        VStack(spacing: 4) {
+            Text(pendingLog.emoji).font(.title)
+            Text("Logged \(pendingLog.label)")
+                .font(.caption2.bold())
+                .foregroundStyle(PearColor.textSecondary)
+        }
+        .frame(maxWidth: .infinity)
+        .accessibilityElement(children: .combine)
+        .accessibilityLabel("Logged \(pendingLog.label)")
     }
 
     @ViewBuilder
@@ -350,7 +398,7 @@ struct PearWidgetEntryView: View {
         let limit = family == .systemSmall ? 3 : 5
         return HStack(spacing: 6) {
             ForEach(entry.moments.prefix(limit)) { moment in
-                Button(intent: LogMomentIntent(kind: moment.kind, pairID: entry.pairID)) {
+                Button(intent: LogMomentIntent(kind: moment.kind, pairID: entry.pairID, emoji: moment.emoji, label: moment.label)) {
                     Text(moment.emoji)
                         .font(.footnote)
                         .frame(maxWidth: .infinity, minHeight: 22)
