@@ -128,3 +128,71 @@ func TestSignUpIsLimitedButNotHostile(t *testing.T) {
 		t.Errorf("%d attempts per %ds is not much of a limit", rule.MaxRequests, rule.Duration)
 	}
 }
+
+// The client IP is what every rule keys on, so these matter as much as the
+// numbers do. Getting them wrong does not fail — it silently makes each rule
+// apply to everybody at once.
+
+func TestNoTrustedHeaderByDefault(t *testing.T) {
+	app := newApp(t)
+
+	apply(app)
+
+	if got := app.Settings().TrustedProxy.Headers; len(got) != 0 {
+		t.Fatalf("trusts %v by default — a header nobody checks is one anybody can forge", got)
+	}
+}
+
+func TestTrustedHeaderIsReadFromTheEnvironment(t *testing.T) {
+	t.Setenv("PEARD_TRUSTED_PROXY_HEADER", "CF-Connecting-IP")
+	app := newApp(t)
+
+	apply(app)
+
+	headers := app.Settings().TrustedProxy.Headers
+	if len(headers) != 1 || headers[0] != "CF-Connecting-IP" {
+		t.Fatalf("got %v, want [CF-Connecting-IP]", headers)
+	}
+}
+
+func TestSeveralTrustedHeadersAreSplitAndTrimmed(t *testing.T) {
+	t.Setenv("PEARD_TRUSTED_PROXY_HEADER", " CF-Connecting-IP , X-Forwarded-For ")
+	app := newApp(t)
+
+	apply(app)
+
+	headers := app.Settings().TrustedProxy.Headers
+	if len(headers) != 2 || headers[0] != "CF-Connecting-IP" || headers[1] != "X-Forwarded-For" {
+		t.Fatalf("got %v, want both headers trimmed", headers)
+	}
+}
+
+// The rightmost entry is the one the nearest proxy wrote; the leftmost is
+// whatever the client sent, which is the forgeable one.
+func TestLeftmostIPIsNotUsed(t *testing.T) {
+	t.Setenv("PEARD_TRUSTED_PROXY_HEADER", "X-Forwarded-For")
+	app := newApp(t)
+
+	apply(app)
+
+	if app.Settings().TrustedProxy.UseLeftmostIP {
+		t.Fatal("leftmost IP is client-controlled and would let anybody pick their own rate limit bucket")
+	}
+}
+
+// Turning the limits off must not also turn off the IP resolution — anything
+// else that keys on the client address should keep working.
+func TestTrustedHeaderSurvivesLimitsBeingDisabled(t *testing.T) {
+	t.Setenv("PEARD_RATE_LIMITS", "off")
+	t.Setenv("PEARD_TRUSTED_PROXY_HEADER", "CF-Connecting-IP")
+	app := newApp(t)
+
+	apply(app)
+
+	if app.Settings().RateLimits.Enabled {
+		t.Fatal("limits should be off")
+	}
+	if len(app.Settings().TrustedProxy.Headers) != 1 {
+		t.Fatal("trusted proxy config was dropped along with the limits")
+	}
+}

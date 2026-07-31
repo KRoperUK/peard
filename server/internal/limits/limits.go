@@ -18,6 +18,20 @@
 // because a limit that misfires in production needs a way out that does not
 // involve editing code, and because these were switched on without a load test
 // to size them against.
+//
+// # Who a limit applies to
+//
+// Every rule is keyed on the client IP, which PocketBase resolves from the
+// direct connection unless it has been told which proxy header to trust. That
+// default is the safe one — a header nobody checks is a header anybody can forge
+// — but it is wrong the moment the server sits behind a proxy, because then
+// every request arrives from the same address.
+//
+// This deployment runs behind a cloudflared tunnel (docker-compose.cloudflared.yml
+// publishes no host port at all), so without PEARD_TRUSTED_PROXY_HEADER the
+// entire user base would share one bucket: two sign-ins every three seconds for
+// everybody at once, not per person. Which is worse than having no rate limiting,
+// and would have looked exactly like the server falling over.
 package limits
 
 import (
@@ -46,13 +60,66 @@ func Register(app core.App) {
 func apply(app core.App) {
 	settings := app.Settings()
 
+	// Before the rules, and regardless of whether they are on: the client IP is
+	// what the limiter keys on, so an unset one makes every rule below mean
+	// something other than what it says.
+	headers := trustedProxyHeaders()
+	settings.TrustedProxy.Headers = headers
+	settings.TrustedProxy.UseLeftmostIP = false
+
 	if disabled() {
 		settings.RateLimits.Enabled = false
+		app.Logger().Warn("rate limiting disabled by PEARD_RATE_LIMITS")
 		return
 	}
 
 	settings.RateLimits.Enabled = true
 	settings.RateLimits.Rules = rules()
+
+	// Said out loud at boot because getting this wrong is otherwise invisible:
+	// the server behaves normally until enough people use it at once, and then
+	// rate-limits them collectively. A log line is the difference between
+	// "check the startup output" and "work out why sign-in fails for everybody
+	// at 9am".
+	if len(headers) == 0 {
+		app.Logger().Info(
+			"rate limiting enabled, keyed on the direct connection IP; " +
+				"set PEARD_TRUSTED_PROXY_HEADER if this server is behind a proxy, " +
+				"or every client will share one limit",
+		)
+	} else {
+		app.Logger().Info("rate limiting enabled", "clientIPFrom", strings.Join(headers, ", "))
+	}
+}
+
+// trustedProxyHeaders reads PEARD_TRUSTED_PROXY_HEADER, a comma-separated list.
+//
+// Empty by default, and that default is deliberate: trusting a header on a
+// server that is reachable directly lets any client claim any IP, which turns
+// every rate limit into a formality. It is only correct to set this when
+// something in front of the server is guaranteed to overwrite the header, and
+// when the server cannot be reached around that thing.
+//
+// Both conditions hold for the cloudflared deployment — Cloudflare sets
+// CF-Connecting-IP itself, and the container publishes no host port — so the
+// compose override sets it there rather than defaulting it on here, where it
+// would also apply to deployments that publish a port.
+//
+// UseLeftmostIP stays false. CF-Connecting-IP carries exactly one address, and
+// for the X-Forwarded-For style the rightmost entry is the one the nearest proxy
+// wrote; the leftmost is whatever the client sent, which is the forgeable one.
+func trustedProxyHeaders() []string {
+	raw := strings.TrimSpace(os.Getenv("PEARD_TRUSTED_PROXY_HEADER"))
+	if raw == "" {
+		return nil
+	}
+	var headers []string
+	for _, part := range strings.Split(raw, ",") {
+		if name := strings.TrimSpace(part); name != "" {
+			headers = append(headers, name)
+		}
+	}
+	return headers
 }
 
 func disabled() bool {

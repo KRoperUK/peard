@@ -46,6 +46,19 @@ services:
     # Replacing rather than appending needs Compose 2.24+.
     ports: !override []
 
+    environment:
+      # Every request arrives from the tunnel, so without this the server sees
+      # one client IP for the whole world — and the rate limits, which key on
+      # that IP, would apply to everybody collectively rather than per person.
+      # Two sign-ins every three seconds for all users at once, not each.
+      #
+      # Set here rather than defaulted in the server, because trusting a header
+      # is only safe where something reliably overwrites it *and* the origin
+      # cannot be reached around that something. Both hold here and only here:
+      # Cloudflare sets CF-Connecting-IP itself and strips any inbound copy, and
+      # `ports: !override []` above means there is no way in except the tunnel.
+      - PEARD_TRUSTED_PROXY_HEADER=CF-Connecting-IP
+
     # Listing a network here replaces the implicit "default", so the container
     # ends up on the tunnel's network only. That is enough: outbound still works
     # through the overlay's gateway, which the server needs for Apple's JWKS and

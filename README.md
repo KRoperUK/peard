@@ -226,6 +226,26 @@ because these were switched on without a load test to size them against, and a
 limit that misfires in production needs a way out that is not an emergency
 commit.
 
+#### Behind a proxy: `PEARD_TRUSTED_PROXY_HEADER`
+
+Every rule keys on the client IP, and PocketBase takes that from the direct
+connection unless told which proxy header to trust. That default is the safe one
+— a header nobody checks is a header anybody can forge — but it is *wrong* behind
+a proxy, because then every request arrives from the same address and the limits
+apply to the whole user base collectively. Two sign-ins every three seconds for
+everybody at once, not per person.
+
+`docker-compose.cloudflared.yml` therefore sets `PEARD_TRUSTED_PROXY_HEADER=CF-Connecting-IP`.
+It is set there rather than defaulted in the server because trusting a header is
+only safe where something reliably overwrites it *and* the origin cannot be
+reached around that something — and that override is the one deployment where
+both hold, since it publishes no host port at all.
+
+If you front the server any other way, set this to whatever your proxy writes,
+and make sure the origin is not reachable directly. The server logs which header
+it trusts at startup, and warns when it trusts none, because getting this wrong
+is otherwise invisible until enough people use the app at once.
+
 ### Docker, and Komodo repo-based stacks
 
 `docker-compose.yml` at the repo root builds `server/Dockerfile` and is the whole
