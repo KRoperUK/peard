@@ -145,18 +145,27 @@ platform :ios do
 
   # Distribution needs credentials that cannot be inferred. Failing here with a
   # readable message beats failing 8 minutes into an archive.
+  #
+  # Two spellings are accepted for the issuer and the key, because the .env this
+  # reads in practice uses ..._API_KEY_ISSUER_ID and ..._API_KEY_BASE64 while the
+  # names below are fastlane's own. The mismatch presented as "credentials are
+  # not set" while sitting right next to a file that plainly had them.
   def require_distribution_credentials!
-    key_id  = ENV["APP_STORE_CONNECT_API_KEY_ID"]
-    issuer  = ENV["APP_STORE_CONNECT_API_ISSUER_ID"]
-    key     = ENV["APP_STORE_CONNECT_API_KEY_CONTENT"] || ENV["APP_STORE_CONNECT_API_KEY_PATH"]
+    key_id = ENV["APP_STORE_CONNECT_API_KEY_ID"]
+    issuer = ENV["APP_STORE_CONNECT_API_ISSUER_ID"] || ENV["APP_STORE_CONNECT_API_KEY_ISSUER_ID"]
+    base64 = ENV["APP_STORE_CONNECT_API_KEY_BASE64"]
+    content = ENV["APP_STORE_CONNECT_API_KEY_CONTENT"] || base64
+    path = ENV["APP_STORE_CONNECT_API_KEY_PATH"]
 
-    if key_id && issuer && key
+    if key_id && issuer && (content || path)
       app_store_connect_api_key(
         key_id: key_id,
         issuer_id: issuer,
-        key_content: ENV["APP_STORE_CONNECT_API_KEY_CONTENT"],
-        key_filepath: ENV["APP_STORE_CONNECT_API_KEY_PATH"],
-        is_key_content_base64: ENV["APP_STORE_CONNECT_API_KEY_IS_BASE64"] == "true",
+        key_content: content,
+        key_filepath: path,
+        # A key supplied under the _BASE64 name says what it is in its name; the
+        # _CONTENT one needs telling.
+        is_key_content_base64: !base64.nil? || ENV["APP_STORE_CONNECT_API_KEY_IS_BASE64"] == "true",
         in_house: false
       )
       return
@@ -169,9 +178,10 @@ platform :ios do
       git-ignored):
 
         APP_STORE_CONNECT_API_KEY_ID
-        APP_STORE_CONNECT_API_ISSUER_ID
-        APP_STORE_CONNECT_API_KEY_CONTENT   (the .p8 contents)
-          or APP_STORE_CONNECT_API_KEY_PATH (path to the .p8)
+        APP_STORE_CONNECT_API_ISSUER_ID       (or ..._API_KEY_ISSUER_ID)
+        APP_STORE_CONNECT_API_KEY_CONTENT     (the .p8 contents)
+          or APP_STORE_CONNECT_API_KEY_BASE64 (the same, base64-encoded)
+          or APP_STORE_CONNECT_API_KEY_PATH   (path to the .p8)
 
       For a local build against your own Apple ID instead, run the archive from
       Xcode — the project uses automatic signing with team 72Q6R744M4.
