@@ -9,6 +9,7 @@ import UserNotifications
 @main
 struct PeardApp: App {
     @UIApplicationDelegateAdaptor(AppDelegate.self) private var appDelegate
+    @Environment(\.scenePhase) private var scenePhase
     @State private var model = AppModel()
 
     var body: some Scene {
@@ -22,6 +23,15 @@ struct PeardApp: App {
                 .onOpenURL { url in
                     model.handle(url: url)
                 }
+        }
+        // Every return to the foreground, not just the first launch. `.task`
+        // above runs once per window; without this, `applicationDidBecomeActive`
+        // was defined and never called, so a moment queued offline waited for a
+        // cold launch and the notification-authorization status went stale the
+        // moment somebody changed it in Settings.
+        .onChange(of: scenePhase) { previous, phase in
+            guard phase == .active, previous != .active else { return }
+            Task { await model.applicationDidBecomeActive() }
         }
     }
 }

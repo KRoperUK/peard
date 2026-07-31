@@ -629,7 +629,18 @@ final class AppModel {
 
     // MARK: Foreground
 
+    /// Called from `PeardApp`'s `scenePhase` observer on every return to
+    /// `.active`.
+    ///
+    /// This existed for a while with nothing calling it, which was not a no-op:
+    /// the reachability callback only fires while the app is running, so a
+    /// moment logged with no signal, backgrounded, and then carried back into
+    /// coverage sat in the queue until the next *cold* launch or until the app
+    /// happened to witness a network transition itself. The authorization status
+    /// went stale the same way — turn notifications off in Settings and the app
+    /// went on believing it had them.
     func applicationDidBecomeActive() async {
+        guard hasAgreedToPrivacyPolicy else { return }
         await push.refreshAuthorizationStatus()
         // Coming back to the app is the other reliable moment to drain the queue:
         // the reachability callback covers a network that returns while the app is

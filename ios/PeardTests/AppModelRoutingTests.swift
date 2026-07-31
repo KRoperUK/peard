@@ -133,6 +133,35 @@ final class AppModelRoutingTests: XCTestCase {
         XCTAssertFalse(app.canReturnHome)
     }
 
+    // MARK: Foreground
+
+    /// The foreground hook was defined and never called for a while, so a moment
+    /// queued offline waited for a cold launch. This asserts the model side is
+    /// callable and harmless without a session; the wiring itself lives in
+    /// `PeardApp`'s `scenePhase` observer, which a unit test cannot reach.
+    func testForegroundRefreshKeepsAQueuedMoment() async {
+        await app.attachSendQueue()
+        await app.enqueue(sample())
+
+        await app.applicationDidBecomeActive()
+
+        let remaining = await queue.count
+        XCTAssertEqual(remaining, 1, "a foreground with no session must not discard anything")
+    }
+
+    /// Coming back to the foreground is a network-touching moment like any
+    /// other, so it is behind the same gate as launch.
+    func testForegroundRefreshIsHeldAtThePrivacyGate() async {
+        shared.clearPrivacyConsent()
+        await app.attachSendQueue()
+        await app.enqueue(sample())
+
+        await app.applicationDidBecomeActive()
+
+        let remaining = await queue.count
+        XCTAssertEqual(remaining, 1)
+    }
+
     // MARK: Queue plumbing
 
     func testEnqueuedSendIsVisibleToTheUI() async {
