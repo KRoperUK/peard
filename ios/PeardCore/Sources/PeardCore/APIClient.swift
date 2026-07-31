@@ -401,14 +401,43 @@ public final class APIClient: Sendable {
         return data
     }
 
-    /// Extracts PocketBase's `message` field when present (Requirement 5.6).
+    /// Extracts PocketBase's `message` field when present (Requirement 5.6),
+    /// preferring its per-field detail when there is any.
+    ///
+    /// A rejected write answers with a generic top-level message and the actual
+    /// reason underneath it:
+    ///
+    ///     { "message": "Failed to create record.",
+    ///       "data": { "email": { "message": "Value must be unique." } } }
+    ///
+    /// Only the top-level string used to survive, so every validation failure in
+    /// the app read "Failed to create record." — which names neither the field
+    /// nor the problem, and is the same sentence whether the address was taken
+    /// or the password too short. The field detail is what the caller can act
+    /// on, so it wins; the field name is kept with it because "Value must be
+    /// unique." alone does not say which value.
     static func errorMessage(in data: Data) -> String? {
-        guard
-            let object = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
-            let message = object["message"] as? String,
-            !message.isEmpty
-        else { return nil }
-        return message
+        guard let object = try? JSONSerialization.jsonObject(with: data) as? [String: Any] else {
+            return nil
+        }
+        let message = (object["message"] as? String).flatMap { $0.isEmpty ? nil : $0 }
+        guard let detail = fieldErrorDetail(in: object) else { return message }
+        return detail
+    }
+
+    /// "email: Value must be unique." for the first field PocketBase complained
+    /// about, sorted so the same failure always reads the same way.
+    private static func fieldErrorDetail(in object: [String: Any]) -> String? {
+        guard let data = object["data"] as? [String: Any], !data.isEmpty else { return nil }
+        for field in data.keys.sorted() {
+            guard
+                let entry = data[field] as? [String: Any],
+                let message = entry["message"] as? String,
+                !message.isEmpty
+            else { continue }
+            return "\(field): \(message)"
+        }
+        return nil
     }
 
     static func multipartBody(fields: [String: String], file: MultipartFile, boundary: String) -> Data {
