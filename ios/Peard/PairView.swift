@@ -11,6 +11,7 @@ struct PairView: View {
     @State private var code = ""
     @State private var busy: Busy?
     @State private var errorMessage: String?
+    @State private var showSignOutConfirmation = false
 
     private enum Busy: Equatable { case invite, accept }
 
@@ -67,6 +68,17 @@ struct PairView: View {
                     .padding(.top, 16)
                     .pearTransition()
             }
+
+            if !app.canReturnHome {
+                Spacer()
+
+                Button("Sign out") {
+                    showSignOutConfirmation = true
+                }
+                .font(.footnote.bold())
+                .foregroundStyle(PearColor.textSecondary)
+                .padding(.top, 24)
+            }
         }
         .padding(32)
         .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .center)
@@ -79,6 +91,18 @@ struct PairView: View {
         }
         .onChange(of: prefilledCode) { _, newValue in
             if let newValue { code = newValue.uppercased() }
+        }
+        .confirmationDialog(
+            "Sign out?",
+            isPresented: $showSignOutConfirmation,
+            titleVisibility: .visible
+        ) {
+            Button("Sign out", role: .destructive) {
+                Task { await app.signOut() }
+            }
+            Button("Cancel", role: .cancel) {}
+        } message: {
+            Text("Anything still waiting to send is discarded.")
         }
     }
 
