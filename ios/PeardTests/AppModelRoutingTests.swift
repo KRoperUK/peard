@@ -14,6 +14,8 @@ final class AppModelRoutingTests: XCTestCase {
     private var storeURL: URL!
     private var suiteName: String!
     private var shared: SharedStore!
+    private var keychainService: String!
+    private var sessionStore: KeychainSessionStore!
 
     override func setUp() async throws {
         try await super.setUp()
@@ -27,12 +29,25 @@ final class AppModelRoutingTests: XCTestCase {
         suiteName = "peard-routing-\(UUID().uuidString)"
         shared = SharedStore(defaults: UserDefaults(suiteName: suiteName))
         shared.recordPrivacyConsent()
-        app = AppModel(sharedStore: shared, sendQueue: queue)
+        // A keychain service of its own, for the same reason as the defaults
+        // suite above. These tests ran against the real one, so whether they
+        // passed depended on whether anybody had signed in on this simulator:
+        // a session in the keychain makes `bootstrap` resolve membership and
+        // land on home, and every assertion expecting `.auth` fails. It stayed
+        // hidden until somebody actually signed in — which is the worst way for
+        // a test suite to be wrong, because it looks green until it doesn't.
+        keychainService = "peard-routing-test-\(UUID().uuidString)"
+        sessionStore = KeychainSessionStore(service: keychainService)
+        sessionStore.clear()
+        app = AppModel(sessionStore: sessionStore, sharedStore: shared, sendQueue: queue)
     }
 
     override func tearDown() async throws {
         try? FileManager.default.removeItem(at: storeURL)
         UserDefaults().removePersistentDomain(forName: suiteName)
+        sessionStore?.clear()
+        sessionStore = nil
+        keychainService = nil
         app = nil
         queue = nil
         shared = nil
@@ -109,10 +124,16 @@ final class AppModelRoutingTests: XCTestCase {
 
     /// Requirement 19.1 — a `peard://pair/CODE` link opens pairing with the code
     /// filled in, which is what makes an invite a single tap for the recipient.
-    func testPairDeepLinkPrefillsTheCode() {
+    ///
+    /// Launch is driven to completion first: a link arriving *during* launch is
+    /// a different case with a different answer, covered below.
+    func testPairDeepLinkPrefillsTheCode() async {
+        await app.bootstrap()
+
         app.handle(url: URL(string: "peard://pair/ABC123")!)
 
         XCTAssertEqual(app.phase, .pair(prefilledCode: "ABC123"))
+        XCTAssertNil(app.pendingPairCode, "a link handled while running needs nothing held back")
     }
 
     func testUnrecognisedDeepLinkIsIgnored() {
@@ -131,6 +152,46 @@ final class AppModelRoutingTests: XCTestCase {
 
     func testCanReturnHomeOnlyWithAConnection() {
         XCTAssertFalse(app.canReturnHome)
+    }
+
+    /// An invite link tapped while the app is not running.
+    ///
+    /// Setting the phase from `handle(url:)` is pointless mid-launch: `bootstrap`
+    /// sets it again the moment it decides where to land, and the code was
+    /// silently dropped — so the recipient got the home screen, or an empty code
+    /// field, on exactly the launch the link exists for.
+    func testAnInviteLinkDuringLaunchIsHeldRatherThanSet() {
+        app.handle(url: URL(string: "peard://pair/ABC123")!)
+
+        XCTAssertEqual(app.pendingPairCode, "ABC123")
+        XCTAssertEqual(app.phase, .loading, "setting it now would only be overwritten")
+    }
+
+    /// With no session there is nothing to redeem an invite against, so signing
+    /// in comes first — but the code has to survive that, or the invite is lost
+    /// at the moment it is most likely to be used: a link from a friend, tapped
+    /// by somebody who has never opened the app.
+    func testAnInviteCodeSurvivesLandingOnSignIn() async {
+        app.handle(url: URL(string: "peard://pair/ABC123")!)
+
+        await app.bootstrap()
+
+        XCTAssertEqual(app.phase, .auth)
+        XCTAssertEqual(app.pendingPairCode, "ABC123", "the code must outlive the sign-in detour")
+    }
+
+    /// And it is one-shot: having routed to it once, a later launch must not
+    /// drag the user back to a code they have already dealt with.
+    func testAppliedInviteCodeIsNotReapplied() async {
+        app.handle(url: URL(string: "peard://pair/ABC123")!)
+        await app.bootstrap()
+        XCTAssertEqual(app.pendingPairCode, "ABC123")
+
+        // Standing in for the launch that follows a successful sign-in.
+        app.applyPendingPairCodeForTesting()
+
+        XCTAssertEqual(app.phase, .pair(prefilledCode: "ABC123"))
+        XCTAssertNil(app.pendingPairCode)
     }
 
     // MARK: Foreground
