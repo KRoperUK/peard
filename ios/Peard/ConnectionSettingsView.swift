@@ -24,6 +24,8 @@ struct ConnectionSettingsView: View {
     @State private var showLeaveConfirmation = false
     @State private var showSignOutConfirmation = false
     @State private var showInviteSheet = false
+    @FocusState private var nameFieldFocused: Bool
+    @FocusState private var displayNameFieldFocused: Bool
 
     var body: some View {
         NavigationStack {
@@ -37,6 +39,7 @@ struct ConnectionSettingsView: View {
                 accountSection
                 leaveSection
             }
+            .scrollDismissesKeyboard(.interactively)
             .scrollContentBackground(.hidden)
             .background(PearColor.background)
             .navigationTitle("Settings")
@@ -154,8 +157,12 @@ struct ConnectionSettingsView: View {
         Section {
             TextField("Flatmates", text: $nameText)
                 .textInputAutocapitalization(.words)
+                .focused($nameFieldFocused)
+                .submitLabel(.done)
+                .onSubmit { nameFieldFocused = false }
                 .accessibilityLabel("Connection name")
             Button {
+                nameFieldFocused = false
                 Task {
                     isSavingName = true
                     await model.rename(to: nameText)
@@ -321,8 +328,12 @@ struct ConnectionSettingsView: View {
 
             TextField(placeholderName, text: $displayNameText)
                 .textInputAutocapitalization(.words)
+                .focused($displayNameFieldFocused)
+                .submitLabel(.done)
+                .onSubmit { displayNameFieldFocused = false }
                 .accessibilityLabel("Your display name")
             Button {
+                displayNameFieldFocused = false
                 Task {
                     isSavingDisplayName = true
                     await app.updateDisplayName(displayNameText)
