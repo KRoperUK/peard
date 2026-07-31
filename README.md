@@ -513,9 +513,9 @@ or can be omitted.
       self-serve rather than "email us and we'll action it within 30 days"
 - [x] Agree to the privacy policy before anything leaves the device — a phase
       ahead of sign-in, versioned so a changed policy asks again
-- [ ] Read state, so the push badge can mean "unread" exactly rather than
-      "somebody posted in the last day" — which is what it means today, so it
-      reads 3 when you have seen all three and 0 when you have seen none
+- [x] Read state, so "unread" means unread: an exact badge the app keeps current
+      itself, a per-connection count on the rail, and a "New" line in the
+      timeline marking where you got to
 - [ ] Live Activity for "instant photo drop" moments (ActivityKit push-to-update)
 - [ ] Android widget (Jetpack Glance) — blocked on the Android client decision above
 - [ ] Media storage (S3 compatible via PB filesystem settings)

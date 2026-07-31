@@ -64,6 +64,8 @@ struct MainTabView: View {
 /// at init because the `users` view rule means member names are only available from
 /// `GET /api/peard/connections`.
 private struct TimelineTab: View {
+    @Environment(AppModel.self) private var app
+
     let model: HomeModel
 
     var body: some View {
@@ -73,7 +75,8 @@ private struct TimelineTab: View {
                 pairID: model.pairID,
                 signedInUserID: model.signedInUserID,
                 customKinds: model.customKinds,
-                connection: model.connection
+                connection: model.connection,
+                unreadWatermark: app.unreadWatermark(forConnection: model.pairID)
             ),
             serverURL: model.serverURL,
             title: model.connectionTitle
@@ -84,9 +87,17 @@ private struct TimelineTab: View {
     /// Rebuilds the paged model when what it renders with changes, and only then:
     /// keying on the connection alone would keep stale names after somebody joins,
     /// and keying on everything would throw away the loaded pages on every refresh.
+    ///
+    /// The watermark is in here because it is captured by the home screen's load,
+    /// which may not have run by the time this tab's body is first evaluated.
+    /// Without it, whether the "New" line appeared would depend on which of the
+    /// two happened first — an ordering dependency with no visible symptom, and
+    /// the divider silently missing on exactly the launch it is for. It changes
+    /// at most once per connection per session, so it costs no reloads.
     private var historyIdentity: String {
         let members = model.connection?.members.map(\.user).sorted().joined(separator: ",") ?? ""
-        return "\(model.pairID)|\(members)|\(model.customKinds.count)"
+        let watermark = app.unreadWatermark(forConnection: model.pairID)?.timeIntervalSince1970 ?? 0
+        return "\(model.pairID)|\(members)|\(model.customKinds.count)|\(watermark)"
     }
 }
 

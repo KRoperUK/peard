@@ -399,6 +399,14 @@ public struct Connection: Codable, Hashable, Sendable, Identifiable {
     /// connections still report a count: muting silences the alert, it does not
     /// mean "stop telling me anything happened".
     public let unreadCount: Int
+    /// The cut-off `unreadCount` was counted from — the last time you opened
+    /// this connection, or the day you joined it if you never have.
+    ///
+    /// Carried so the timeline can show *which* moments are new, not just how
+    /// many. The server sends the effective value rather than a bare
+    /// `last_seen_at` that might be absent, so the join-date fallback is
+    /// applied in exactly one place.
+    public let lastSeenAt: Date?
 
     public var id: String { pair }
 
@@ -408,6 +416,7 @@ public struct Connection: Codable, Hashable, Sendable, Identifiable {
         case isMuted = "muted"
         case avatarFilename = "avatar"
         case unreadCount = "unread"
+        case lastSeenAt = "last_seen_at"
     }
 
     public init(
@@ -419,7 +428,8 @@ public struct Connection: Codable, Hashable, Sendable, Identifiable {
         members: [Member] = [],
         isMuted: Bool = false,
         avatarFilename: String? = nil,
-        unreadCount: Int = 0
+        unreadCount: Int = 0,
+        lastSeenAt: Date? = nil
     ) {
         self.pair = pair
         self.name = name
@@ -430,6 +440,7 @@ public struct Connection: Codable, Hashable, Sendable, Identifiable {
         self.isMuted = isMuted
         self.avatarFilename = avatarFilename
         self.unreadCount = unreadCount
+        self.lastSeenAt = lastSeenAt
     }
 
     public init(from decoder: any Decoder) throws {
@@ -446,6 +457,10 @@ public struct Connection: Codable, Hashable, Sendable, Identifiable {
         // follows. Negatives are clamped: a count below zero has no meaning and
         // would draw a badge saying "-1".
         unreadCount = max(try container.decodeIfPresent(Int.self, forKey: .unreadCount) ?? 0, 0)
+        // Absent from a server predating read state, and an unparseable value
+        // reads the same way: nil, which the timeline treats as "mark nothing
+        // new" rather than as everything or an error.
+        lastSeenAt = try? container.decodeIfPresent(Date.self, forKey: .lastSeenAt)
         let count = try container.decodeIfPresent(Int.self, forKey: .memberCount)
         // A connection always contains at least the signed-in user.
         memberCount = max(count ?? members.count, 1)

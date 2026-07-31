@@ -280,6 +280,53 @@ func TestSeenRequiresAPair(t *testing.T) {
 	}
 }
 
+// The client needs the cut-off, not only the count, to show *which* moments are
+// new. It is always the effective value — a never-opened connection reports its
+// join date rather than an empty string, so the fallback lives in one place
+// instead of being re-derived (differently) on the client.
+func TestConnectionsReportTheCutOff(t *testing.T) {
+	w := newLifeWorld(t)
+
+	seenAt := func() string {
+		code, body := w.do(t, "GET", "/api/peard/connections", w.aliceTok, "")
+		if code != 200 {
+			t.Fatalf("connections: got %d, body %s", code, body)
+		}
+		var parsed struct {
+			Connections []struct {
+				Pair       string `json:"pair"`
+				LastSeenAt string `json:"last_seen_at"`
+			} `json:"connections"`
+		}
+		if err := json.Unmarshal([]byte(body), &parsed); err != nil {
+			t.Fatalf("decode: %v", err)
+		}
+		for _, c := range parsed.Connections {
+			if c.Pair == w.flatmates.Id {
+				return c.LastSeenAt
+			}
+		}
+		t.Fatalf("connection missing from %s", body)
+		return ""
+	}
+
+	joined := membership(t, w, w.flatmates.Id, w.alice.Id).GetDateTime("created").String()
+	if got := seenAt(); got != joined {
+		t.Fatalf("never opened: got %q, want the join date %q", got, joined)
+	}
+
+	code, _ := w.do(t, "POST", "/api/peard/connections/seen", w.aliceTok,
+		`{"pair":"`+w.flatmates.Id+`"}`)
+	if code != 200 {
+		t.Fatalf("seen: got %d", code)
+	}
+
+	stamped := membership(t, w, w.flatmates.Id, w.alice.Id).GetDateTime("last_seen_at").String()
+	if got := seenAt(); got != stamped {
+		t.Fatalf("after opening: got %q, want the stamp %q", got, stamped)
+	}
+}
+
 // UnreadSince is exported so the push badge and the connections route cannot
 // drift apart. Both fallbacks are asserted here because the badge has no test
 // of its own that would catch a change to them.

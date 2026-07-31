@@ -30,6 +30,9 @@ final class HistoryModel {
     /// anybody else's record — so the connection is passed in rather than looked up.
     private let connection: Connection?
     private let calendar: Calendar
+    /// Where to draw the "new since you last looked" line, frozen at the moment
+    /// this connection was opened — see `AppModel.unreadWatermarks`.
+    private let unreadWatermark: Date?
 
     private(set) var posts: [Post] = []
     private(set) var customKinds: [MomentKind] = []
@@ -51,7 +54,8 @@ final class HistoryModel {
         signedInUserID: String,
         customKinds: [MomentKind],
         connection: Connection?,
-        calendar: Calendar = .peardTally
+        calendar: Calendar = .peardTally,
+        unreadWatermark: Date? = nil
     ) {
         self.api = api
         self.pairID = pairID
@@ -59,6 +63,26 @@ final class HistoryModel {
         self.customKinds = customKinds
         self.connection = connection
         self.calendar = calendar
+        self.unreadWatermark = unreadWatermark
+    }
+
+    /// True for a moment somebody else posted after the watermark — the ones
+    /// that were waiting when this connection was opened.
+    ///
+    /// Your own moments are excluded for the same reason they never count
+    /// towards `unread`: you were there when you logged them.
+    func isNew(_ post: Post) -> Bool {
+        guard let unreadWatermark, post.author != signedInUserID else { return false }
+        return post.created > unreadWatermark
+    }
+
+    /// The oldest moment that still counts as new, which is where the line goes.
+    ///
+    /// Identified rather than drawn per-row so the timeline gets one divider
+    /// instead of a marker on every new moment: the question is "where did I get
+    /// to", and the answer is a single place.
+    var firstNewPostID: String? {
+        posts.last(where: isNew)?.id
     }
 
     /// Moments grouped by day, newest day first.
@@ -249,6 +273,13 @@ struct HistoryView: View {
             ForEach(model.days) { day in
                 Section {
                     ForEach(day.posts) { post in
+                        // Above the oldest new moment, so the line separates
+                        // "seen" from "new" the way it reads on screen: the
+                        // timeline is newest-first, so everything above it is
+                        // what arrived while you were away.
+                        if post.id == model.firstNewPostID {
+                            newMomentsDivider
+                        }
                         row(for: post)
                     }
                 } header: {
@@ -283,6 +314,29 @@ struct HistoryView: View {
         }
         .listStyle(.plain)
         .scrollContentBackground(.hidden)
+    }
+
+    /// A labelled rule rather than a coloured dot per row: the useful thing is
+    /// one boundary you can scroll to, not a repeated badge that leaves you
+    /// counting.
+    private var newMomentsDivider: some View {
+        HStack(spacing: 8) {
+            Rectangle()
+                .fill(PearColor.accent)
+                .frame(height: 1)
+            Text("New")
+                .font(.caption2.bold())
+                .foregroundStyle(PearColor.accent)
+                .textCase(.uppercase)
+            Rectangle()
+                .fill(PearColor.accent)
+                .frame(height: 1)
+        }
+        .padding(.vertical, 2)
+        .listRowBackground(Color.clear)
+        .listRowSeparator(.hidden)
+        .accessibilityElement()
+        .accessibilityLabel("New since you last looked")
     }
 
     private func row(for post: Post) -> some View {

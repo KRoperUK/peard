@@ -531,7 +531,13 @@ func connectionsHandler(app core.App) func(e *core.RequestEvent) error {
 				// which of five connections the new moments are in. Muted
 				// connections still report their count: muting silences the
 				// alert, it does not mean "stop telling me anything happened".
-				"unread":       UnreadCount(app, membership, e.Auth.Id),
+				"unread": UnreadCount(app, membership, e.Auth.Id),
+				// The cut-off `unread` was counted from, so the client can show
+				// *which* moments are new rather than only how many. Always the
+				// effective one — a never-opened connection reports its join
+				// date rather than an empty string, so the client never has to
+				// re-derive the fallback and get it subtly different.
+				"last_seen_at": UnreadSince(membership).String(),
 				"member_count": len(members),
 				"is_group":     len(members) > 2,
 				"avatar":       pair.GetString("avatar"),

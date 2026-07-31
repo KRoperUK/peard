@@ -381,6 +381,24 @@ final class AppModel {
 
     // MARK: Read state
 
+    /// Where the timeline draws its "new since you last looked" line, per
+    /// connection, for the life of this app session.
+    ///
+    /// Captured once and then left alone, which is the whole trick. Marking a
+    /// connection seen moves the server's stamp to now, so a divider derived
+    /// from the live value would vanish the instant the home screen loaded —
+    /// before the user could reach the timeline tab to see it. Freezing it at
+    /// the first visit means the line stays put while they move between tabs,
+    /// and is gone on the next launch, which is exactly what "since you last
+    /// looked" should mean.
+    private var unreadWatermarks: [String: Date] = [:]
+
+    /// The cut-off the timeline should mark as new, or nil when there was
+    /// nothing new when this connection was opened.
+    func unreadWatermark(forConnection pairID: String) -> Date? {
+        unreadWatermarks[pairID]
+    }
+
     /// Marks the connection currently on screen as read, and clears its badge
     /// locally without waiting for a round trip.
     ///
@@ -396,7 +414,14 @@ final class AppModel {
     /// timeline.
     func markSelectedConnectionSeen() async {
         guard case .home(let pairID) = phase else { return }
-        guard connections.first(where: { $0.id == pairID })?.hasUnread == true else { return }
+        guard let connection = connections.first(where: { $0.id == pairID }), connection.hasUnread else { return }
+
+        // Only the first time this session — see `unreadWatermarks`. A second
+        // visit after the stamp has moved would otherwise reset the line to
+        // "now" and quietly erase it.
+        if unreadWatermarks[pairID] == nil, let seen = connection.lastSeenAt {
+            unreadWatermarks[pairID] = seen
+        }
 
         clearUnreadLocally(pairID: pairID)
         try? await api.markSeen(pairID: pairID)
@@ -602,6 +627,7 @@ final class AppModel {
         sharedStore.selectedConnectionID = nil
         focusedPostID = nil
         hasRequestedPushThisSession = false
+        unreadWatermarks.removeAll()
         phase = .auth
         return true
     }
@@ -614,6 +640,7 @@ final class AppModel {
         sharedStore.selectedConnectionID = nil
         focusedPostID = nil
         hasRequestedPushThisSession = false
+        unreadWatermarks.removeAll()
         phase = .auth
     }
 
@@ -645,6 +672,7 @@ final class AppModel {
         sharedStore.selectedConnectionID = nil
         focusedPostID = nil
         hasRequestedPushThisSession = false
+        unreadWatermarks.removeAll()
         phase = .auth
     }
 

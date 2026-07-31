@@ -275,6 +275,7 @@ oldest membership first:
       "role": "owner",
       "muted": false,
       "unread": 2,
+      "last_seen_at": "2026-07-31 16:04:00.000Z",
       "member_count": 3,
       "is_group": true,
       "avatar": "photo_a1b2c3d4e5.jpg",
@@ -373,6 +374,17 @@ Muted connections still report `unread`; muting silences the alert, it does not
 mean "stop telling me anything happened". The APNs badge is the one place muted
 connections are excluded, because the badge accompanies an alert a muted
 connection would not have produced.
+
+`last_seen_at` is that same cut-off, sent so a client can show *which* moments
+are new rather than only how many. It is always the effective value — a
+never-opened connection reports its membership's `created`, not an empty string
+— so the join-date fallback is applied in one place instead of being re-derived
+on each client and getting subtly different.
+
+The app freezes this value per connection for the life of a session rather than
+reading it live. Opening a connection stamps it to now, so a divider drawn from
+the current value would disappear before the user could navigate to the timeline
+that shows it.
 
 ## Tally routes
 
