@@ -541,6 +541,40 @@ used" rather than "not found".
 Invite codes are 6 characters from `ABCDEFGHJKMNPQRSTUVWXYZ23456789` (no
 visually ambiguous characters).
 
+## Editing a moment
+
+`POST /api/peard/posts/edit` with any of:
+
+```json
+{ "post": "abc123def456ghi", "note": "at the other pub", "event_kind": "coffee" }
+```
+
+→ `{ "ok": true, "note": "…", "event_kind": "…", "updated": "…" }`.
+
+Only the author may, and only these two fields change: `note` (≤ 280, empty
+clears it) and `event_kind` (≤ 40, `event` posts only — a photo has no kind, and
+giving it one would add a moment to the tallies nobody logged). Omitting a field
+leaves it alone, which is why clearing a note means sending `""` rather than
+omitting it. Sending neither answers `400`; somebody else's moment answers `403`.
+
+This is a route rather than an `UpdateRule` on `posts` because a collection rule
+cannot say *which* fields may change — the author would otherwise also be able
+to move the moment into a different connection or reassign it to somebody who
+never logged it. `posts.UpdateRule` stays null.
+
+Nothing is pushed for an edit. It is a correction to something everybody has
+already been told about, and a second notification reads as a second moment.
+
+Deleting is the ordinary collection endpoint, `DELETE
+/api/collections/posts/records/{id}`: `posts.DeleteRule` is already
+`author = @request.auth.id`, and a second door onto the same act would be a
+second place for that rule to drift. Reactions cascade with it, and so does any
+attached photo.
+
+Clients tell an edited moment by comparing `updated` against `created`, with a
+tolerance of a couple of seconds — both are stamped together at creation and the
+column keeps milliseconds, so a strict `>` labels moments nobody touched.
+
 ## Widget routes
 
 `POST /api/peard/widget/token` → `{ "id": "<record id>", "token": "<hex>" }`.

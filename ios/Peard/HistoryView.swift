@@ -44,6 +44,19 @@ final class HistoryModel {
 
     private var nextPage = 1
 
+    /// The moments in this timeline the signed-in user may change.
+    ///
+    /// Author only, and the server says the same: editing somebody else's
+    /// account of their own evening is not something being in a group entitles
+    /// you to. Checked here as well so the app does not offer a button that can
+    /// only fail.
+    func canEdit(_ post: Post) -> Bool { post.author == signedInUserID }
+
+    /// Everything this connection can log, which is what a moment may be
+    /// changed *to*. The same list the home screen offers, so "the wrong one"
+    /// and "the right one" are always both on it.
+    var moments: [Moment] { MomentCatalogue.available(customKinds: customKinds) }
+
     /// Chosen so the first screenful arrives quickly while a scroll rarely has to
     /// wait: three screens' worth at a typical text size.
     static let pageSize = 30
@@ -190,6 +203,89 @@ final class HistoryModel {
         await fetchNextPage()
     }
 
+    // MARK: Editing
+
+    /// Applies an edit and rewrites the row in place.
+    ///
+    /// In place rather than reloading the timeline: a reload throws away every
+    /// page loaded so far and scrolls back to today, which is a heavy price for
+    /// changing one word. The server is the authority on what was saved, so what
+    /// is written here is what was sent, once it has been accepted.
+    ///
+    /// Returns whether it worked, so the sheet knows whether to close.
+    @discardableResult
+    func edit(_ post: Post, note: String, kind: EventKind?) async -> Bool {
+        let trimmedNote = note.trimmingCharacters(in: .whitespacesAndNewlines)
+        let newKind = kind ?? post.eventKind
+        // Only send what changed. A no-op edit would still move `updated` and
+        // put an "edited" label on a moment nobody edited.
+        let noteChanged = trimmedNote != (post.note ?? "")
+        let kindChanged = newKind != post.eventKind
+        guard noteChanged || kindChanged else { return true }
+
+        do {
+            try await api.editMoment(
+                postID: post.id,
+                note: noteChanged ? .some(trimmedNote) : nil,
+                kind: kindChanged ? newKind : nil
+            )
+        } catch let error as APIError where error.status == 404 {
+            // The route is missing, which means this app is talking to a server
+            // older than the feature. An installed app cannot assume the server
+            // has caught up with it — that assumption is what shipped account
+            // deletion against a server that could not do it — and "Not found"
+            // tells somebody trying to fix a typo nothing at all.
+            self.error = "This server can't edit moments yet. Deleting and logging it again works."
+            return false
+        } catch {
+            self.error = (error as? APIError)?.localizedDescription ?? error.localizedDescription
+            return false
+        }
+
+        replace(post.id) { old in
+            Post(
+                id: old.id,
+                pair: old.pair,
+                author: old.author,
+                type: old.type,
+                eventKind: newKind,
+                note: trimmedNote,
+                media: old.media,
+                created: old.created,
+                // Enough to cross `isEdited`'s tolerance, so the label appears
+                // now rather than on the next load. The server has written its
+                // own stamp; this only has to agree about *whether* it moved.
+                updated: Date()
+            )
+        }
+        error = nil
+        return true
+    }
+
+    /// Deletes a moment and drops it from the timeline.
+    @discardableResult
+    func delete(_ post: Post) async -> Bool {
+        do {
+            try await api.deleteMoment(postID: post.id)
+        } catch {
+            self.error = (error as? APIError)?.localizedDescription ?? error.localizedDescription
+            return false
+        }
+        posts.removeAll { $0.id == post.id }
+        // Kept honest for the "N moments" footer, which would otherwise count
+        // something that is no longer there.
+        totalItems = max(0, totalItems - 1)
+        error = nil
+        return true
+    }
+
+    private func replace(_ id: String, with transform: (Post) -> Post) {
+        guard let index = posts.firstIndex(where: { $0.id == id }) else { return }
+        posts[index] = transform(posts[index])
+    }
+
+    // MARK: Loading
+
     private func fetchNextPage() async {
         do {
             let page = try await api.postsPage(pairID: pairID, page: nextPage, perPage: Self.pageSize)
@@ -211,6 +307,8 @@ final class HistoryModel {
 /// shared timeline does not have to be dismissed to log anything.
 struct HistoryView: View {
     @State private var model: HistoryModel
+    @State private var editing: Post?
+    @State private var deleting: Post?
     private let serverURL: URL
     private let title: String
 
@@ -233,6 +331,27 @@ struct HistoryView: View {
                 }
                 .refreshable { await model.reload() }
                 .task { await model.loadFirstPage() }
+        }
+        .sheet(item: $editing) { post in
+            MomentEditSheet(post: post, moments: model.moments, model: model)
+        }
+        // A swipe is easy to do by accident on a list you are scrolling, and this
+        // one cannot be undone, so it asks. The sheet has its own confirmation
+        // for the same reason.
+        .confirmationDialog(
+            "Delete this moment?",
+            isPresented: Binding(get: { deleting != nil }, set: { if !$0 { deleting = nil } }),
+            titleVisibility: .visible
+        ) {
+            Button("Delete", role: .destructive) {
+                if let post = deleting {
+                    deleting = nil
+                    Task { await model.delete(post) }
+                }
+            }
+            Button("Cancel", role: .cancel) { deleting = nil }
+        } message: {
+            Text("It goes from the shared timeline and stops counting towards the tallies.")
         }
     }
 
@@ -351,9 +470,19 @@ struct HistoryView: View {
                         .font(.subheadline.bold())
                         .foregroundStyle(PearColor.textPrimary)
                 }
-                Text(model.detail(for: post))
-                    .font(.footnote)
-                    .foregroundStyle(PearColor.textSecondary)
+                HStack(spacing: 4) {
+                    Text(model.detail(for: post))
+                        .font(.footnote)
+                        .foregroundStyle(PearColor.textSecondary)
+                    // Marked rather than hidden: a shared timeline is a record
+                    // several people rely on, and a line that quietly changed
+                    // under them is worse than one that says it changed.
+                    if post.isEdited {
+                        Text("· edited")
+                            .font(.caption2)
+                            .foregroundStyle(PearColor.textTertiary)
+                    }
+                }
             }
 
             Spacer(minLength: 4)
@@ -366,6 +495,21 @@ struct HistoryView: View {
         .padding(.vertical, 4)
         .listRowBackground(PearColor.background)
         .accessibilityElement(children: .combine)
+        .accessibilityLabel(accessibilityLabel(for: post))
+        .modifier(MomentActions(
+            post: post,
+            canEdit: model.canEdit(post),
+            onEdit: { editing = post },
+            onDelete: { deleting = post }
+        ))
+    }
+
+    private func accessibilityLabel(for post: Post) -> String {
+        var parts = [model.authorLabel(for: post), model.detail(for: post)]
+        if post.isEdited { parts.append("edited") }
+        let time = model.time(for: post)
+        if !time.isEmpty { parts.append(time) }
+        return parts.joined(separator: ", ")
     }
 
     @ViewBuilder
@@ -387,6 +531,45 @@ struct HistoryView: View {
             Text(model.emoji(for: post))
                 .font(.title3)
                 .frame(width: 36, height: 36)
+        }
+    }
+}
+
+/// Edit and delete, offered by swipe *and* by long press.
+///
+/// Both, because neither alone is discoverable: a swipe is the iOS convention
+/// for a list row and is what a practised thumb reaches for, and a context menu
+/// is what somebody finds when they press the thing they want to change and
+/// wait. Attached to every row and inert on somebody else's, so the gesture does
+/// not appear to work on some rows and silently not others.
+private struct MomentActions: ViewModifier {
+    let post: Post
+    let canEdit: Bool
+    let onEdit: () -> Void
+    let onDelete: () -> Void
+
+    func body(content: Content) -> some View {
+        if canEdit {
+            content
+                .swipeActions(edge: .trailing, allowsFullSwipe: false) {
+                    Button(role: .destructive, action: onDelete) {
+                        Label("Delete", systemImage: "trash")
+                    }
+                    Button(action: onEdit) {
+                        Label("Edit", systemImage: "pencil")
+                    }
+                    .tint(PearColor.accent)
+                }
+                .contextMenu {
+                    Button(action: onEdit) {
+                        Label("Edit moment", systemImage: "pencil")
+                    }
+                    Button(role: .destructive, action: onDelete) {
+                        Label("Delete moment", systemImage: "trash")
+                    }
+                }
+        } else {
+            content
         }
     }
 }

@@ -256,7 +256,10 @@ final class APIClientTests: XCTestCase {
 
 // MARK: - Test doubles
 
-private final class StubTokenProvider: AuthTokenProviding, @unchecked Sendable {
+// Shared with the other suites that need a client, like `StubURLProtocol`
+// beneath it. Private here meant every new suite either reached for a different
+// double or copied this one.
+final class StubTokenProvider: AuthTokenProviding, @unchecked Sendable {
     let authToken: String?
     init(token: String?) { self.authToken = token }
 }

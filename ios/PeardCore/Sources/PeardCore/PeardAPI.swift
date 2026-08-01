@@ -134,6 +134,33 @@ public extension APIClient {
         try await postIgnoringResponse(path: "/api/peard/connections/seen", fields: ["pair": pairID])
     }
 
+    /// `POST /api/peard/posts/edit` — change a moment after logging it.
+    ///
+    /// A route rather than a record update because a PocketBase rule cannot say
+    /// *which* fields may change: an UpdateRule on `posts` would also let an
+    /// author move a moment into another connection or hand it to somebody who
+    /// never logged it. The server writes the note and the kind, and nothing
+    /// else.
+    ///
+    /// `nil` means "leave it alone", which is why the note is doubly optional:
+    /// `.some("")` clears it, and clearing a note is a real thing to want.
+    func editMoment(postID: String, note: String?? = nil, kind: EventKind? = nil) async throws {
+        var fields: [String: JSONField] = ["post": .string(postID)]
+        if let note { fields["note"] = .string(note ?? "") }
+        if let kind { fields["event_kind"] = .string(kind.rawValue) }
+        try await postIgnoringResponse(path: "/api/peard/posts/edit", typedFields: fields)
+    }
+
+    /// Deletes one of the caller's own moments.
+    ///
+    /// The ordinary collection endpoint, not a Pear'd route: `posts.DeleteRule`
+    /// is already `author = @request.auth.id`, and a second door onto the same
+    /// act would be a second place for that rule to drift. Reactions go with it
+    /// — `reactions.post` cascades — and so does an attached photo.
+    func deleteMoment(postID: String) async throws {
+        try await delete("posts", id: postID)
+    }
+
     /// `GET /api/peard/status` — which build of the server is running.
     ///
     /// Unauthenticated, so it answers before sign-in and while a session is

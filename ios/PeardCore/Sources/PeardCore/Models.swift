@@ -165,9 +165,12 @@ public struct Post: Codable, Hashable, Sendable, Identifiable {
     public let note: String?
     public let media: String?
     public let created: Date
+    /// When the record was last written. Equal to `created` until somebody
+    /// edits the moment, which is what `isEdited` reads.
+    public let updated: Date
 
     enum CodingKeys: String, CodingKey {
-        case id, pair, author, type, note, media, created
+        case id, pair, author, type, note, media, created, updated
         case eventKind = "event_kind"
     }
 
@@ -179,7 +182,8 @@ public struct Post: Codable, Hashable, Sendable, Identifiable {
         eventKind: EventKind? = nil,
         note: String? = nil,
         media: String? = nil,
-        created: Date
+        created: Date,
+        updated: Date? = nil
     ) {
         self.id = id
         self.pair = pair
@@ -189,6 +193,9 @@ public struct Post: Codable, Hashable, Sendable, Identifiable {
         self.note = note
         self.media = media
         self.created = created
+        // Defaults to `created` rather than to a sentinel: a caller that does
+        // not mention `updated` is describing a moment nobody has edited.
+        self.updated = updated ?? created
     }
 
     /// Records created before the server gained its `created` autodate field
@@ -204,11 +211,27 @@ public struct Post: Codable, Hashable, Sendable, Identifiable {
         eventKind = try container.decodeIfPresent(EventKind.self, forKey: .eventKind)
         note = try container.decodeIfPresent(String.self, forKey: .note)
         media = try container.decodeIfPresent(String.self, forKey: .media)
-        created = (try? container.decode(Date.self, forKey: .created)) ?? .distantPast
+        let created = (try? container.decode(Date.self, forKey: .created)) ?? .distantPast
+        self.created = created
+        // Absent on a server predating the timestamps migration, and on the
+        // widget's trimmed payloads. Falling back to `created` means such a post
+        // reads as unedited rather than as edited-in-1970.
+        updated = (try? container.decode(Date.self, forKey: .updated)) ?? created
     }
 
     /// True when this post carries a real server timestamp.
     public var hasTimestamp: Bool { created != .distantPast }
+
+    /// Whether this moment has been changed since it was logged.
+    ///
+    /// A tolerance rather than `updated > created`, because the two are written
+    /// in the same breath at creation and the database keeps them to the
+    /// millisecond — a create whose two stamps land either side of a tick would
+    /// otherwise show up as an edit nobody made. Nothing a person does within
+    /// two seconds of logging a moment is worth labelling anyway.
+    public var isEdited: Bool {
+        hasTimestamp && updated.timeIntervalSince(created) > 2
+    }
 
     /// The `note` value only when it carries text (Requirement 11.2).
     public var displayNote: String? {

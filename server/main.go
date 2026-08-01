@@ -27,6 +27,7 @@ import (
 	"peard/internal/export"
 	"peard/internal/limits"
 	"peard/internal/pairs"
+	"peard/internal/posts"
 	"peard/internal/profile"
 	"peard/internal/push"
 	"peard/internal/site"
@@ -57,6 +58,7 @@ func main() {
 	limits.Register(app)
 	peardauth.Register(app)
 	pairs.Register(app)
+	posts.Register(app)
 	profile.Register(app)
 	avatars.Register(app)
 	tallies.Register(app)
