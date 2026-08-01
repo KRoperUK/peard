@@ -12,6 +12,7 @@ public final class SharedStore: @unchecked Sendable {
         public static let notificationAuthorizationRequested = "notificationAuthorizationRequested"
         public static let devicePushToken = "devicePushToken"
         public static let selectedConnectionID = "selectedConnectionId"
+        public static let messagesConnectionID = "messagesConnectionId"
         public static let pendingWidgetLog = "pendingWidgetLog"
         public static let privacyPolicyAcceptedVersion = "privacyPolicyAcceptedVersion"
         public static let privacyPolicyAcceptedAt = "privacyPolicyAcceptedAt"
@@ -71,6 +72,17 @@ public final class SharedStore: @unchecked Sendable {
     public var selectedConnectionID: String? {
         get { defaults?.string(forKey: Key.selectedConnectionID) }
         set { set(newValue, forKey: Key.selectedConnectionID) }
+    }
+
+    /// The connection the Messages tray last logged into.
+    ///
+    /// Kept apart from `selectedConnectionID` on purpose. Which connection you
+    /// log into from a chat is not the same question as which one the app
+    /// should open on, and writing the app's answer from inside an extension
+    /// would move the home screen under somebody who never asked for that.
+    public var messagesConnectionID: String? {
+        get { defaults?.string(forKey: Key.messagesConnectionID) }
+        set { set(newValue, forKey: Key.messagesConnectionID) }
     }
 
     // MARK: Widget optimistic feedback

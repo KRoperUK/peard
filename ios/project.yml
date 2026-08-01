@@ -220,6 +220,13 @@ targets:
     platform: iOS
     sources:
       - path: PeardTests
+      # The Messages tray's state, compiled into the tests as well as into the
+      # extension. An app-extension target cannot host a unit-test bundle, so
+      # the alternative was leaving the one piece of logic in that extension —
+      # which connection a moment logs into — with nothing covering it.
+      # Deliberately only the model: it imports PeardCore and nothing from the
+      # Messages framework, which is what makes this possible at all.
+      - path: PearMessages/MomentTrayModel.swift
     dependencies:
       - target: Peard
       - package: PeardCore
