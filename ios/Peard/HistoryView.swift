@@ -81,8 +81,31 @@ final class HistoryModel {
     /// Requirement 14.1 — reactions are offered on other people's moments only.
     func canReact(to post: Post) -> Bool { post.author != signedInUserID }
 
-    /// Records a reaction and reconciles that post's from the server.
-    func react(to post: Post, kind: ReactionKind) async {
+    /// Whether the signed-in user has already used this kind here, which is what
+    /// makes the control a toggle rather than a one-way door.
+    func hasReacted(to post: Post, kind: ReactionKind) -> Bool {
+        myReaction(to: post.id, kind: kind) != nil
+    }
+
+    private func myReaction(to postID: String, kind: ReactionKind) -> Reaction? {
+        (reactionsByPost[postID] ?? []).first { $0.user == signedInUserID && $0.kind == kind }
+    }
+
+    /// Adds the reaction, or takes it back if it is already there.
+    ///
+    /// A reaction is a small thing said quickly, which is exactly why it needs
+    /// an undo: tapping the wrong one of three emoji is easy, and until now the
+    /// only way out was to leave it. The same control does both, because
+    /// "cheers" and "un-cheers" are the same thought.
+    func toggleReaction(to post: Post, kind: ReactionKind) async {
+        if myReaction(to: post.id, kind: kind) != nil {
+            await removeReaction(from: post, kind: kind)
+        } else {
+            await addReaction(to: post, kind: kind)
+        }
+    }
+
+    private func addReaction(to post: Post, kind: ReactionKind) async {
         do {
             let _: Reaction = try await api.create("reactions", fields: [
                 "post": post.id,
@@ -107,10 +130,47 @@ final class HistoryModel {
         await loadReactions(for: [post.id])
     }
 
+    private func removeReaction(from post: Post, kind: ReactionKind) async {
+        guard var mine = myReaction(to: post.id, kind: kind) else { return }
+
+        // The optimistic add leaves a placeholder id, and the reconciliation
+        // that would have replaced it with the server's can be cancelled. Undo
+        // must still work in that window, so the real one is fetched rather than
+        // a made-up id being sent to the server.
+        if mine.id.hasPrefix(Self.localReactionPrefix) {
+            await loadReactions(for: [post.id])
+            guard let real = myReaction(to: post.id, kind: kind),
+                  !real.id.hasPrefix(Self.localReactionPrefix) else { return }
+            mine = real
+        }
+
+        do {
+            try await api.removeReaction(id: mine.id)
+        } catch let error as APIError where error.status == 404 {
+            // Already gone — somebody's other device, or a retry. The local
+            // removal below is then simply catching up.
+        } catch {
+            self.error = (error as? APIError)?.localizedDescription ?? error.localizedDescription
+            return
+        }
+
+        reactionsByPost[post.id] = (reactionsByPost[post.id] ?? []).filter { $0.id != mine.id }
+        error = nil
+    }
+
+    /// Marks a locally-added reaction so it can be told from one the server has
+    /// confirmed — see `removeReaction`.
+    private static let localReactionPrefix = "local-"
+
     private func addLocally(kind: ReactionKind, to postID: String) {
         var existing = reactionsByPost[postID] ?? []
         guard !existing.contains(where: { $0.user == signedInUserID && $0.kind == kind }) else { return }
-        existing.append(Reaction(id: "local-\(postID)-\(kind.rawValue)", post: postID, user: signedInUserID, kind: kind))
+        existing.append(Reaction(
+            id: "\(Self.localReactionPrefix)\(postID)-\(kind.rawValue)",
+            post: postID,
+            user: signedInUserID,
+            kind: kind
+        ))
         reactionsByPost[postID] = existing
     }
 
@@ -625,9 +685,10 @@ struct HistoryView: View {
             post: post,
             canEdit: model.canEdit(post),
             canReact: model.canReact(to: post),
+            mine: Set(ReactionKind.allCases.filter { model.hasReacted(to: post, kind: $0) }.map(\.rawValue)),
             onEdit: { editing = post },
             onDelete: { deleting = post },
-            onReact: { kind in Task { await model.react(to: post, kind: kind) } }
+            onReact: { kind in Task { await model.toggleReaction(to: post, kind: kind) } }
         ))
     }
 
@@ -678,6 +739,11 @@ private struct MomentActions: ViewModifier {
     let post: Post
     let canEdit: Bool
     let canReact: Bool
+    /// Raw values of the kinds the signed-in user has already used here, so the
+    /// same control can offer to take one back. Raw values rather than the enum
+    /// because `ReactionKind` carries an associated value and is not Hashable
+    /// into a Set as cheaply.
+    let mine: Set<String>
     let onEdit: () -> Void
     let onDelete: () -> Void
     let onReact: (ReactionKind) -> Void
@@ -711,13 +777,21 @@ private struct MomentActions: ViewModifier {
                         Button { onReact(kind) } label: {
                             Text(kind.emoji)
                         }
-                        .tint(PearColor.accent.opacity(0.25))
+                        // The ones already used are filled in, so a swipe shows
+                        // at a glance which of the three would be taken back.
+                        .tint(mine.contains(kind.rawValue)
+                            ? PearColor.accent.opacity(0.6)
+                            : PearColor.accent.opacity(0.2))
                     }
                 }
                 .contextMenu {
                     ForEach(ReactionKind.allCases, id: \.rawValue) { kind in
                         Button { onReact(kind) } label: {
-                            Text("\(kind.emoji)  \(kind.accessibilityLabel)")
+                            if mine.contains(kind.rawValue) {
+                                Label("\(kind.emoji)  \(kind.accessibilityLabel)", systemImage: "checkmark")
+                            } else {
+                                Text("\(kind.emoji)  \(kind.accessibilityLabel)")
+                            }
                         }
                     }
                 }

@@ -733,6 +733,53 @@ final class HomeModel {
 
     // MARK: Reactions
 
+    /// Whether the signed-in user has already used this kind on the hero, which
+    /// is what makes the button a toggle rather than a one-way door.
+    func hasReacted(kind: ReactionKind) -> Bool {
+        myReaction(kind: kind) != nil
+    }
+
+    private func myReaction(kind: ReactionKind) -> Reaction? {
+        reactions.first { $0.user == signedInUserID && $0.kind == kind }
+    }
+
+    /// Adds the reaction, or takes it back if it is already there.
+    ///
+    /// Same control for both, because "cheers" and "un-cheers" are the same
+    /// thought — and tapping the wrong one of three emoji is easy enough that
+    /// add-only left people stuck with it.
+    func toggleReaction(kind: ReactionKind) async {
+        if myReaction(kind: kind) != nil {
+            await unreact(kind: kind)
+        } else {
+            await react(kind: kind)
+        }
+    }
+
+    private func unreact(kind: ReactionKind) async {
+        // `reactions` only ever holds the displayed post's, so finding one of
+        // mine is enough — there is nothing else it could belong to.
+        guard let mine = myReaction(kind: kind) else { return }
+        do {
+            try await api.removeReaction(id: mine.id)
+        } catch let error as APIError where error.status == 404 {
+            // Already gone — another device, or a retry. Reloading below simply
+            // catches this one up.
+        } catch let error as APIError {
+            if case .unauthorized = error {
+                await app.clearSessionAndReturnToAuth()
+                return
+            }
+            banner = error.localizedDescription
+            return
+        } catch {
+            banner = message(for: error)
+            return
+        }
+        await loadReactions()
+        banner = nil
+    }
+
     /// Requirement 14.2, 14.4, 14.5.
     func react(kind: ReactionKind) async {
         guard let post = displayedPost else { return }

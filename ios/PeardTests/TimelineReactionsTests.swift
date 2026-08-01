@@ -113,21 +113,87 @@ final class TimelineReactionsTests: XCTestCase {
         await model.loadFirstPage()
 
         TimelineStubProtocol.failReactions(with: URLError(.cancelled))
-        await model.react(to: Self.theirs, kind: .cheers)
+        await model.toggleReaction(to: Self.theirs, kind: .cheers)
 
         XCTAssertEqual(model.reactionKinds(for: Self.theirs), [.cheers])
         XCTAssertNil(model.error, "the write succeeded; a cancelled re-read is not the user's problem")
     }
 
-    func testReactingTwiceWithTheSameKindDoesNotDoubleTheRow() async {
+    /// Kinds are independent: a second one adds to the row rather than
+    /// replacing the first.
+    func testASecondKindAddsRatherThanReplaces() async {
         TimelineStubProtocol.route(posts: [Self.theirs], reactions: [])
         await model.loadFirstPage()
 
         TimelineStubProtocol.failReactions(with: URLError(.cancelled))
-        await model.react(to: Self.theirs, kind: .cheers)
-        await model.react(to: Self.theirs, kind: .cheers)
+        await model.toggleReaction(to: Self.theirs, kind: .cheers)
+        await model.toggleReaction(to: Self.theirs, kind: .heart)
 
-        XCTAssertEqual(model.reactionKinds(for: Self.theirs), [.cheers])
+        XCTAssertEqual(model.reactionKinds(for: Self.theirs), [.cheers, .heart])
+    }
+
+    // MARK: Taking one back
+
+    func testReactingAgainWithTheSameKindTakesItBack() async {
+        TimelineStubProtocol.route(posts: [Self.theirs], reactions: [
+            reaction(id: "r1", post: "theirs", user: "me", kind: .cheers),
+        ])
+        await model.loadFirstPage()
+        XCTAssertTrue(model.hasReacted(to: Self.theirs, kind: .cheers))
+
+        TimelineStubProtocol.route(posts: [Self.theirs], reactions: [])
+        await model.toggleReaction(to: Self.theirs, kind: .cheers)
+
+        XCTAssertFalse(model.hasReacted(to: Self.theirs, kind: .cheers))
+        XCTAssertTrue(model.reactionKinds(for: Self.theirs).isEmpty)
+        XCTAssertEqual(TimelineStubProtocol.lastDeletedID, "r1")
+    }
+
+    /// Somebody else's reaction of the same kind is not yours to remove, and
+    /// must not make the control think it has something to take back.
+    func testAnotherPersonsReactionIsNotYoursToTakeBack() async {
+        TimelineStubProtocol.route(posts: [Self.theirs], reactions: [
+            reaction(id: "r1", post: "theirs", user: "someone", kind: .heart),
+        ])
+        await model.loadFirstPage()
+
+        XCTAssertFalse(model.hasReacted(to: Self.theirs, kind: .heart))
+        XCTAssertEqual(model.reactionKinds(for: Self.theirs), [.heart], "it is still shown, just not yours")
+    }
+
+    /// The window this is really about: react, have the reconciliation
+    /// cancelled so only the placeholder id is known, then immediately undo. A
+    /// made-up id must never be sent to the server.
+    func testUndoWorksBeforeTheServerIdIsKnown() async {
+        TimelineStubProtocol.route(posts: [Self.theirs], reactions: [])
+        await model.loadFirstPage()
+
+        TimelineStubProtocol.failReactions(with: URLError(.cancelled))
+        await model.toggleReaction(to: Self.theirs, kind: .cheers)
+        XCTAssertTrue(model.hasReacted(to: Self.theirs, kind: .cheers), "drawn from the accepted write")
+
+        // The re-read now works, so the real id becomes knowable.
+        TimelineStubProtocol.route(posts: [Self.theirs], reactions: [
+            reaction(id: "server-id", post: "theirs", user: "me", kind: .cheers),
+        ])
+        await model.toggleReaction(to: Self.theirs, kind: .cheers)
+
+        XCTAssertEqual(TimelineStubProtocol.lastDeletedID, "server-id", "never the placeholder")
+        XCTAssertFalse(model.hasReacted(to: Self.theirs, kind: .cheers))
+    }
+
+    /// And if the id still cannot be learned, nothing is sent at all — better a
+    /// reaction that stays until the next load than a delete aimed at an id the
+    /// server has never heard of.
+    func testUndoSendsNothingWhenTheRealIDCannotBeLearned() async {
+        TimelineStubProtocol.route(posts: [Self.theirs], reactions: [])
+        await model.loadFirstPage()
+
+        TimelineStubProtocol.failReactions(with: URLError(.cancelled))
+        await model.toggleReaction(to: Self.theirs, kind: .cheers)
+        await model.toggleReaction(to: Self.theirs, kind: .cheers)
+
+        XCTAssertNil(TimelineStubProtocol.lastDeletedID)
     }
 
     // MARK: Who may
@@ -153,6 +219,15 @@ final class TimelineStubProtocol: URLProtocol {
     nonisolated(unsafe) private static var postsJSON = #"{"items":[]}"#
     nonisolated(unsafe) private static var reactionsJSON = #"{"items":[]}"#
     nonisolated(unsafe) private static var reactionsError: Error?
+    nonisolated(unsafe) private static var deletedID: String?
+
+    /// The id the last DELETE was aimed at, which is the whole question when a
+    /// reaction may still be carrying a locally-made-up one.
+    static var lastDeletedID: String? {
+        lock.lock()
+        defer { lock.unlock() }
+        return deletedID
+    }
 
     static func makeSession() -> URLSession {
         let configuration = URLSessionConfiguration.ephemeral
@@ -179,6 +254,7 @@ final class TimelineStubProtocol: URLProtocol {
         postsJSON = #"{"items":[]}"#
         reactionsJSON = #"{"items":[]}"#
         reactionsError = nil
+        deletedID = nil
         lock.unlock()
     }
 
@@ -206,6 +282,9 @@ final class TimelineStubProtocol: URLProtocol {
         // has already accepted.
         let isRead = request.httpMethod == "GET"
         Self.lock.lock()
+        if request.httpMethod == "DELETE" {
+            Self.deletedID = request.url?.lastPathComponent
+        }
         let error = path.contains("reactions") && isRead ? Self.reactionsError : nil
         let json: String
         if !isRead {

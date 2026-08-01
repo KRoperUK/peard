@@ -432,6 +432,15 @@ public extension APIClient {
         )
     }
 
+    /// Takes back one of your own reactions.
+    ///
+    /// The ordinary collection endpoint: `reactions.DeleteRule` is already
+    /// `user = @request.auth.id`, so the rule that decides this lives in one
+    /// place and a route would only be a second one.
+    func removeReaction(id: String) async throws {
+        try await delete("reactions", id: id)
+    }
+
     /// Reactions to several posts at once, for a screen showing a page of them.
     ///
     /// Chunked at ten posts a request, which is not arbitrary: PocketBase caps

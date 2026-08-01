@@ -275,16 +275,28 @@ struct HomeView: View {
             HStack(spacing: 8) {
                 if model.canReactToDisplayedPost {
                     ForEach(ReactionKind.allCases, id: \.rawValue) { kind in
+                        let isMine = model.hasReacted(kind: kind)
                         Button {
-                            Task { await model.react(kind: kind) }
+                            Task { await model.toggleReaction(kind: kind) }
                         } label: {
                             Text(kind.emoji)
                                 .font(.footnote)
                                 .padding(6)
+                                // Ringed rather than recoloured: the emoji is
+                                // the content, and tinting it would change what
+                                // the reaction looks like as well as saying it
+                                // is yours.
                                 .background(PearColor.background, in: Circle())
+                                .overlay(
+                                    Circle().strokeBorder(isMine ? PearColor.accent : .clear, lineWidth: 1.5)
+                                )
                         }
                         .buttonStyle(.plain)
-                        .accessibilityLabel("React with \(kind.accessibilityLabel)")
+                        .accessibilityLabel(
+                            isMine
+                                ? "Take back your \(kind.accessibilityLabel)"
+                                : "React with \(kind.accessibilityLabel)"
+                        )
                     }
                 }
 
