@@ -334,11 +334,23 @@ final class HistoryModel {
         await fetchNextPage()
     }
 
+    /// Re-reads the timeline from the top.
+    ///
+    /// Nothing is thrown away up front. Pull-to-refresh runs this inside a task
+    /// SwiftUI cancels the moment the control retracts, and a version that
+    /// emptied `posts` first left a real device showing "Nothing here yet" over
+    /// the word "cancelled" — a screenful of moments replaced by an empty state
+    /// and an error, for a request that had simply stopped mattering. What is on
+    /// screen now stays there until a page arrives to replace it.
     func reload() async {
-        nextPage = 1
-        posts = []
-        hasMore = false
-        await fetchNextPage()
+        guard let page = await fetchPage(1) else { return }
+        posts = page.posts
+        totalItems = page.totalItems
+        hasMore = page.hasMore
+        nextPage = page.nextPage
+        // Reactions for the replacement set. Their own failure is already quiet
+        // — see `loadReactions`.
+        await loadReactions(for: page.posts.map(\.id))
     }
 
     /// Called as the last row appears. Guarded against re-entry so a fast scroll
@@ -435,22 +447,35 @@ final class HistoryModel {
     // MARK: Loading
 
     private func fetchNextPage() async {
+        guard let page = await fetchPage(nextPage) else { return }
+        // Guard against a duplicate arriving from a page boundary shifting
+        // under us as new moments land: appending blindly would double a row.
+        let known = Set(posts.map(\.id))
+        let fresh = page.posts.filter { !known.contains($0.id) }
+        posts.append(contentsOf: fresh)
+        totalItems = page.totalItems
+        hasMore = page.hasMore
+        nextPage = page.nextPage
+        // Only the posts this page added, so scrolling does not re-fetch
+        // reactions for everything above.
+        await loadReactions(for: fresh.map(\.id))
+    }
+
+    /// Fetches one page, or returns nil having decided what the failure means.
+    ///
+    /// A cancellation is not a failure and leaves `error` alone: the request
+    /// stopped mattering, which is nothing the person using the app did or needs
+    /// to know. Anything else is worth saying.
+    private func fetchPage(_ page: Int) async -> PostPage? {
         do {
-            let page = try await api.postsPage(pairID: pairID, page: nextPage, perPage: Self.pageSize)
-            // Guard against a duplicate arriving from a page boundary shifting
-            // under us as new moments land: appending blindly would double a row.
-            let known = Set(posts.map(\.id))
-            let fresh = page.posts.filter { !known.contains($0.id) }
-            posts.append(contentsOf: fresh)
-            totalItems = page.totalItems
-            hasMore = page.hasMore
-            nextPage = page.nextPage
+            let result = try await api.postsPage(pairID: pairID, page: page, perPage: Self.pageSize)
             error = nil
-            // Only the posts this page added, so scrolling does not re-fetch
-            // reactions for everything above.
-            await loadReactions(for: fresh.map(\.id))
+            return result
+        } catch let error as APIError where error.isCancellation {
+            return nil
         } catch {
             self.error = (error as? APIError)?.localizedDescription ?? error.localizedDescription
+            return nil
         }
     }
 }

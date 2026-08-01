@@ -196,6 +196,48 @@ final class TimelineReactionsTests: XCTestCase {
         XCTAssertNil(TimelineStubProtocol.lastDeletedID)
     }
 
+    // MARK: A cancelled refresh
+
+    /// Reported from a real device: pull to refresh, and the timeline emptied
+    /// and captioned itself "cancelled". `reload()` threw the posts away before
+    /// fetching, and the fetch was then cancelled with the refresh control.
+    func testACancelledRefreshKeepsTheTimelineAndSaysNothing() async {
+        TimelineStubProtocol.route(posts: [Self.mine, Self.theirs], reactions: [])
+        await model.loadFirstPage()
+        XCTAssertEqual(model.posts.count, 2)
+
+        TimelineStubProtocol.failEverything(with: URLError(.cancelled))
+        await model.reload()
+
+        XCTAssertEqual(model.posts.count, 2, "a cancelled refresh must not empty the timeline")
+        XCTAssertNil(model.error, "and must not caption it with a word from URLSession")
+    }
+
+    /// A refresh that genuinely fails still says so — the point is to tell the
+    /// two apart, not to go quiet about everything.
+    func testARefreshThatReallyFailsStillReportsIt() async {
+        TimelineStubProtocol.route(posts: [Self.theirs], reactions: [])
+        await model.loadFirstPage()
+
+        TimelineStubProtocol.failEverything(with: URLError(.notConnectedToInternet))
+        await model.reload()
+
+        XCTAssertEqual(model.posts.count, 1, "and still keeps what it had")
+        XCTAssertNotNil(model.error)
+    }
+
+    /// The successful case still replaces rather than appending, or a refresh
+    /// would double every row.
+    func testASuccessfulRefreshReplacesTheTimeline() async {
+        TimelineStubProtocol.route(posts: [Self.mine, Self.theirs], reactions: [])
+        await model.loadFirstPage()
+
+        TimelineStubProtocol.route(posts: [Self.theirs], reactions: [])
+        await model.reload()
+
+        XCTAssertEqual(model.posts.map(\.id), ["theirs"])
+    }
+
     // MARK: Who may
 
     func testYouCanReactToSomebodyElsesMomentButNotYourOwn() {
@@ -219,6 +261,7 @@ final class TimelineStubProtocol: URLProtocol {
     nonisolated(unsafe) private static var postsJSON = #"{"items":[]}"#
     nonisolated(unsafe) private static var reactionsJSON = #"{"items":[]}"#
     nonisolated(unsafe) private static var reactionsError: Error?
+    nonisolated(unsafe) private static var postsError: Error?
     nonisolated(unsafe) private static var deletedID: String?
 
     /// The id the last DELETE was aimed at, which is the whole question when a
@@ -240,6 +283,7 @@ final class TimelineStubProtocol: URLProtocol {
         postsJSON = envelope(posts)
         reactionsJSON = envelope(reactions)
         reactionsError = nil
+        postsError = nil
         lock.unlock()
     }
 
@@ -249,11 +293,20 @@ final class TimelineStubProtocol: URLProtocol {
         lock.unlock()
     }
 
+    /// Fails the posts request too, which is what a cancelled refresh does.
+    static func failEverything(with error: Error) {
+        lock.lock()
+        reactionsError = error
+        postsError = error
+        lock.unlock()
+    }
+
     static func reset() {
         lock.lock()
         postsJSON = #"{"items":[]}"#
         reactionsJSON = #"{"items":[]}"#
         reactionsError = nil
+        postsError = nil
         deletedID = nil
         lock.unlock()
     }
@@ -285,7 +338,12 @@ final class TimelineStubProtocol: URLProtocol {
         if request.httpMethod == "DELETE" {
             Self.deletedID = request.url?.lastPathComponent
         }
-        let error = path.contains("reactions") && isRead ? Self.reactionsError : nil
+        let error: Error?
+        if !isRead {
+            error = nil
+        } else {
+            error = path.contains("reactions") ? Self.reactionsError : Self.postsError
+        }
         let json: String
         if !isRead {
             // PocketBase echoes the created record back.

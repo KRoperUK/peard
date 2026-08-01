@@ -13,6 +13,13 @@ public enum APIError: Error, LocalizedError, Hashable {
     case transport(String)
     /// A 2xx response whose body could not be decoded.
     case decoding(String)
+    /// The request was cancelled — the task it belonged to went away.
+    ///
+    /// Its own case because it is not a failure and must never be shown to
+    /// anybody. SwiftUI cancels the task behind `.refreshable` the moment the
+    /// control retracts, and while that was folded in with transport errors a
+    /// pull-to-refresh could empty the timeline and caption it "cancelled".
+    case cancelled
 
     public var status: Int? {
         switch self {
@@ -30,6 +37,16 @@ public enum APIError: Error, LocalizedError, Hashable {
         }
     }
 
+    /// True when nothing went wrong and the request simply stopped mattering.
+    ///
+    /// Callers that show errors should check this first: a cancelled request
+    /// has no news for the person using the app, and saying "cancelled" where a
+    /// timeline should be reads as a crash.
+    public var isCancellation: Bool {
+        if case .cancelled = self { return true }
+        return false
+    }
+
     public var errorDescription: String? {
         switch self {
         case .invalidURL:
@@ -42,6 +59,11 @@ public enum APIError: Error, LocalizedError, Hashable {
             return description
         case .decoding(let description):
             return "Unexpected response from the server. \(description)"
+        case .cancelled:
+            // Nothing should ever render this. It exists so that a caller which
+            // ignores `isCancellation` prints something honest rather than the
+            // bare word "cancelled" in the middle of a screen.
+            return "That request was cancelled before it finished."
         }
     }
 }
@@ -382,6 +404,14 @@ public final class APIClient: Sendable {
         let response: URLResponse
         do {
             (data, response) = try await session.data(for: request)
+        } catch let error as URLError where error.code == .cancelled {
+            // Separated from the transport errors below because it is not one.
+            // URLSession reports a cancelled request this way, and folding it in
+            // meant "cancelled" was shown to users as though the server had said
+            // it.
+            throw APIError.cancelled
+        } catch is CancellationError {
+            throw APIError.cancelled
         } catch let error as URLError {
             throw APIError.transport(error.localizedDescription)
         } catch {

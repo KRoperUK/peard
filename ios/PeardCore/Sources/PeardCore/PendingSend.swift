@@ -163,6 +163,13 @@ public enum SendFailure: Sendable {
             return .permanent("The server URL is not valid.")
         case .transport(let message):
             return .retryable(message)
+        case .cancelled:
+            // Nothing was learned: the request went away before the server
+            // answered, so the moment may or may not have been written. Retrying
+            // is the safe half of that — `client_id` makes the write idempotent,
+            // so a duplicate cannot result, whereas giving up loses a moment
+            // somebody logged.
+            return .retryable("Interrupted")
         case .unauthorized:
             return .retryable("Not signed in")
         case .decoding(let message):

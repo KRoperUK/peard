@@ -770,9 +770,11 @@ final class HomeModel {
                 await app.clearSessionAndReturnToAuth()
                 return
             }
+            guard isWorthReporting(error) else { return }
             banner = error.localizedDescription
             return
         } catch {
+            guard isWorthReporting(error) else { return }
             banner = message(for: error)
             return
         }
@@ -803,10 +805,14 @@ final class HomeModel {
                 banner = nil
                 return
             }
-            // Any other failure hides the reactions (clarification Q15).
+            // Any other failure hides the reactions (clarification Q15) —
+            // except a cancellation, which is not a failure and must not take
+            // the reactions down with it.
+            guard isWorthReporting(error) else { return }
             reactions = []
             banner = error.localizedDescription
         } catch {
+            guard isWorthReporting(error) else { return }
             reactions = []
             banner = message(for: error)
         }
@@ -824,6 +830,7 @@ final class HomeModel {
 
     private func report(_ error: Error) async {
         if await app.handleIfUnauthorized(error) { return }
+        guard isWorthReporting(error) else { return }
         banner = message(for: error)
     }
 
@@ -832,5 +839,14 @@ final class HomeModel {
             return apiError.localizedDescription
         }
         return error.localizedDescription
+    }
+
+    /// Whether this error is worth putting in front of somebody.
+    ///
+    /// A cancellation is not: the home screen refreshes on foreground, on a
+    /// timer and on pull, and any of those can be cancelled by the next one
+    /// starting. Reporting them turned ordinary churn into a banner.
+    private func isWorthReporting(_ error: Error) -> Bool {
+        !((error as? APIError)?.isCancellation ?? false)
     }
 }
