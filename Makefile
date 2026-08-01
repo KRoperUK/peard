@@ -49,9 +49,16 @@ project: hooks
 # failed with "cannot find X in scope" for a type whose file is plainly on disk,
 # or worse, succeeded while quietly leaving the new code out. Directories rather
 # than files on purpose: editing a file needs no regeneration, adding one does.
+#
+# Asset catalogues are pruned rather than watched. xcodegen references an
+# .xcassets as a single directory, so a PNG added inside one needs no
+# regeneration — and their subdirectories are the one place here with spaces in
+# their names ("iMessage App Icon.stickersiconset"), which make splits into
+# three prerequisites it then cannot find. Correctness and robustness happen to
+# want the same prune.
 SOURCE_DIRS := $(shell find ios/Peard ios/PearWidget ios/PearMessages ios/PeardTests \
                         ios/PeardCore/Sources ios/PeardCore/Tests ios/Shared \
-                        -type d 2>/dev/null)
+                        -name '*.xcassets' -prune -o -type d -print 2>/dev/null)
 
 # `| hooks` is order-only on purpose. hooks is .PHONY, and a phony *normal*
 # prerequisite would make this file target perpetually out of date — xcodegen

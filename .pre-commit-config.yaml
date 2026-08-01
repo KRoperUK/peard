@@ -65,6 +65,19 @@ repos:
         files: ^ios/project\.yml$
         pass_filenames: false
 
+      # Resolves the dependency graph without building anything, which is where
+      # an unbuildable prerequisite surfaces. Added because a change to
+      # SOURCE_DIRS pulled in a directory whose name contains spaces — make
+      # split it into three prerequisites it could not find, and every iOS job
+      # died in twelve seconds on "No rule to make target". `make -n` says the
+      # same thing in milliseconds.
+      - id: make-graph
+        name: make -n
+        entry: bash -c 'make -n app >/dev/null && make -n test-app >/dev/null'
+        language: system
+        files: ^Makefile$
+        pass_filenames: false
+
       # Catches a bad ${VAR} default and an override the local Compose is too
       # old to parse — otherwise found by a Docker job that takes a minute to
       # say so.
@@ -83,7 +96,7 @@ repos:
         name: go test
         entry: bash -c 'cd server && go test ./...'
         language: system
-        files: ^server/
+        files: ^(server/|Makefile$)
         pass_filenames: false
         stages: [pre-push]
 
@@ -91,7 +104,7 @@ repos:
         name: swift test (PeardCore)
         entry: bash -c 'cd ios/PeardCore && swift test'
         language: system
-        files: ^ios/PeardCore/
+        files: ^(ios/PeardCore/|Makefile$)
         pass_filenames: false
         stages: [pre-push]
 
@@ -101,6 +114,6 @@ repos:
         name: app-target tests
         entry: make test-app
         language: system
-        files: ^ios/
+        files: ^(ios/|Makefile$)
         pass_filenames: false
         stages: [pre-push]
