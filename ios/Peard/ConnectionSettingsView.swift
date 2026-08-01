@@ -47,6 +47,7 @@ struct ConnectionSettingsView: View {
                 yourNameSection
                 discoverabilitySection
                 accountSection
+                AboutSection(api: app.api, serverURL: model.serverURL)
                 leaveSection
             }
             .scrollDismissesKeyboard(.interactively)

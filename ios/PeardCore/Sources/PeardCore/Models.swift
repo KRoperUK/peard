@@ -1259,3 +1259,33 @@ public struct RecordList<Item: Codable & Hashable & Sendable>: Codable, Hashable
         self.totalPages = totalPages
     }
 }
+
+/// Response of `GET /api/peard/status` — which build of the server is running.
+///
+/// Every field is optional-with-a-fallback because this is the one call whose
+/// whole job is to work when something else is wrong: a server too old to have
+/// the route at all is itself the answer, and a decode failure here would hide
+/// it behind a generic error.
+public struct ServerStatus: Codable, Hashable, Sendable {
+    public let commit: String
+    public let builtAt: String
+    public let go: String
+
+    enum CodingKeys: String, CodingKey {
+        case commit, go
+        case builtAt = "built_at"
+    }
+
+    public init(commit: String = "unknown", builtAt: String = "unknown", go: String = "unknown") {
+        self.commit = commit
+        self.builtAt = builtAt
+        self.go = go
+    }
+
+    public init(from decoder: any Decoder) throws {
+        let container = try decoder.container(keyedBy: CodingKeys.self)
+        commit = try container.decodeIfPresent(String.self, forKey: .commit) ?? "unknown"
+        builtAt = try container.decodeIfPresent(String.self, forKey: .builtAt) ?? "unknown"
+        go = try container.decodeIfPresent(String.self, forKey: .go) ?? "unknown"
+    }
+}

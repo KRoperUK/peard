@@ -134,6 +134,15 @@ public extension APIClient {
         try await postIgnoringResponse(path: "/api/peard/connections/seen", fields: ["pair": pairID])
     }
 
+    /// `GET /api/peard/status` — which build of the server is running.
+    ///
+    /// Unauthenticated, so it answers before sign-in and while a session is
+    /// broken — which is when somebody most wants to know what they are talking
+    /// to.
+    func serverStatus() async throws -> ServerStatus {
+        try await get(path: "/api/peard/status")
+    }
+
     /// `GET /api/peard/profile` — the caller's own record.
     func profile() async throws -> UserProfile {
         try await get(path: "/api/peard/profile")
