@@ -39,9 +39,15 @@ final class MomentTrayModel {
 
     private(set) var phase: Phase = .loading
     private(set) var connections: [WidgetConnection] = []
-    private(set) var moments: [WidgetFeed.AvailableMoment] = MomentTrayModel.builtin
     private(set) var status: Status = .idle
     private(set) var selectedID: String?
+
+    /// The selected connection's feed, kept whole.
+    ///
+    /// The tray fetched this all along and kept only `moments`, throwing away
+    /// the tallies and the latest moment that came with it — which is most of
+    /// what makes a tray worth *opening* rather than only worth tapping.
+    private(set) var feed: WidgetFeed?
 
     /// The three every connection has without any setup. Used before the
     /// connection's own catalogue arrives, and as the fallback when it cannot
@@ -61,6 +67,17 @@ final class MomentTrayModel {
 
     var selectedConnection: WidgetConnection? {
         connections.first { $0.id == selectedID }
+    }
+
+    /// What the buttons offer: the connection's own catalogue, else the three
+    /// every connection has.
+    ///
+    /// The fallback matters at both ends — before the feed arrives, and if it
+    /// never does. A tray that cannot log a beer because a secondary request
+    /// failed is worse than one missing the custom moments.
+    var moments: [WidgetFeed.AvailableMoment] {
+        let published = feed?.moments ?? []
+        return published.isEmpty ? Self.builtin : published
     }
 
     /// Only worth offering a choice when there is one to make.
@@ -104,7 +121,7 @@ final class MomentTrayModel {
             ?? connections[0].id
 
         phase = .ready
-        await loadMoments()
+        await loadFeed()
     }
 
     func select(_ id: String) async {
@@ -112,23 +129,76 @@ final class MomentTrayModel {
         selectedID = id
         store.messagesConnectionID = id
         status = .idle
-        await loadMoments()
+        await loadFeed()
     }
 
-    /// The chosen connection's own catalogue.
+    /// The chosen connection's feed: its catalogue, its tallies, its latest
+    /// moment.
     ///
-    /// A failure leaves the built-ins in place rather than emptying the tray:
-    /// the three of them work in every connection, and a tray with no buttons is
-    /// worse than a tray missing the custom ones.
-    private func loadMoments() async {
+    /// Cleared before the request rather than after it, because both callers are
+    /// establishing or changing the connection. Holding the old feed through a
+    /// switch would put *another connection's* numbers under the new
+    /// connection's name, which is worse than showing none; a failure falls back
+    /// to the built-in moments and an empty summary.
+    private func loadFeed() async {
+        feed = nil
         guard let token = store.widgetToken, let baseURL = store.apiBaseURL, let selectedID else { return }
         let api = APIClient(baseURL: baseURL)
-        guard let feed = try? await api.widgetFeed(token: token, pairID: selectedID) else {
-            moments = Self.builtin
-            return
+        feed = try? await api.widgetFeed(token: token, pairID: selectedID)
+    }
+
+    // MARK: Summary
+
+    /// What the connection has been up to, above the buttons.
+    ///
+    /// The counts and the moment are *other people's*: `GET /api/peard/widget`
+    /// filters on `author != user`, which is the right question for a widget
+    /// telling you what somebody else has done. That makes the heading
+    /// load-bearing here in a way it is not on a home screen — a bare "Today"
+    /// beside a Coffee button that never moves the coffee count reads as a
+    /// broken counter, so the heading names whose day is being counted.
+    struct Summary: Equatable {
+        struct Latest: Equatable {
+            var emoji: String
+            var label: String
+            var author: String
+            var note: String?
+            var at: Date?
         }
-        let published = feed.moments ?? []
-        moments = published.isEmpty ? Self.builtin : published
+
+        /// Whose day the counts describe.
+        var heading: String
+        var tallies: [WidgetFeed.Tally]
+        var latest: Latest?
+
+        static let none = Summary(heading: "", tallies: [], latest: nil)
+
+        var isEmpty: Bool { tallies.isEmpty && latest == nil }
+    }
+
+    var summary: Summary { Self.summary(from: feed) }
+
+    static func summary(from feed: WidgetFeed?) -> Summary {
+        guard let feed, feed.state != .unpaired else { return .none }
+
+        // A group's counts mix everybody but you, so no single name is honest
+        // there. Naming the one other person is, and that is the common case.
+        let heading = feed.isGroup ? "Everyone else today" : "\(feed.partnerName) today"
+
+        let latest = feed.post.map { post in
+            Summary.Latest(
+                emoji: post.displayEmoji,
+                // `displayLabel` has nothing to work with for a photo — a photo
+                // post carries no `event_kind` — and returns "".
+                label: post.type == .photo ? "Photo" : post.displayLabel,
+                // The server resolves this to a display name, not an id.
+                author: post.author.flatMap { $0.isEmpty ? nil : $0 } ?? feed.partnerName,
+                note: post.displayNote,
+                at: post.created
+            )
+        }
+
+        return Summary(heading: heading, tallies: feed.displayTallies, latest: latest)
     }
 
     // MARK: Logging
@@ -155,6 +225,11 @@ final class MomentTrayModel {
             status = .failed
             return false
         }
+        // Deliberately not re-fetching the feed. Both halves of the summary
+        // exclude your own posts, so a round trip here would cost a second of
+        // latency to redraw exactly the same numbers. The status line is what
+        // acknowledges the tap; the summary refreshes when the tray is next
+        // opened.
         status = .logged(moment: moment.label, connection: selectedConnection?.title ?? "")
         return true
     }
