@@ -309,6 +309,7 @@ struct HistoryView: View {
     @State private var model: HistoryModel
     @State private var editing: Post?
     @State private var deleting: Post?
+    @State private var viewing: Post?
     private let serverURL: URL
     private let title: String
 
@@ -334,6 +335,16 @@ struct HistoryView: View {
         }
         .sheet(item: $editing) { post in
             MomentEditSheet(post: post, moments: model.moments, model: model)
+        }
+        // Full screen rather than a sheet: a sheet leaves the timeline showing
+        // above it, and the whole point is the photo.
+        .fullScreenCover(item: $viewing) { post in
+            PhotoViewer(
+                post: post,
+                serverURL: serverURL,
+                authorLabel: model.authorLabel(for: post),
+                timestamp: model.time(for: post)
+            )
         }
         // A swipe is easy to do by accident on a list you are scrolling, and this
         // one cannot be undone, so it asks. The sheet has its own confirmation
@@ -460,7 +471,14 @@ struct HistoryView: View {
 
     private func row(for post: Post) -> some View {
         HStack(alignment: .top, spacing: 12) {
+            // Only the thumbnail opens the photo, not the whole row: the row is
+            // also the swipe and long-press target, and a tap that opened a
+            // full-screen view from anywhere on it would fire every time
+            // somebody meant to start a swipe.
             thumbnail(for: post)
+                .onTapGesture {
+                    if post.hasMedia { viewing = post }
+                }
 
             VStack(alignment: .leading, spacing: 2) {
                 HStack(spacing: 5) {
@@ -496,6 +514,11 @@ struct HistoryView: View {
         .listRowBackground(PearColor.background)
         .accessibilityElement(children: .combine)
         .accessibilityLabel(accessibilityLabel(for: post))
+        // The combined element swallows the thumbnail's own tap target, so
+        // VoiceOver gets the photo as a named action instead of losing it.
+        .accessibilityAction(named: "Open photo") {
+            if post.hasMedia { viewing = post }
+        }
         .modifier(MomentActions(
             post: post,
             canEdit: model.canEdit(post),
@@ -506,6 +529,7 @@ struct HistoryView: View {
 
     private func accessibilityLabel(for post: Post) -> String {
         var parts = [model.authorLabel(for: post), model.detail(for: post)]
+        if post.hasMedia { parts.append("photo") }
         if post.isEdited { parts.append("edited") }
         let time = model.time(for: post)
         if !time.isEmpty { parts.append(time) }

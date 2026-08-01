@@ -23,6 +23,7 @@ struct HomeView: View {
     @State private var model: HomeModel
     @State private var showCamera = false
     @State private var showMomentSheet = false
+    @State private var viewingPhoto: Post?
     @FocusState private var noteFocused: Bool
 
     /// Switches to the tallies tab. The breakdown strip is a summary, and its whole
@@ -75,6 +76,14 @@ struct HomeView: View {
         }
         .onChange(of: model.noteText) { _, _ in
             model.noteDidChange()
+        }
+        .fullScreenCover(item: $viewingPhoto) { post in
+            PhotoViewer(
+                post: post,
+                serverURL: model.serverURL,
+                authorLabel: model.authorLabel(for: post),
+                timestamp: ElapsedTime.label(for: post.created)
+            )
         }
         .pearAnimation(value: model.toast ?? "")
         .alert(item: $model.alert)
@@ -244,7 +253,14 @@ struct HomeView: View {
             }
             .frame(width: 72, height: 72)
             .clipShape(RoundedRectangle(cornerRadius: 12))
+            .contentShape(RoundedRectangle(cornerRadius: 12))
+            // The hero is the most recent thing that landed, and if it is a
+            // photo, the thumbnail is the smallest part of the screen and the
+            // one people actually want to see.
+            .onTapGesture { viewingPhoto = post }
             .accessibilityLabel("Photo from \(model.authorLabel(for: post))")
+            .accessibilityHint("Opens the photo full screen")
+            .accessibilityAddTraits(.isButton)
         } else {
             Text(model.emoji(for: post))
                 .font(.system(size: 44))

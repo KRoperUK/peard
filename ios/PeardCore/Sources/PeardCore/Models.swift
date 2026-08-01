@@ -247,9 +247,23 @@ public struct Post: Codable, Hashable, Sendable, Identifiable {
 
     /// Path of the 512-point thumbnail for this post's attachment.
     public func mediaThumbnailPath() -> String? {
-        guard hasMedia, let media else { return nil }
-        let escaped = media.addingPercentEncoding(withAllowedCharacters: .urlPathAllowed) ?? media
+        guard let escaped = escapedMediaFilename else { return nil }
         return "/api/files/posts/\(id)/\(escaped)?thumb=512x512"
+    }
+
+    /// Path of the attachment at the size it was uploaded.
+    ///
+    /// Only for a viewer that fills the screen. Everywhere else wants the
+    /// thumbnail: these are camera photos, and pulling several megabytes to
+    /// draw a 36-point row is slow on the timeline and rude on a phone plan.
+    public func mediaPath() -> String? {
+        guard let escaped = escapedMediaFilename else { return nil }
+        return "/api/files/posts/\(id)/\(escaped)"
+    }
+
+    private var escapedMediaFilename: String? {
+        guard hasMedia, let media else { return nil }
+        return media.addingPercentEncoding(withAllowedCharacters: .urlPathAllowed) ?? media
     }
 }
 
