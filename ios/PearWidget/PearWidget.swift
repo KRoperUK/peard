@@ -303,22 +303,7 @@ struct PearWidgetEntryView: View {
     @ViewBuilder
     private var content: some View {
         if let image = entry.image {
-            ZStack(alignment: .bottomLeading) {
-                Image(uiImage: image)
-                    .resizable()
-                    .scaledToFill()
-                    .frame(maxWidth: .infinity, maxHeight: .infinity)
-                    .clipped()
-                    .accessibilityLabel("Latest photo from \(attribution)")
-                VStack(alignment: .leading, spacing: 2) {
-                    Text(attribution).font(.caption).bold().lineLimit(1)
-                    talliesRow
-                }
-                .padding(6)
-                .background(.ultraThinMaterial, in: RoundedRectangle(cornerRadius: 10))
-                .padding(6)
-            }
-            .clipShape(RoundedRectangle(cornerRadius: 12))
+            photoContent(image)
         } else {
             VStack(spacing: 4) {
                 Text(entry.emoji)
@@ -342,6 +327,92 @@ struct PearWidgetEntryView: View {
             }
             .frame(maxWidth: .infinity)
         }
+    }
+
+    // MARK: Photo
+
+    /// A shared photo, laid out for the space there actually is.
+    ///
+    /// The medium family is roughly three times as wide as the moment area is
+    /// tall, and the photo arrives as a 512-square thumbnail. Drawing one into
+    /// the other left the picture letterboxed with black down both sides — a
+    /// square in a letterbox, which is what a real device showed. Squares belong
+    /// beside text, not stretched across it, so medium puts the photo in a
+    /// square tile on the leading edge and gives the rest of the width to who
+    /// sent it, what they said, when, and today's tallies.
+    ///
+    /// Small has no room for a column beside anything, so the photo takes the
+    /// whole area and the words sit over it.
+    @ViewBuilder
+    private func photoContent(_ image: UIImage) -> some View {
+        if family == .systemSmall {
+            photoTile(image)
+                .overlay(alignment: .bottom) {
+                    VStack(alignment: .leading, spacing: 1) {
+                        Text(attribution).font(.caption2).bold().lineLimit(1)
+                        talliesRow
+                    }
+                    .frame(maxWidth: .infinity, alignment: .leading)
+                    .padding(5)
+                    .background(.ultraThinMaterial)
+                }
+                .clipShape(RoundedRectangle(cornerRadius: 12))
+        } else {
+            HStack(alignment: .top, spacing: 10) {
+                photoTile(image)
+                    // Square, driven by the height available, so the tile is
+                    // exactly the thumbnail's own shape and nothing is bordered
+                    // or stretched to make it fit.
+                    .aspectRatio(1, contentMode: .fit)
+                    .clipShape(RoundedRectangle(cornerRadius: 10))
+                photoCaption
+            }
+            .frame(maxWidth: .infinity, alignment: .leading)
+        }
+    }
+
+    /// The image, filling whatever box it is given.
+    ///
+    /// Drawn as an overlay on `Color.clear` rather than framed directly:
+    /// `Color.clear` accepts any size proposed to it, so the image is scaled to
+    /// a box the layout has already decided on. An `Image` with
+    /// `.frame(maxWidth: .infinity)` negotiates its own size instead, which is
+    /// how a square thumbnail ended up fitted into a wide widget with bars
+    /// rather than filling it.
+    private func photoTile(_ image: UIImage) -> some View {
+        Color.clear
+            .overlay {
+                Image(uiImage: image)
+                    .resizable()
+                    .scaledToFill()
+            }
+            .accessibilityLabel("Latest photo from \(attribution)")
+    }
+
+    /// What the medium family puts beside the photo. Everything is optional
+    /// except who it was from, so a moment with no note and no tallies still
+    /// reads as a sentence rather than leaving a gap.
+    private var photoCaption: some View {
+        VStack(alignment: .leading, spacing: 3) {
+            Text(attribution)
+                .font(.caption).bold()
+                .lineLimit(1)
+            if !entry.note.isEmpty {
+                Text(entry.note)
+                    .font(.caption2)
+                    .foregroundStyle(PearColor.textSecondary)
+                    .lineLimit(3)
+                    .multilineTextAlignment(.leading)
+            }
+            if let created = entry.created {
+                Text(created, style: .relative)
+                    .font(.caption2)
+                    .foregroundStyle(PearColor.textTertiary)
+            }
+            Spacer(minLength: 0)
+            talliesRow
+        }
+        .frame(maxWidth: .infinity, alignment: .leading)
     }
 
     /// Requirement 17.10 — today's tallies, whichever kinds they turned out to
