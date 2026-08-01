@@ -183,11 +183,31 @@ jobs:
   deploy:
     name: Deploy server
     runs-on: ubuntu-latest
-    # The two jobs that can tell whether the *server* is fit to run. Deliberately
-    # not the macOS ones: a broken Xcode build cannot make a Go binary wrong, and
-    # blocking every server deploy on a fifteen-minute simulator run is how a
-    # deploy step stops being trusted and starts being bypassed.
-    needs: [server, docker]
+    # Every check, not only the two that judge the server.
+    #
+    # This used to be [server, docker], on the argument that a broken Xcode build
+    # cannot make a Go binary wrong. True in isolation, and the wrong unit: the
+    # thing being deployed is a commit on main, and the app and the server ship
+    # against each other. Deploying a server from a commit whose app tests are
+    # red is how the two drift — routes live that the app was reverted from, or
+    # the reverse — and that drift surfaces as requests failing for no stated
+    # reason, which is the failure this job was added to end.
+    #
+    # The cost is real and worth naming: a server-only fix now waits on a macOS
+    # job that takes six minutes and cannot have broken it. The mitigation is
+    # that the trigger below is scoped — an iOS-only push reaches this job and
+    # deliberately rebuilds nothing — so the wait is paid on the pushes that
+    # actually change what is running.
+    needs: [server, docker, core, app]
+
+    # Records the deploy against a named environment, so the Environments tab
+    # carries the history and the current revision instead of it living only in
+    # this job's log. It is also where a required reviewer or a wait timer would
+    # be configured, and where the Komodo secret and URL can be scoped when this
+    # stops being the only thing that deploys.
+    environment:
+      name: production
+      url: https://peard.kroper.uk
     # Pushes to main only. A pull_request run must never deploy — the code has
     # not landed — and a workflow_dispatch on a branch would deploy whatever
     # Komodo pulls from main, which is not what the person who pressed it meant.

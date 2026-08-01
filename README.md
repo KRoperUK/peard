@@ -163,7 +163,8 @@ and the failure reads as "app not found" rather than as a permissions problem.
 
 `.github/workflows/ci.yml` is the safety net rather than the first line of
 defence — that is section 4. It runs on every push to `main` and every pull
-request, in four jobs so a server-only change is not stuck behind Xcode:
+request, in four parallel check jobs so feedback on a server-only change is not
+stuck behind Xcode:
 
 - **Server** (Ubuntu) — `go build`, `go vet`, `go test`, and a `gofmt` gate.
 - **Docker** (Ubuntu) — validate both compose files, build the image, then start
@@ -173,6 +174,9 @@ request, in four jobs so a server-only change is not stuck behind Xcode:
 - **PeardCore** (macOS) — `swift test`, no simulator needed.
 - **App** (macOS) — generate the project, build Debug *and* Release, then run the
   app-target tests. On failure the `.xcresult` bundle is uploaded as an artifact.
+
+A fifth job, **Deploy server**, waits on all four and then asks Komodo to roll
+the server — see [Deployment](#deployment).
 
 Neither macOS job pins an `Xcode_NN.app` path or names a simulator: both come and
 go with the runner image, and hard-coding either turns an image update into a red
@@ -299,9 +303,23 @@ empty Environment starts and serves.
 Komodo does not deploy on push by itself, and for a while nothing else was
 asking it to: it pulled commits and stopped there, so the app shipped routes the
 running server did not have and the only symptom was a request failing for no
-stated reason. CI's `deploy` job now calls the stack's webhook after the Go and
-Docker jobs pass — not the macOS ones, because a broken Xcode build cannot make
-a Go binary wrong. It needs two repository settings:
+stated reason. CI's `deploy` job now calls the stack's webhook once **every**
+other job is green.
+
+All four, not just the two that judge the server. A broken Xcode build cannot
+make a Go binary wrong, but the unit being deployed is a commit on `main`, and
+the app and the server ship against each other — deploying a server from a
+commit whose app tests are red is how the two drift, and that drift looks
+exactly like the failure this job was added to end. The cost is that a
+server-only fix waits on a six-minute macOS job that cannot have broken it.
+
+The job runs in a `production` [environment](https://github.com/KRoperUK/peard/deployments),
+restricted to `main`, so the deploy history and the current revision live in the
+Environments tab rather than only in a job log. That is also where a required
+reviewer or a wait timer would go, and where the two settings below can be
+scoped when this stops being the only thing that deploys.
+
+It needs two repository settings:
 
 | Setting | Kind | What it is |
 |---|---|---|
