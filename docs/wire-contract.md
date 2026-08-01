@@ -530,8 +530,13 @@ stay in the shared timeline — deleting half a conversation because somebody le
 is not what anybody asked for — and the client attributes a post by a former
 member to `"Someone"` rather than "Partner", which would be wrong in a group.
 
-Invites expire after 7 days and are swept to `status = "expired"` by a cron job
-every 15 minutes.
+Invites expire 24 hours after they are minted, and a cron job every 15 minutes
+*deletes* the expired ones rather than restatusing them: an invite code is a
+bearer credential, and one that can no longer be redeemed has no further use to
+anybody. Accepted invites are kept. An expired code presented to `/accept` is
+deleted there and then and answers `400`; after the sweep has been round it is
+simply absent, so the `404` says "that code has expired or has already been
+used" rather than "not found".
 
 Invite codes are 6 characters from `ABCDEFGHJKMNPQRSTUVWXYZ23456789` (no
 visually ambiguous characters).

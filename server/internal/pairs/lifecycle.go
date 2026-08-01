@@ -5,6 +5,7 @@ import (
 
 	"github.com/pocketbase/dbx"
 	"github.com/pocketbase/pocketbase/core"
+	"github.com/pocketbase/pocketbase/tools/types"
 )
 
 // registerLifecycle enforces one invariant: a connection with no members does
@@ -79,6 +80,49 @@ func DeleteMemberlessPairs(app core.App) (int, error) {
 			return deleted, err
 		}
 		if gone {
+			deleted++
+		}
+	}
+	return deleted, nil
+}
+
+// DeleteExpiredInvites removes every unaccepted invite whose expiry has passed,
+// returning how many it deleted.
+//
+// Deleted rather than marked expired, which is what the sweep used to do. An
+// invite that can no longer be redeemed has no further use to anybody: the row
+// records who invited whom and when, which is precisely the sort of thing this
+// app does not keep once it has stopped being needed, and the code it holds
+// occupies a uniquely-indexed slot forever.
+//
+// Accepted invites are left alone. They are not "unused", and the connection
+// they produced is the thing that proves it.
+//
+// An invite with no expiry at all is also left alone. Nothing this server
+// issues is like that — see inviteHandler — so one can only have come from the
+// dashboard, and deleting a row somebody deliberately made open-ended because
+// an empty date sorts before every real one would be a nasty surprise.
+func DeleteExpiredInvites(app core.App, now types.DateTime) (int, error) {
+	deleted := 0
+	// Batched, and bounded: a sweep that loops until the query comes back empty
+	// would spin forever on a delete that keeps failing for the same reason.
+	for range inviteSweepBatches {
+		invites, err := app.FindRecordsByFilter(
+			"pair_invites",
+			"status != 'accepted' && expires != '' && expires < {:now}",
+			"", inviteSweepBatch, 0,
+			dbx.Params{"now": now.String()},
+		)
+		if err != nil {
+			return deleted, fmt.Errorf("find expired invites: %w", err)
+		}
+		if len(invites) == 0 {
+			return deleted, nil
+		}
+		for _, inv := range invites {
+			if err := app.Delete(inv); err != nil {
+				return deleted, fmt.Errorf("delete expired invite %s: %w", inv.Id, err)
+			}
 			deleted++
 		}
 	}

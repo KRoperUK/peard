@@ -36,7 +36,24 @@ import (
 	"github.com/pocketbase/pocketbase/tools/types"
 )
 
-const inviteTTL = 7 * 24 * time.Hour
+// inviteTTL is how long a code is worth holding on to.
+//
+// A day, not the week this used to be. An invite code is a bearer credential:
+// anybody who has it can join the connection it points at, and there is no
+// second factor and nothing to approve. A code is shared in the moment — read
+// out, texted, held up on a screen — and is either typed in within minutes or
+// never. The week it used to last was a week in which a code left in a message
+// thread, a screenshot or a shoulder-surfer's memory still worked.
+const inviteTTL = 24 * time.Hour
+
+// How often expired invites are swept, and how many go per sweep. The batch is
+// generous relative to any plausible rate of invite creation, so the sweep
+// keeps up rather than accumulating a backlog it never drains.
+const (
+	inviteSweepInterval = "*/15 * * * *"
+	inviteSweepBatch    = 500
+	inviteSweepBatches  = 20
+)
 
 // maxMembers bounds a connection. Every new post fans out to every other
 // member's devices, and the tally queries are per connection, so this keeps
@@ -68,21 +85,9 @@ func Register(app core.App) {
 		return se.Next()
 	})
 
-	// Sweep stale invites every 15 minutes.
-	app.Cron().MustAdd("peard-expire-invites", "*/15 * * * *", func() {
-		invites, err := app.FindRecordsByFilter(
-			"pair_invites",
-			"status = 'pending' && expires < {:now}",
-			"", 500, 0,
-			dbx.Params{"now": types.NowDateTime().String()},
-		)
-		if err != nil {
-			return
-		}
-		for _, inv := range invites {
-			inv.Set("status", "expired")
-			_ = app.Save(inv)
-		}
+	// Sweep spent invites every 15 minutes.
+	app.Cron().MustAdd("peard-expire-invites", inviteSweepInterval, func() {
+		_, _ = DeleteExpiredInvites(app, types.NowDateTime())
 	})
 }
 
@@ -159,12 +164,18 @@ func acceptHandler(app core.App) func(e *core.RequestEvent) error {
 		inv, err := app.FindFirstRecordByFilter("pair_invites",
 			"code = {:code} && status = 'pending'", dbx.Params{"code": code})
 		if err != nil || inv == nil {
-			return e.NotFoundError("invite not found or already used", err)
+			// Expiry deletes the row, so a code that has run out is
+			// indistinguishable here from one that was mistyped or already
+			// spent. The message covers all three rather than picking the one
+			// that happens to be commonest.
+			return e.NotFoundError("that code has expired or has already been used", err)
 		}
 		if exp := inv.GetDateTime("expires"); !exp.IsZero() && exp.Time().Before(time.Now()) {
-			inv.Set("status", "expired")
-			_ = app.Save(inv)
-			return e.BadRequestError("invite expired", nil)
+			// Between expiring and the next sweep. Deleted here so the code is
+			// gone the moment somebody demonstrates it is past its time, rather
+			// than lingering for up to a quarter of an hour more.
+			_ = app.Delete(inv)
+			return e.BadRequestError("that code has expired", nil)
 		}
 
 		inviterID := inv.GetString("inviter")
