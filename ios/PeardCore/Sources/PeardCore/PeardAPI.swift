@@ -405,11 +405,23 @@ public extension APIClient {
     /// The home screen deliberately shows only the latest few moments. This is
     /// how the rest of the shared timeline — the thing the product is actually
     /// about — becomes reachable, without ever loading it all at once.
-    func postsPage(pairID: String, page: Int, perPage: Int = 30) async throws -> PostPage {
+    /// `filter` narrows it to one person, one kind of moment, or photos only.
+    ///
+    /// Applied in the query rather than to the loaded page, which is the whole
+    /// point: the timeline is paged, so filtering what happens to be in memory
+    /// would mean scrolling through a year to find last March's coffees. The
+    /// `posts` list rule still scopes everything to the caller's connections,
+    /// so this can only ever narrow what was already visible.
+    func postsPage(
+        pairID: String,
+        page: Int,
+        perPage: Int = 30,
+        filter: TimelineFilter = .none
+    ) async throws -> PostPage {
         let list: RecordList<Post> = try await get(
             path: "/api/collections/posts/records",
             query: [
-                "filter": PeardFilter.equals("pair", pairID),
+                "filter": PeardFilter.and([PeardFilter.equals("pair", pairID)] + filter.clauses),
                 "sort": "-created",
                 "page": String(max(1, page)),
                 "perPage": String(perPage),

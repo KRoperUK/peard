@@ -44,6 +44,54 @@ final class HistoryModel {
 
     private var nextPage = 1
 
+    // MARK: Filtering
+
+    /// What the timeline is narrowed to.
+    ///
+    /// Applied in the query, not to what is loaded — see `postsPage`. Changing
+    /// it starts the paging again from the top, because the pages already in
+    /// memory were the answer to a different question.
+    private(set) var filter: TimelineFilter = .none
+
+    func apply(_ newFilter: TimelineFilter) async {
+        guard newFilter != filter else { return }
+        filter = newFilter
+        nextPage = 1
+        posts = []
+        hasMore = false
+        totalItems = 0
+        // Reactions are keyed by post, so what is already known stays valid and
+        // costs nothing to keep.
+        await fetchNextPage()
+    }
+
+    /// The people who could be filtered on: everybody in the connection, the
+    /// signed-in user first because "just mine" is the commonest question.
+    var filterableMembers: [Connection.Member] {
+        guard let connection else { return [] }
+        return connection.members.sorted { lhs, _ in lhs.user == signedInUserID }
+    }
+
+    func memberLabel(_ member: Connection.Member) -> String {
+        member.user == signedInUserID ? "You" : PartnerLabel.short(member.name)
+    }
+
+    /// What the active filter is called, for the chip under the title.
+    var filterSummary: String? {
+        guard filter.isActive else { return nil }
+        var parts: [String] = []
+        if let author = filter.author {
+            let member = connection?.members.first { $0.user == author }
+            parts.append(member.map(memberLabel) ?? PartnerLabel.unknown)
+        }
+        if filter.photosOnly {
+            parts.append("Photos")
+        } else if let kind = filter.kind {
+            parts.append(MomentCatalogue.label(for: kind, customKinds: customKinds))
+        }
+        return parts.joined(separator: " · ")
+    }
+
     /// The moments in this timeline the signed-in user may change.
     ///
     /// Author only, and the server says the same: editing somebody else's
@@ -468,7 +516,7 @@ final class HistoryModel {
     /// to know. Anything else is worth saying.
     private func fetchPage(_ page: Int) async -> PostPage? {
         do {
-            let result = try await api.postsPage(pairID: pairID, page: page, perPage: Self.pageSize)
+            let result = try await api.postsPage(pairID: pairID, page: page, perPage: Self.pageSize, filter: filter)
             error = nil
             return result
         } catch let error as APIError where error.isCancellation {
@@ -504,7 +552,13 @@ struct HistoryView: View {
                 .navigationBarTitleDisplayMode(.inline)
                 .toolbar {
                     ToolbarItem(placement: .principal) {
-                        ConnectionToolbarTitle(title: "Timeline", subtitle: title)
+                        ConnectionToolbarTitle(
+                            title: "Timeline",
+                            subtitle: model.filterSummary ?? title
+                        )
+                    }
+                    ToolbarItem(placement: .primaryAction) {
+                        filterMenu
                     }
                 }
                 .refreshable { await model.reload() }
@@ -543,6 +597,68 @@ struct HistoryView: View {
         }
     }
 
+    /// Who and what, in one control.
+    ///
+    /// A menu rather than a row of chips: the timeline is already dense, the
+    /// filter is off almost all the time, and a connection of twelve people
+    /// with a dozen moments would need a scrolling bar of its own. The active
+    /// filter shows in the subtitle instead, where the connection name usually
+    /// is — so the screen always says what it is showing.
+    private var filterMenu: some View {
+        Menu {
+            if model.filter.isActive {
+                Button {
+                    Task { await model.apply(.none) }
+                } label: {
+                    Label("Show everything", systemImage: "xmark.circle")
+                }
+            }
+
+            Section("Who") {
+                pick("Everyone", isOn: model.filter.author == nil) {
+                    model.filter.choosing(author: nil)
+                }
+                ForEach(model.filterableMembers) { member in
+                    pick(model.memberLabel(member), isOn: model.filter.author == member.user) {
+                        model.filter.choosing(author: member.user)
+                    }
+                }
+            }
+
+            Section("What") {
+                pick("Anything", isOn: model.filter.kind == nil && !model.filter.photosOnly) {
+                    model.filter.choosing(kind: nil)
+                }
+                pick("📷 Photos", isOn: model.filter.photosOnly) {
+                    model.filter.choosingPhotos(true)
+                }
+                ForEach(model.moments) { moment in
+                    pick("\(moment.emoji) \(moment.label)", isOn: model.filter.kind == moment.kind) {
+                        model.filter.choosing(kind: moment.kind)
+                    }
+                }
+            }
+        } label: {
+            Image(systemName: model.filter.isActive
+                ? "line.3.horizontal.decrease.circle.fill"
+                : "line.3.horizontal.decrease.circle")
+                .foregroundStyle(PearColor.accent)
+        }
+        .accessibilityLabel(model.filter.isActive ? "Filtering by \(model.filterSummary ?? "")" : "Filter")
+    }
+
+    private func pick(_ label: String, isOn: Bool, to next: @escaping () -> TimelineFilter) -> some View {
+        Button {
+            Task { await model.apply(next()) }
+        } label: {
+            if isOn {
+                Label(label, systemImage: "checkmark")
+            } else {
+                Text(label)
+            }
+        }
+    }
+
     @ViewBuilder
     private var content: some View {
         if model.isLoadingFirstPage && model.posts.isEmpty {
@@ -554,16 +670,29 @@ struct HistoryView: View {
         }
     }
 
+    /// Empty because nothing has happened, or empty because of the filter —
+    /// two different facts, and the second one has something you can do about
+    /// it. Telling somebody "nothing here yet" when they have just narrowed to
+    /// one person's photos would be plainly untrue.
     private var emptyState: some View {
         VStack(spacing: 10) {
             Text("🍐").font(.system(size: 48))
-            Text("Nothing here yet")
+            Text(model.filter.isActive ? "Nothing matches that" : "Nothing here yet")
                 .font(.headline)
                 .foregroundStyle(PearColor.textPrimary)
-            Text("Moments you and everyone else log will build up here.")
+            Text(model.filter.isActive
+                ? "No moments for \(model.filterSummary ?? "that filter") in this connection."
+                : "Moments you and everyone else log will build up here.")
                 .font(.subheadline)
                 .foregroundStyle(PearColor.textSecondary)
                 .multilineTextAlignment(.center)
+            if model.filter.isActive {
+                Button("Show everything") {
+                    Task { await model.apply(.none) }
+                }
+                .font(.footnote.bold())
+                .foregroundStyle(PearColor.accent)
+            }
             if let error = model.error {
                 Text(error)
                     .font(.footnote)
