@@ -161,6 +161,27 @@ public extension APIClient {
         try await delete("posts", id: postID)
     }
 
+    /// `GET /api/peard/recap` — the last few days, and the connection's streak.
+    ///
+    /// The window boundary and the UTC offset are both sent, for the same reason
+    /// the tallies route takes its windows from the caller: the server has no
+    /// business guessing a device's time zone, and a streak is nothing but a
+    /// sequence of days. A phone in Sydney and a server in London would
+    /// otherwise disagree about which days those were.
+    func recap(pairID: String, days: Int = 7, calendar: Calendar = .peardTally, now: Date = Date()) async throws -> MomentRecap {
+        let startOfToday = calendar.startOfDay(for: now)
+        let from = calendar.date(byAdding: .day, value: -(max(1, days) - 1), to: startOfToday) ?? startOfToday
+        let offsetMinutes = TimeZone.current.secondsFromGMT(for: now) / 60
+        return try await get(
+            path: "/api/peard/recap",
+            query: [
+                "pair": pairID,
+                "from": ISO8601DateFormatter().string(from: from),
+                "tz": String(offsetMinutes),
+            ]
+        )
+    }
+
     /// `GET /api/peard/status` — which build of the server is running.
     ///
     /// Unauthenticated, so it answers before sign-in and while a session is

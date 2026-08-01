@@ -248,6 +248,7 @@ final class HomeModel {
         await refreshCustomKinds()
         await refresh()
         await refreshTallies()
+        await refreshRecap()
         isLoading = false
         // After the posts are in, not before: the stamp means "you have seen up
         // to here", and claiming it while the request that fetches them could
@@ -275,6 +276,26 @@ final class HomeModel {
     ///
     /// Locally queued sends are merged in on top, so a moment logged with no signal
     /// moves the number the moment it is tapped rather than when it is delivered.
+    /// The last week, and how long the connection has kept going.
+    ///
+    /// Nil until it arrives, and left alone when it cannot be fetched: a recap
+    /// is a summary of what the rest of the screen already shows, so a failure
+    /// hides one card rather than reporting anything. Absent entirely against a
+    /// server predating the route, which an installed app cannot assume has
+    /// caught up with it.
+    private(set) var recap: MomentRecap?
+
+    func refreshRecap() async {
+        do {
+            recap = try await api.recap(pairID: pairID)
+        } catch let error as APIError where error.status == 404 || error.isCancellation {
+            // Older server, or a refresh that was replaced by the next one.
+            // Neither is worth a word on screen.
+        } catch {
+            // Deliberately not `report`: see above.
+        }
+    }
+
     func refreshTallies() async {
         do {
             serverTallies = try await api.tallies(pairID: pairID)
@@ -331,6 +352,7 @@ final class HomeModel {
         await refreshCustomKinds()
         await refresh()
         await refreshTallies()
+        await refreshRecap()
     }
 
     func focus(postID: String?) async {

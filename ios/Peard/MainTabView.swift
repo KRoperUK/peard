@@ -116,6 +116,12 @@ private struct TalliesTab: View {
     var body: some View {
         NavigationStack {
             Form {
+                // First, because it is the only part of this screen that reads
+                // as news rather than as arithmetic.
+                if let recap = model.recap {
+                    RecapSection(recap: recap, mineLabel: "You", othersLabel: model.othersLabel)
+                }
+
                 Section {
                     tallyRow(label: "You", tallies: model.myTallies)
                     tallyRow(label: model.othersLabel, tallies: model.partnerTallies)
@@ -144,7 +150,10 @@ private struct TalliesTab: View {
                     ConnectionToolbarTitle(title: "Tallies", subtitle: model.connectionTitle)
                 }
             }
-            .refreshable { await model.refreshTallies() }
+            .refreshable {
+                await model.refreshTallies()
+                await model.refreshRecap()
+            }
         }
     }
 

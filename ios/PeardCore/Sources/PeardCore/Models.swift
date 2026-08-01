@@ -1303,6 +1303,97 @@ public struct RecordList<Item: Codable & Hashable & Sendable>: Codable, Hashable
 /// whole job is to work when something else is wrong: a server too old to have
 /// the route at all is itself the answer, and a decode failure here would hide
 /// it behind a generic error.
+/// Response of `GET /api/peard/recap` — the last few days, and how long the
+/// connection has kept going.
+///
+/// Every field is tolerant of absence. A server predating this route answers
+/// 404, which the caller handles; one that gains fields later must not break an
+/// installed app, and one that answers with a connection nobody has logged in
+/// yet is answering correctly with zeroes.
+public struct MomentRecap: Codable, Hashable, Sendable {
+    public struct Kind: Codable, Hashable, Sendable, Identifiable {
+        public let kind: EventKind
+        public let emoji: String
+        public let label: String
+        public let count: Int
+
+        public var id: String { kind.rawValue }
+
+        public init(kind: EventKind, emoji: String, label: String, count: Int) {
+            self.kind = kind
+            self.emoji = emoji
+            self.label = label
+            self.count = count
+        }
+    }
+
+    /// The day in the window with the most moments on it.
+    public struct BusiestDay: Codable, Hashable, Sendable {
+        /// `yyyy-MM-dd` in the caller's own clock, which is the clock the server
+        /// was asked to bucket by.
+        public let date: String
+        public let count: Int
+
+        public init(date: String, count: Int) {
+            self.date = date
+            self.count = count
+        }
+    }
+
+    public struct Streak: Codable, Hashable, Sendable {
+        /// Days in a row, up to and including today or yesterday. Zero once a
+        /// whole day has passed with nothing in it.
+        public let current: Int
+        /// The longest run within the server's horizon.
+        public let best: Int
+
+        public init(current: Int = 0, best: Int = 0) {
+            self.current = current
+            self.best = best
+        }
+    }
+
+    public let total: Int
+    public let mine: Int
+    public let others: Int
+    public let kinds: [Kind]
+    public let busiest: BusiestDay?
+    public let streak: Streak
+
+    public init(
+        total: Int = 0,
+        mine: Int = 0,
+        others: Int = 0,
+        kinds: [Kind] = [],
+        busiest: BusiestDay? = nil,
+        streak: Streak = Streak()
+    ) {
+        self.total = total
+        self.mine = mine
+        self.others = others
+        self.kinds = kinds
+        self.busiest = busiest
+        self.streak = streak
+    }
+
+    public init(from decoder: any Decoder) throws {
+        let container = try decoder.container(keyedBy: CodingKeys.self)
+        total = try container.decodeIfPresent(Int.self, forKey: .total) ?? 0
+        mine = try container.decodeIfPresent(Int.self, forKey: .mine) ?? 0
+        others = try container.decodeIfPresent(Int.self, forKey: .others) ?? 0
+        kinds = try container.decodeIfPresent([Kind].self, forKey: .kinds) ?? []
+        busiest = try? container.decodeIfPresent(BusiestDay.self, forKey: .busiest)
+        streak = try container.decodeIfPresent(Streak.self, forKey: .streak) ?? Streak()
+    }
+
+    /// True when there is nothing to summarise, so a screen can say so rather
+    /// than draw a row of zeroes.
+    public var isEmpty: Bool { total == 0 && streak.current == 0 && streak.best == 0 }
+
+    /// The moment logged most in the window, which is the headline.
+    public var headline: Kind? { kinds.first }
+}
+
 public struct ServerStatus: Codable, Hashable, Sendable {
     public let commit: String
     public let builtAt: String

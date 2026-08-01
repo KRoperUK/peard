@@ -541,6 +541,44 @@ used" rather than "not found".
 Invite codes are 6 characters from `ABCDEFGHJKMNPQRSTUVWXYZ23456789` (no
 visually ambiguous characters).
 
+## Recap and streaks
+
+`GET /api/peard/recap?pair=X[&from=<RFC3339>&tz=<±minutes>]` →
+
+```json
+{
+  "pair": "abc123def456ghi",
+  "from": "2026-07-26 00:00:00.000Z",
+  "total": 12, "mine": 10, "others": 2,
+  "kinds": [{ "kind": "coffee", "emoji": "☕", "label": "Coffee", "count": 6 }],
+  "busiest": { "date": "2026-08-01", "count": 7 },
+  "streak": { "current": 5, "best": 9 }
+}
+```
+
+`from` bounds the summary and `tz` is the caller's UTC offset in minutes, both
+for the same reason the tallies route takes its windows from the caller: a
+streak is nothing but a sequence of days, and a phone in Sydney and a server in
+London disagree about which days those are. Absent, the server falls back to its
+own clock and the last 7 days. `tz` is clamped to ±14 hours.
+
+`kinds` is ordered most-logged first, then alphabetically, so the same week does
+not reorder itself between two requests. `busiest` is omitted rather than sent
+empty when there is nothing in the window.
+
+A **streak** counts days on which *anybody* in the connection logged a moment,
+including photos — which have no `event_kind` and so are absent from `total` and
+`kinds`, but are still somebody turning up. Requiring everybody would make one
+busy Tuesday everyone's fault, which is the opposite of what a shared streak is
+for. `current` ends at yesterday rather than today: a streak is alive until a
+whole day passes with nothing in it, so somebody who logged something yesterday
+and has not opened the app this morning has not broken anything. `best` is
+bounded by a 180-day horizon — a longer run reports 180, which understates a
+remarkable streak rather than making the route slow for the oldest connections.
+
+Membership is checked directly, because this route reads through the database
+and the `posts` list rule never sees it: `403` for a connection you are not in.
+
 ## Editing a moment
 
 `POST /api/peard/posts/edit` with any of:

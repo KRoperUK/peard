@@ -363,6 +363,12 @@ struct HomeView: View {
                     }
                 }
                 Spacer(minLength: 4)
+                // Beside the counts rather than on its own row: the strip is
+                // already the "how are we doing" line, and a streak is the same
+                // question answered in days instead of moments.
+                if let streak = model.recap?.streak {
+                    StreakBadge(streak: streak)
+                }
                 Image(systemName: "chevron.right")
                     .font(.caption2.bold())
                     .foregroundStyle(PearColor.accent)

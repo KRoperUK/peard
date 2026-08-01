@@ -30,6 +30,7 @@ import (
 	"peard/internal/posts"
 	"peard/internal/profile"
 	"peard/internal/push"
+	"peard/internal/recap"
 	"peard/internal/site"
 	"peard/internal/tallies"
 	"peard/internal/version"
@@ -60,6 +61,7 @@ func main() {
 	pairs.Register(app)
 	posts.Register(app)
 	profile.Register(app)
+	recap.Register(app)
 	avatars.Register(app)
 	tallies.Register(app)
 	widget.Register(app)
