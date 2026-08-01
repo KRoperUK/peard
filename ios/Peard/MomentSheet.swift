@@ -13,9 +13,10 @@ struct MomentSheet: View {
 
     @State private var label = ""
     @State private var emoji = "🍐"
-    @State private var showsEmojiField = false
     @FocusState private var labelFocused: Bool
-    @FocusState private var emojiFieldFocused: Bool
+    /// Plain state rather than `@FocusState`: the emoji tile is a UIKit field,
+    /// so focus is driven into it rather than shared with SwiftUI's own.
+    @State private var emojiFieldFocused = false
 
     private var slugPreview: String { MomentSlug.make(from: label) }
     private var canAdd: Bool {
@@ -56,17 +57,29 @@ struct MomentSheet: View {
             sectionTitle("Make your own")
 
             HStack(spacing: 10) {
-                Button {
-                    showsEmojiField = false
-                    labelFocused = false
-                } label: {
-                    Text(emoji)
-                        .font(.system(size: 34))
-                        .frame(width: 60, height: 60)
-                        .background(PearColor.surface, in: RoundedRectangle(cornerRadius: 12))
+                // The tile *is* the field. Tapping the emoji you want to change
+                // is the obvious way to change it, and it opens straight onto
+                // the emoji keyboard — where before it was a button that did
+                // nothing, with the real control a "use another emoji…" link
+                // further down that then opened the alphabet.
+                ZStack {
+                    RoundedRectangle(cornerRadius: 12)
+                        .fill(PearColor.surface)
+                        .overlay(
+                            RoundedRectangle(cornerRadius: 12)
+                                .strokeBorder(emojiFieldFocused ? PearColor.accent : .clear, lineWidth: 2)
+                        )
+                    EmojiField(emoji: $emoji, isFocused: emojiFieldFocused)
+                        .frame(width: 56, height: 44)
                 }
-                .buttonStyle(.plain)
-                .accessibilityLabel("Chosen emoji: \(emoji)")
+                .frame(width: 60, height: 60)
+                .contentShape(Rectangle())
+                .onTapGesture {
+                    labelFocused = false
+                    emojiFieldFocused = true
+                }
+                .accessibilityLabel("Moment emoji, currently \(emoji)")
+                .accessibilityHint("Opens the emoji keyboard")
 
                 TextField("", text: $label, prompt: Text("Name it — dog walk, gym, tea…"))
                     .focused($labelFocused)
@@ -120,13 +133,14 @@ struct MomentSheet: View {
         }
     }
 
-    /// A grid rather than the system emoji keyboard: it is one tap, and it keeps
-    /// the choice to single glyphs that render at tally size.
+    /// Shortcuts, not the whole choice. One tap covers the common moments; the
+    /// tile above is the way to anything else, and now actually reaches it.
     private var emojiGrid: some View {
         VStack(alignment: .leading, spacing: 8) {
             LazyVGrid(columns: Array(repeating: GridItem(.flexible(), spacing: 6), count: 8), spacing: 6) {
                 ForEach(MomentEmoji.suggestions, id: \.self) { suggestion in
                     Button {
+                        emojiFieldFocused = false
                         emoji = suggestion
                     } label: {
                         Text(suggestion)
@@ -143,25 +157,9 @@ struct MomentSheet: View {
                 }
             }
 
-            if showsEmojiField {
-                TextField("", text: $emoji, prompt: Text("Type any emoji"))
-                    .focused($emojiFieldFocused)
-                    .multilineTextAlignment(.center)
-                    .padding(10)
-                    .background(PearColor.surface, in: RoundedRectangle(cornerRadius: 10))
-                    .onChange(of: emoji) { _, newValue in
-                        // Keep a single glyph, whatever the emoji keyboard sends.
-                        emoji = MomentEmoji.first(in: newValue) ?? MomentCatalogue.fallbackEmoji
-                    }
-                    .accessibilityLabel("Custom emoji")
-            } else {
-                Button("Use another emoji…") {
-                    showsEmojiField = true
-                    emojiFieldFocused = true
-                }
-                .font(.footnote)
-                .foregroundStyle(PearColor.accent)
-            }
+            Text("Or tap the emoji above for the full keyboard.")
+                .font(.caption)
+                .foregroundStyle(PearColor.textTertiary)
         }
     }
 
