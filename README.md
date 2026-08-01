@@ -92,7 +92,47 @@ make lint          # go vet, and check project.yml still generates
 what cannot follow that rule — `HomeModel`'s countdown and `AppModel`'s routing
 are `@MainActor` and import UIKit.
 
-### 4. Fastlane
+### 4. Git hooks
+
+```bash
+brew install pre-commit    # once, per machine
+make hooks                 # install both stages (also runs as part of `make project`)
+```
+
+`.pre-commit-config.yaml` runs the cheap half of CI before a commit and the
+expensive half before a push, so the pipeline stops being where formatting and
+compile errors are found.
+
+| Stage | Runs | When |
+|---|---|---|
+| pre-commit | `gofmt`, `go vet` | `server/**.go` changed |
+| pre-commit | `xcodegen` | `ios/project.yml` changed |
+| pre-commit | `docker compose config` ×3 | a compose file or Dockerfile changed |
+| pre-commit | merge-conflict markers, large files, YAML validity | always |
+| pre-push | `go test ./...` | `server/` changed |
+| pre-push | `swift test` | `ios/PeardCore/` changed |
+| pre-push | app-target tests | `ios/` changed |
+
+The scoping is the point: a one-line change to a Go file must not boot a
+simulator. A hook that ignores it is a hook that gets bypassed within a week,
+and a bypassed hook prevents nothing.
+
+Deliberately not at parity with CI. The Release build, the Docker image build
+and the container smoke test stay in the pipeline — they are slow, they need
+Docker running, and the breakage they catch is rare enough that paying for it on
+every push would buy a bypassed hook instead.
+
+```bash
+pre-commit run --all-files   # run everything by hand
+SKIP=app-tests git push      # skip one hook, by id
+git push --no-verify         # skip the lot, deliberately
+```
+
+`make hooks` warns rather than fails when `pre-commit` is not installed: it is
+wired into `make project`, and a missing linter must not stop somebody building
+the app.
+
+### 5. Fastlane
 
 ```bash
 bundle install
@@ -119,10 +159,11 @@ bundle id, because the lookup needs an API key allowed to list every app on the
 account. A key scoped to one app can upload perfectly well but cannot enumerate,
 and the failure reads as "app not found" rather than as a permissions problem.
 
-### 5. Continuous integration
+### 6. Continuous integration
 
-`.github/workflows/ci.yml` runs on every push to `main` and every pull request,
-in four jobs so a server-only change is not stuck behind Xcode:
+`.github/workflows/ci.yml` is the safety net rather than the first line of
+defence — that is section 4. It runs on every push to `main` and every pull
+request, in four jobs so a server-only change is not stuck behind Xcode:
 
 - **Server** (Ubuntu) — `go build`, `go vet`, `go test`, and a `gofmt` gate.
 - **Docker** (Ubuntu) — validate both compose files, build the image, then start

@@ -1,0 +1,25 @@
+#!/bin/bash
+# Parses and interpolates all three compose shapes, the same way CI does.
+#
+# Skips rather than fails when Docker is absent: this hook runs on any machine
+# that edits a compose file, and blocking a commit because the *tooling* is
+# missing teaches people to pass --no-verify, which switches off the hooks that
+# would have caught something real.
+set -euo pipefail
+
+# Prefer the Compose v2 plugin, fall back to the standalone binary — the same
+# choice the Makefile makes, and for the same reason: Homebrew installs the
+# plugin somewhere Docker's default search path does not look, so a machine with
+# a perfectly good `docker-compose` can have no `docker compose` at all.
+if docker compose version >/dev/null 2>&1; then
+    compose=(docker compose)
+elif command -v docker-compose >/dev/null 2>&1; then
+    compose=(docker-compose)
+else
+    echo "skipped: no docker compose on PATH"
+    exit 0
+fi
+
+"${compose[@]}" -f docker-compose.yml config >/dev/null
+"${compose[@]}" -f docker-compose.yml -f docker-compose.tls.yml config >/dev/null
+"${compose[@]}" -f docker-compose.yml -f docker-compose.cloudflared.yml config >/dev/null

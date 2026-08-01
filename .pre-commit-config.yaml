@@ -1,0 +1,106 @@
+# Runs the cheap half of CI before a commit and the expensive half before a
+# push, so the pipeline stops being where formatting and compile errors are
+# discovered.
+#
+# The split is the point. A commit happens a dozen times an hour, so anything at
+# that stage has to cost seconds; a push is rare, and the failure it prevents is
+# expensive in a way a local minute is not — a red `main` blocks the deploy job
+# behind it, and a macOS runner spends four minutes reaching a conclusion this
+# reaches in one.
+#
+#   make hooks                      install both stages
+#   pre-commit run --all-files      run everything by hand
+#   SKIP=app-tests git push         skip one hook, by id
+#   git push --no-verify            skip the lot, deliberately
+#
+# Every `files:` pattern below is load-bearing: it is what stops a one-line Go
+# change from booting a simulator. A hook that ignores scope is a hook that gets
+# bypassed within a week, and a bypassed hook prevents nothing.
+#
+# Deliberately NOT at parity with CI. The Release build, the Docker image build
+# and the container smoke test stay in the pipeline: they are slow, they need
+# Docker running, and the breakage they catch is rare enough that paying for it
+# on every push would buy a bypassed hook instead.
+
+default_install_hook_types: [pre-commit, pre-push]
+default_stages: [pre-commit]
+
+repos:
+  - repo: https://github.com/pre-commit/pre-commit-hooks
+    rev: v6.0.0
+    hooks:
+      - id: check-merge-conflict
+      - id: check-added-large-files
+      - id: check-yaml
+        # The compose overrides use `ports: !override`, a Compose-specific tag
+        # that safe_load cannot parse — this hook would fail on a file that is
+        # perfectly valid. They are covered by `compose-config` below, which
+        # parses them the way Compose itself does and is the stronger check.
+        exclude: ^docker-compose\.(tls|cloudflared)\.yml$
+
+  # --- pre-commit: seconds, and failures a person can fix without thinking ---
+
+  - repo: local
+    hooks:
+      - id: gofmt
+        name: gofmt
+        entry: scripts/check-gofmt
+        language: system
+        types: [go]
+
+      - id: go-vet
+        name: go vet
+        entry: bash -c 'cd server && go vet ./...'
+        language: system
+        files: ^server/.*\.go$
+        pass_filenames: false
+
+      # Peard.xcodeproj is generated and not committed, so project.yml is the
+      # only description of the project — a typo in it breaks every iOS job at
+      # once and nothing else catches it.
+      - id: xcodegen
+        name: xcodegen
+        entry: bash -c 'cd ios && xcodegen generate --spec project.yml --use-cache'
+        language: system
+        files: ^ios/project\.yml$
+        pass_filenames: false
+
+      # Catches a bad ${VAR} default and an override the local Compose is too
+      # old to parse — otherwise found by a Docker job that takes a minute to
+      # say so.
+      - id: compose-config
+        name: compose config
+        entry: scripts/check-compose
+        language: system
+        files: ^(docker-compose.*\.yml|Dockerfile|server/Dockerfile)$
+        pass_filenames: false
+
+  # --- pre-push: the suites, ordered cheapest-first ---
+
+  - repo: local
+    hooks:
+      - id: go-test
+        name: go test
+        entry: bash -c 'cd server && go test ./...'
+        language: system
+        files: ^server/
+        pass_filenames: false
+        stages: [pre-push]
+
+      - id: swift-test
+        name: swift test (PeardCore)
+        entry: bash -c 'cd ios/PeardCore && swift test'
+        language: system
+        files: ^ios/PeardCore/
+        pass_filenames: false
+        stages: [pre-push]
+
+      # The slowest thing here, and the one that pays for itself: this is the CI
+      # job that takes four minutes, and it boots a simulator.
+      - id: app-tests
+        name: app-target tests
+        entry: make test-app
+        language: system
+        files: ^ios/
+        pass_filenames: false
+        stages: [pre-push]

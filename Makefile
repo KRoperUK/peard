@@ -5,8 +5,25 @@ XCODEBUILD = xcodebuild -project $(PROJECT) -scheme Peard
 BUILT_APP = ios/build/Build/Products/Debug-iphonesimulator/Peard.app
 
 .PHONY: server migrate app app-release run project test test-app test-integration \
-        test-all icons lint fmt clean \
+        test-all icons lint fmt hooks clean \
         docker-build docker-up docker-up-tls docker-up-cloudflared docker-down docker-logs
+
+# --- git hooks ---
+
+# .git/hooks is not versioned, so pre-commit installs both stages from
+# .pre-commit-config.yaml. Wired into `project` — which every iOS target already
+# depends on — because a hook nobody remembered to install is a hook that
+# prevents nothing, which is the whole failure mode being fixed here.
+#
+# A missing pre-commit binary is a warning, not an error: it must not stop
+# somebody building the app, and the failure it would cause (`make app` refusing
+# to run on a fresh machine) is worse than the one it prevents.
+hooks:
+	@if ! command -v pre-commit >/dev/null 2>&1; then \
+		echo "pre-commit not installed — hooks inactive (brew install pre-commit)"; \
+	elif [ ! -f .git/hooks/pre-push ]; then \
+		pre-commit install; \
+	fi
 
 # --- server ---
 
@@ -23,7 +40,7 @@ migrate:
 # ios/Peard.xcodeproj is generated from ios/project.yml and is NOT committed.
 # Every iOS target depends on this, so a fresh clone builds without a manual
 # step and a renamed file never needs a project edit.
-project:
+project: hooks
 	cd ios && xcodegen generate --spec project.yml
 
 # Regenerated when the spec changes, and also when a source directory's mtime
@@ -36,7 +53,10 @@ SOURCE_DIRS := $(shell find ios/Peard ios/PearWidget ios/PearMessages ios/PeardT
                         ios/PeardCore/Sources ios/PeardCore/Tests ios/Shared \
                         -type d 2>/dev/null)
 
-$(PROJECT): ios/project.yml $(SOURCE_DIRS)
+# `| hooks` is order-only on purpose. hooks is .PHONY, and a phony *normal*
+# prerequisite would make this file target perpetually out of date — xcodegen
+# would then run on every single build.
+$(PROJECT): ios/project.yml $(SOURCE_DIRS) | hooks
 	cd ios && xcodegen generate --spec project.yml
 
 # --- iOS app ---

@@ -1,0 +1,16 @@
+#!/bin/bash
+# Fails when any of the given Go files is not gofmt'd.
+#
+# A wrapper rather than `entry: gofmt -l` because `gofmt -l` prints the files it
+# would change and then exits 0 — as a pre-commit hook it would report success
+# while listing every problem it found.
+set -euo pipefail
+
+[ $# -eq 0 ] && exit 0
+
+unformatted=$(gofmt -l "$@")
+if [ -n "$unformatted" ]; then
+    echo "Not gofmt'd (run: make fmt):"
+    echo "$unformatted"
+    exit 1
+fi
