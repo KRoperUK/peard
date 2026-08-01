@@ -5,8 +5,44 @@
 # makes a small static binary on Alpine possible at all — the cgo mattn/go-sqlite3
 # driver would need musl headers here and glibc at runtime.
 #
-# Build context is ./server, so nothing from ios/ or fastlane/ is sent to the
-# daemon. See .dockerignore for what is excluded from the context that remains.
+# The build context is the repository root, so the build can read .git and say
+# which revision it is running. The root .dockerignore is an allowlist for
+# exactly that reason — the repository also holds an iOS app and a local
+# database, none of which belong in a build context.
+
+# --- commit -----------------------------------------------------------------
+# Reads the revision from the repository itself, rather than relying on whoever
+# runs the build to remember to pass one. Komodo clones and builds, so it never
+# did, and every deployed server reported its commit as "unknown".
+#
+# Its own stage, and the result lands in the runtime image as a file rather than
+# a linker flag, so that the revision — which changes on every commit — is not
+# an input to the Go build. Baking it in would rebuild the whole binary for a
+# push that changed nothing but the iOS app.
+#
+# The same golang image as the build stage, which already has git, so nothing
+# extra is pulled.
+FROM golang:1.26.4-alpine AS commit
+
+WORKDIR /repo
+
+# The golang alpine images do not carry git, which cost a build to discover.
+# Installed before .git is copied so this layer stays cached: the package set
+# never changes, the repository does on every commit.
+RUN apk add --no-cache git
+
+COPY .git .git
+
+# Separated by `;` rather than `&&`, and every step allowed to fail: this must
+# never be what breaks a deploy. "unknown" is the honest answer for a build that
+# cannot read a revision, and is exactly what every build used to report.
+#
+# `safe.directory` because the clone is owned by whoever ran the build rather
+# than by root inside the container, and git refuses to read such a repository
+# without being told it is fine.
+RUN git config --global --add safe.directory /repo; \
+    git rev-parse --short HEAD > /commit.txt 2>/dev/null || echo unknown > /commit.txt; \
+    cat /commit.txt
 
 # --- build ------------------------------------------------------------------
 FROM golang:1.26.4-alpine AS build
@@ -15,20 +51,16 @@ WORKDIR /src
 
 # Dependencies first: this layer is reused whenever only .go files change, and
 # go.mod/go.sum are the only inputs to it.
-COPY go.mod go.sum ./
+COPY server/go.mod server/go.sum ./
 RUN go mod download
 
-COPY . .
+COPY server/ .
 
-# Which build this is, reported by GET /api/peard/status.
-#
-# PEARD_COMMIT has to be passed in: the build context is ./server, so there is no
-# .git here to read it from, and Go's automatic VCS stamping is therefore blank
-# too. A deploy that does not supply it gets "unknown", which is why the build
-# time below is computed here instead of being passed — it needs nothing from
-# the caller and so is always right. That alone distinguishes two builds, which
-# is most of what this is for.
-ARG PEARD_COMMIT=unknown
+# An explicit commit still wins where a caller supplies one — `make docker-*`
+# exports it from the working tree, which is more accurate than HEAD when there
+# are uncommitted changes. Left empty otherwise, so the file written by the
+# commit stage above is used instead; see internal/version.
+ARG PEARD_COMMIT=
 
 # -trimpath keeps absolute build paths out of the binary; -s -w drop the symbol
 # table and DWARF, which is most of the size. CGO_ENABLED=0 is load-bearing, not
@@ -59,6 +91,10 @@ RUN apk add --no-cache ca-certificates tzdata \
 RUN mkdir -p /pb_data && chown peard:peard /pb_data
 
 COPY --from=build /out/peard-server /usr/local/bin/peard-server
+# Read at startup when no commit was linked in — see internal/version. A late,
+# tiny layer on purpose: it changes on every commit, and everything expensive is
+# already above it.
+COPY --from=commit /commit.txt /app/commit
 
 USER peard
 WORKDIR /app

@@ -1,0 +1,39 @@
+# The build context is the repository root, not ./server, so that the build can
+# read .git and report which revision it is running — see server/Dockerfile.
+# That makes an allowlist the only safe shape: the repository also holds an iOS
+# app, a fastlane build directory and a local database, none of which have any
+# business being sent to the Docker daemon.
+#
+# Everything, then back in only what the build needs.
+*
+!server/
+!.git/
+
+# --- and out again, from inside server/ -------------------------------------
+# These repeat server/.dockerignore, which no longer applies now that the
+# context has moved up a level. Kept in both files rather than deleted from
+# there: `docker build server/` by hand is still a thing somebody might do, and
+# it must not bake a developer's database into an image either.
+
+# The live database. Copying it would bake a developer's data — including PB
+# settings, which hold the Google OAuth client secret — into the image.
+server/pb_data/
+
+# Locally built binaries. macOS/arm64 host builds are useless in a linux image
+# and would be overwritten anyway, but they are ~34 MB of context each.
+server/peard-server
+server/server
+server/*.test
+server/coverage.out
+
+# Secrets. Never in an image layer: layers are readable by anyone who can pull
+# the image. The APNs key reaches the container through PEARD_APNS_KEY_CONTENT.
+**/*.p8
+**/*.p12
+**/.env
+**/.env.*
+!**/.env.example
+
+# Container definitions themselves are not build inputs.
+server/Dockerfile
+.dockerignore

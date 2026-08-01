@@ -126,7 +126,11 @@ COMPOSE_CF = $(COMPOSE) -f docker-compose.yml -f docker-compose.cloudflared.yml
 # so a deploy can be identified without shelling into the host. Exported for
 # every compose target below rather than just one, because the useful property
 # is that it is always right, not that it is available when remembered.
-export PEARD_COMMIT := $(shell git rev-parse --short HEAD 2>/dev/null || echo unknown)
+#
+# Empty rather than "unknown" when there is no git here: the build reads the
+# revision out of .git itself in that case, which is how a deploy that clones
+# and builds gets an accurate answer. Passing a literal stops it looking.
+export PEARD_COMMIT := $(shell git rev-parse --short HEAD 2>/dev/null)
 
 docker-build:
 	$(COMPOSE) build

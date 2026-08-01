@@ -20,14 +20,21 @@ name: peard
 services:
   server:
     build:
-      context: ./server
-      dockerfile: Dockerfile
+      # The repository root, so the build can read .git and report which
+      # revision it is running. The root .dockerignore keeps everything else —
+      # the iOS app, fastlane, the local database — out of the context.
+      context: .
+      dockerfile: server/Dockerfile
       args:
         # Surfaced by GET /api/peard/status. Optional: an unset one leaves the
         # commit as "unknown" while the build time — stamped inside the build —
         # still identifies the binary. Set it where the deploy knows the
         # revision; `make docker-up` does it for you.
-        PEARD_COMMIT: ${PEARD_COMMIT:-unknown}
+        # Empty, not "unknown": an empty value leaves the build to read the
+        # revision out of .git itself, which is what a deploy that clones and
+        # builds — Komodo — needs. Passing the literal "unknown" here linked
+        # that string into the binary and stopped it ever looking.
+        PEARD_COMMIT: ${PEARD_COMMIT:-}
     image: peard-server:latest
     restart: unless-stopped
 

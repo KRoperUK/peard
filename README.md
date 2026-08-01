@@ -274,6 +274,20 @@ the part that was failing. It only insists on that when the push touched
 else rebuilds nothing, stamps no new build time, and would fail a check that
 demanded one.
 
+`status` reports two things that answer different questions and can honestly
+disagree:
+
+| Field | What it means |
+|---|---|
+| `commit` | The revision the running server was deployed from. Read out of `.git` during the build, so a deploy that clones and builds — Komodo — gets it right without having to pass anything |
+| `built_at` | When that binary was compiled. A push that changed nothing under `server/` produces a new image carrying a cached binary, so this can be older than the commit |
+
+The Docker build context is the repository root for exactly this reason, with a
+root `.dockerignore` written as an allowlist so the iOS app, fastlane and the
+local database stay out of it. The revision lands in the image as a small file
+rather than a linker flag, so a value that changes every commit is not an input
+to the Go build.
+
 ```bash
 docker compose up -d --build                 # HTTP on 8090, proxy in front
 make docker-up                               # same thing

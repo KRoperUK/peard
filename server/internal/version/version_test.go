@@ -73,3 +73,65 @@ func TestStatusIsPublicAndReportsTheBuild(t *testing.T) {
 		}
 	}
 }
+
+// Resolving the commit is the other piece of logic here, and it is the piece
+// that was wrong for every deployed server: the compose file defaulted the
+// build arg to the literal "unknown", the linker duly baked that string in, and
+// the file the Docker build had gone to the trouble of writing was never read.
+
+func TestALinkedCommitWins(t *testing.T) {
+	defer swap("abc1234")()
+
+	Resolve()
+
+	if Commit != "abc1234" {
+		t.Errorf("Commit = %q, want the linked value", Commit)
+	}
+}
+
+// The bug. "unknown" is what a caller says when it has nothing to say, so it
+// must not stop the file being consulted — otherwise the fix would depend on
+// every compose file and CI job getting a default right.
+func TestTheLiteralUnknownIsTreatedAsUnset(t *testing.T) {
+	defer swap("unknown")()
+
+	Resolve()
+
+	// There is no commit file on a test machine, so this settles back to
+	// "unknown". The point is that it went looking rather than returning at the
+	// first check.
+	if Commit != "unknown" {
+		t.Errorf("Commit = %q, want unknown", Commit)
+	}
+}
+
+func TestNothingAnywhereIsUnknownRatherThanEmpty(t *testing.T) {
+	defer swap("")()
+
+	Resolve()
+
+	if Commit != "unknown" {
+		t.Errorf("Commit = %q — an empty commit must never reach the response", Commit)
+	}
+}
+
+// Resolve runs at startup and the handler reads what it settled on, so calling
+// it twice must not undo the first answer.
+func TestResolvingTwiceIsStable(t *testing.T) {
+	defer swap("abc1234")()
+
+	Resolve()
+	Resolve()
+
+	if Commit != "abc1234" {
+		t.Errorf("Commit = %q after a second resolve", Commit)
+	}
+}
+
+// swap sets the package-level Commit and returns a function restoring it, so
+// these tests cannot leak into each other or into the route test above.
+func swap(value string) func() {
+	previous := Commit
+	Commit = value
+	return func() { Commit = previous }
+}
