@@ -452,6 +452,134 @@ struct PearWidgetEntryView: View {
     }
 }
 
+// MARK: - Lock Screen
+
+/// The accessory families: Lock Screen, and the Smart Stack in StandBy.
+///
+/// Deliberately not the home-screen view drawn smaller. These render desaturated
+/// and vibrant — a solid background paints a grey slab, an accent colour is
+/// flattened to luminance, and a photo becomes a smudge — so this view sets no
+/// colours of its own and shows no image. It also has no buttons: a target that
+/// small on a locked screen is a mis-tap, and everything here opens the app
+/// instead.
+///
+/// What survives the cut is decided in `LockScreenSummary`, which is in
+/// PeardCore because this target cannot host tests.
+struct PearAccessoryView: View {
+    @Environment(\.widgetFamily) private var family
+
+    let entry: PearEntry
+
+    private var summary: LockScreenSummary {
+        LockScreenSummary(
+            state: entry.state,
+            partnerName: entry.partnerName,
+            groupName: entry.groupName,
+            emoji: entry.emoji,
+            momentLabel: entry.momentLabel,
+            note: entry.note,
+            tallies: entry.tallies,
+            created: entry.created
+        )
+    }
+
+    var body: some View {
+        content
+            .widgetURL(URL(string: "peard://home"))
+            // Required of every widget on iOS 17, but it must not paint: the
+            // Lock Screen supplies its own material behind the accessory
+            // families, and anything opaque here sits on top of it.
+            .containerBackground(.clear, for: .widget)
+    }
+
+    @ViewBuilder
+    private var content: some View {
+        switch family {
+        case .accessoryCircular: circular
+        case .accessoryInline: Text(summary.inlineText)
+        default: rectangular
+        }
+    }
+
+    /// Roughly three short lines. The note earns the middle one; the tallies get
+    /// the last only when there are any, so a quiet day does not draw an empty
+    /// row where the note would have been.
+    private var rectangular: some View {
+        VStack(alignment: .leading, spacing: 1) {
+            HStack(spacing: 3) {
+                Text(summary.emoji)
+                Text(summary.headline)
+                    .font(.headline)
+                    .lineLimit(1)
+                Spacer(minLength: 2)
+                if let at = summary.at {
+                    Text(at, style: .relative)
+                        .font(.caption2)
+                        .foregroundStyle(.secondary)
+                        // Relative time grows as it ages ("3 min" becomes
+                        // "2 hours"); without this the name loses the room.
+                        .lineLimit(1)
+                        .layoutPriority(-1)
+                }
+            }
+            if let detail = summary.detail {
+                Text(detail)
+                    .font(.caption)
+                    .lineLimit(1)
+            }
+            if let tallies = summary.talliesText {
+                Text(tallies)
+                    .font(.caption2)
+                    .foregroundStyle(.secondary)
+                    .lineLimit(1)
+            }
+            Spacer(minLength: 0)
+        }
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .accessibilityElement(children: .combine)
+    }
+
+    /// One emoji and one number: what happened last, and how much has happened
+    /// today. Anything else at this size is unreadable.
+    private var circular: some View {
+        ZStack {
+            AccessoryWidgetBackground()
+            VStack(spacing: 0) {
+                Text(summary.emoji)
+                    .font(.system(size: 20))
+                if summary.todayTotal > 0 {
+                    Text("\(summary.todayTotal)")
+                        .font(.system(size: 12, weight: .semibold))
+                        .monospacedDigit()
+                }
+            }
+        }
+        .accessibilityElement(children: .combine)
+        .accessibilityLabel(
+            summary.todayTotal > 0
+                ? "\(summary.headline), \(summary.todayTotal) today"
+                : summary.headline
+        )
+    }
+}
+
+/// Picks the view for the family, so the home-screen layout never has to reason
+/// about the Lock Screen and vice versa.
+struct PearWidgetRootView: View {
+    @Environment(\.widgetFamily) private var family
+
+    let entry: PearEntry
+
+    var body: some View {
+        switch family {
+        case .accessoryRectangular, .accessoryCircular, .accessoryInline:
+            PearAccessoryView(entry: entry)
+        default:
+            PearWidgetEntryView(entry: entry)
+        }
+    }
+}
+
 // MARK: - Widget
 
 struct PearWidget: Widget {
@@ -463,11 +591,14 @@ struct PearWidget: Widget {
             intent: SelectConnectionIntent.self,
             provider: PearTimelineProvider()
         ) { entry in
-            PearWidgetEntryView(entry: entry)
+            PearWidgetRootView(entry: entry)
         }
         .configurationDisplayName("Pear'd")
         .description("The latest moment from your people, today's tallies, and one-tap moments.")
-        .supportedFamilies([.systemSmall, .systemMedium])
+        .supportedFamilies([
+            .systemSmall, .systemMedium,
+            .accessoryRectangular, .accessoryCircular, .accessoryInline,
+        ])
     }
 }
 
