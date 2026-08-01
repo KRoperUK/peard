@@ -8,12 +8,21 @@ import PeardCore
 /// target is the join: `momentTallies` merges the durable send queue into the
 /// server's counts, and that merge is what decides whether a moment logged with no
 /// signal shows up in the breakdown or only in the totals above it.
+///
+/// The session store is a throwaway keychain service, for the same reason the
+/// send queue is a throwaway file: with the device's real one, whether these
+/// pass depends on whether somebody happens to be signed in on this simulator
+/// *and* whether a dev server happens to be running — because a queue that
+/// flushes successfully is an empty queue, and every assertion here is about
+/// what is still in it. That combination made 22 of these fail on a machine
+/// where nothing was wrong with the code.
 @MainActor
 final class MomentBreakdownTests: XCTestCase {
     private var app: AppModel!
     private var model: HomeModel!
     private var queue: SendQueue!
     private var storeURL: URL!
+    private var sessionStore: KeychainSessionStore!
 
     private static let pairID = "pair1"
 
@@ -22,13 +31,17 @@ final class MomentBreakdownTests: XCTestCase {
         storeURL = URL(fileURLWithPath: NSTemporaryDirectory())
             .appendingPathComponent("peard-breakdown-\(UUID().uuidString).json")
         queue = SendQueue(store: FilePendingSendStore(url: storeURL))
-        app = AppModel(sendQueue: queue)
+        sessionStore = KeychainSessionStore(service: "peard-breakdown-test-\(UUID().uuidString)")
+        sessionStore.clear()
+        app = AppModel(sessionStore: sessionStore, sendQueue: queue)
         await app.attachSendQueue()
         model = HomeModel(app: app, pairID: Self.pairID)
     }
 
     override func tearDown() async throws {
         try? FileManager.default.removeItem(at: storeURL)
+        sessionStore?.clear()
+        sessionStore = nil
         model = nil
         app = nil
         queue = nil

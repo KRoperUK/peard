@@ -22,18 +22,29 @@ final class QuickSendFlowTests: XCTestCase {
     /// cannot become another's starting state.
     private var storeURL: URL!
 
+    /// And a keychain service of its own, so no *session* leaks in either. With
+    /// the device's real one, a signed-in simulator plus a running dev server
+    /// means the queue flushes for real — and a flushed queue is an empty one,
+    /// which is the opposite of what every assertion below is checking. That
+    /// combination made 22 app-target tests fail with nothing wrong in the code.
+    private var sessionStore: KeychainSessionStore!
+
     override func setUp() async throws {
         try await super.setUp()
         storeURL = URL(fileURLWithPath: NSTemporaryDirectory())
             .appendingPathComponent("peard-tests-\(UUID().uuidString).json")
         queue = SendQueue(store: FilePendingSendStore(url: storeURL))
-        app = AppModel(sendQueue: queue)
+        sessionStore = KeychainSessionStore(service: "peard-quicksend-test-\(UUID().uuidString)")
+        sessionStore.clear()
+        app = AppModel(sessionStore: sessionStore, sendQueue: queue)
         await app.attachSendQueue()
         model = HomeModel(app: app, pairID: Self.pairID)
     }
 
     override func tearDown() async throws {
         try? FileManager.default.removeItem(at: storeURL)
+        sessionStore?.clear()
+        sessionStore = nil
         model = nil
         app = nil
         queue = nil
