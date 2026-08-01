@@ -32,7 +32,7 @@ project:
 # failed with "cannot find X in scope" for a type whose file is plainly on disk,
 # or worse, succeeded while quietly leaving the new code out. Directories rather
 # than files on purpose: editing a file needs no regeneration, adding one does.
-SOURCE_DIRS := $(shell find ios/Peard ios/PearWidget ios/PeardTests \
+SOURCE_DIRS := $(shell find ios/Peard ios/PearWidget ios/PearMessages ios/PeardTests \
                         ios/PeardCore/Sources ios/PeardCore/Tests ios/Shared \
                         -type d 2>/dev/null)
 
