@@ -179,3 +179,144 @@ jobs:
           name: xcresult
           path: ios/build/PeardTests.xcresult
           retention-days: 7
+
+  deploy:
+    name: Deploy server
+    runs-on: ubuntu-latest
+    # The two jobs that can tell whether the *server* is fit to run. Deliberately
+    # not the macOS ones: a broken Xcode build cannot make a Go binary wrong, and
+    # blocking every server deploy on a fifteen-minute simulator run is how a
+    # deploy step stops being trusted and starts being bypassed.
+    needs: [server, docker]
+    # Pushes to main only. A pull_request run must never deploy — the code has
+    # not landed — and a workflow_dispatch on a branch would deploy whatever
+    # Komodo pulls from main, which is not what the person who pressed it meant.
+    if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          # Full history, so the range below is diffable however many commits
+          # the push carried.
+          fetch-depth: 0
+
+      # Whether this push can be expected to produce a *different image*, which
+      # decides how the verification below reads a `built_at` that has not moved.
+      # Docker's cache is content-addressed, so a push that leaves server/ and
+      # the Dockerfile alone rebuilds nothing and stamps no new build time — and
+      # demanding one would fail this job on every iOS-only commit. Compose files
+      # are deliberately out: they can change the container without changing the
+      # image.
+      - name: Does this push rebuild the server?
+        id: scope
+        run: |
+          set -euo pipefail
+          before='${{ github.event.before }}'
+          if [ -z "$before" ] || [ "$before" = "0000000000000000000000000000000000000000" ] \
+             || ! git cat-file -e "${before}^{commit}" 2>/dev/null; then
+            # A force-push, a first push, or history that no longer contains the
+            # old head. Assume the image changed: a spurious failure here is
+            # noisy, and the alternative is a real one going unnoticed.
+            echo "No usable previous commit to diff against — assuming a rebuild."
+            echo "rebuild=true" >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+          changed=$(git diff --name-only "$before" "$GITHUB_SHA")
+          echo "Changed in this push:"
+          echo "$changed" | sed 's/^/  /'
+          if echo "$changed" | grep -qE '^(server/|Dockerfile)'; then
+            echo "rebuild=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "rebuild=false" >> "$GITHUB_OUTPUT"
+          fi
+
+      # Komodo was pulling commits and then stopping. It does deploy when asked,
+      # but nothing was asking: 01871fc sat undeployed for about fifteen hours,
+      # and before that the app shipped routes the running server did not have,
+      # which surfaced as requests failing for no stated reason. This is the ask.
+      - name: Trigger Komodo deploy
+        env:
+          # Repository secret: the key Komodo signs against. Repository variable:
+          # the listener URL, which carries the stack id and the hostname of a
+          # Komodo that is not otherwise advertised — out of a public workflow
+          # file on purpose.
+          KOMODO_STACK_WEBHOOK_SECRET: ${{ secrets.KOMODO_STACK_WEBHOOK_SECRET }}
+          URL: ${{ vars.KOMODO_STACK_WEBHOOK_URL }}
+        run: |
+          set -euo pipefail
+          # Named separately rather than "one of these is missing": a deploy that
+          # silently does nothing is the exact failure this job exists to end, so
+          # it has to say which half of the setup is absent.
+          if [ -z "${KOMODO_STACK_WEBHOOK_SECRET}" ]; then
+            echo "Repository secret KOMODO_STACK_WEBHOOK_SECRET is not set — nothing would be deployed."
+            exit 1
+          fi
+          if [ -z "${URL}" ]; then
+            echo "Repository variable KOMODO_STACK_WEBHOOK_URL is not set — nothing would be deployed."
+            exit 1
+          fi
+
+          # Komodo's GitHub listener expects a push payload and checks `ref`
+          # against the branch configured on the stack. The other fields are
+          # there because a listener that grew a required field would otherwise
+          # start rejecting us with a deserialisation error rather than a
+          # signature one, which is a much harder thing to read in a log.
+          body=$(printf '{"ref":"refs/heads/main","after":"%s","repository":{"full_name":"%s"}}' \
+            "$GITHUB_SHA" "$GITHUB_REPOSITORY")
+
+          # Signed with python rather than `openssl dgst -hmac "$KEY"`, which
+          # puts the key in argv where anything on the box can read it. Over the
+          # exact bytes sent below, or the signature will not match.
+          sig=$(printf '%s' "$body" | python3 -c \
+            'import hashlib, hmac, os, sys; print(hmac.new(os.environb[b"KOMODO_STACK_WEBHOOK_SECRET"], sys.stdin.buffer.read(), hashlib.sha256).hexdigest())')
+
+          curl -fsS --retry 3 --retry-connrefused --max-time 30 \
+            -X POST "$URL" \
+            -H 'Content-Type: application/json' \
+            -H 'X-GitHub-Event: push' \
+            -H "X-Hub-Signature-256: sha256=$sig" \
+            --data "$body"
+          echo "Deploy requested."
+
+      # A 200 from the listener means Komodo accepted the request, not that the
+      # stack came back up — and "accepted" was never the part that was failing.
+      # `built_at` is stamped into the binary at image build time, so it moving
+      # is proof that a new image is serving traffic rather than that somebody
+      # was asked nicely.
+      - name: Wait for the new build to answer
+        if: steps.scope.outputs.rebuild == 'true'
+        env:
+          STATUS_URL: https://peard.kroper.uk/api/peard/status
+        run: |
+          set -euo pipefail
+          # Retried: a blip here would fail the job *after* the deploy was
+          # already requested, which is the most confusing way for it to go red.
+          before=$(curl -fsS --retry 3 --max-time 15 "$STATUS_URL" \
+            | python3 -c 'import json,sys; print(json.load(sys.stdin)["built_at"])')
+          echo "Currently serving a build from $before"
+
+          for _ in $(seq 1 40); do
+            sleep 10
+            # A failed poll counts as "unchanged" rather than aborting: the
+            # server is briefly unreachable while it is being replaced, which is
+            # the normal middle of a successful deploy.
+            now=$(curl -fsS --max-time 15 "$STATUS_URL" 2>/dev/null \
+              | python3 -c 'import json,sys; print(json.load(sys.stdin)["built_at"])' 2>/dev/null || echo "$before")
+            if [ "$now" != "$before" ]; then
+              echo "Now serving a build from $now"
+              exit 0
+            fi
+          done
+
+          echo "Still serving the build from $before after about seven minutes."
+          echo "Komodo accepted the webhook, so the failure is on its side — check the"
+          echo "stack's logs for the branch it watches and whether the image build failed."
+          exit 1
+
+      - name: Nothing to verify
+        if: steps.scope.outputs.rebuild != 'true'
+        run: |
+          echo "This push changed nothing under server/ or the Dockerfile, so it is not"
+          echo "expected to produce a new image, and a build time that stays put proves"
+          echo "nothing either way. Komodo has been asked to deploy regardless, which"
+          echo "keeps its checkout level with main and picks up anything a previous"
+          echo "push left undeployed."

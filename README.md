@@ -255,6 +255,25 @@ Environment to a `.env` beside the compose file, and runs
 `docker compose up -d --build`. Every variable has a default, so a stack with an
 empty Environment starts and serves.
 
+Komodo does not deploy on push by itself, and for a while nothing else was
+asking it to: it pulled commits and stopped there, so the app shipped routes the
+running server did not have and the only symptom was a request failing for no
+stated reason. CI's `deploy` job now calls the stack's webhook after the Go and
+Docker jobs pass — not the macOS ones, because a broken Xcode build cannot make
+a Go binary wrong. It needs two repository settings:
+
+| Setting | Kind | What it is |
+|---|---|---|
+| `KOMODO_STACK_WEBHOOK_SECRET` | Secret | Signs the request. Komodo checks it as an `X-Hub-Signature-256` HMAC, exactly as GitHub's own webhooks do |
+| `KOMODO_STACK_WEBHOOK_URL` | Variable | `https://<komodo>/listener/github/stack/<stack id>/deploy`. A variable rather than a literal in the workflow, which is public |
+
+The job then watches `GET /api/peard/status` until `built_at` moves, because a
+`200` from the listener means the request was accepted, and "accepted" was never
+the part that was failing. It only insists on that when the push touched
+`server/` or the Dockerfile: Docker's cache is content-addressed, so anything
+else rebuilds nothing, stamps no new build time, and would fail a check that
+demanded one.
+
 ```bash
 docker compose up -d --build                 # HTTP on 8090, proxy in front
 make docker-up                               # same thing
