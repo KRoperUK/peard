@@ -57,6 +57,93 @@ final class HistoryModel {
     /// and "the right one" are always both on it.
     var moments: [Moment] { MomentCatalogue.available(customKinds: customKinds) }
 
+    // MARK: Reactions
+
+    /// Reactions to the loaded posts, keyed by post.
+    ///
+    /// Reacting was only ever possible to the single most recent moment, on the
+    /// home screen's hero. Come back after a day away and the five things that
+    /// happened while you were gone could be read and not answered — which for
+    /// an app whose whole subject is small acknowledgements between people is
+    /// the wrong way round.
+    private(set) var reactionsByPost: [String: [Reaction]] = [:]
+
+    /// The distinct kinds somebody has used on a post, in the order they were
+    /// first used, so the row reads the same on every redraw.
+    func reactionKinds(for post: Post) -> [ReactionKind] {
+        var seen: [ReactionKind] = []
+        for reaction in reactionsByPost[post.id] ?? [] where !seen.contains(reaction.kind) {
+            seen.append(reaction.kind)
+        }
+        return seen
+    }
+
+    /// Requirement 14.1 — reactions are offered on other people's moments only.
+    func canReact(to post: Post) -> Bool { post.author != signedInUserID }
+
+    /// Records a reaction and reconciles that post's from the server.
+    func react(to post: Post, kind: ReactionKind) async {
+        do {
+            let _: Reaction = try await api.create("reactions", fields: [
+                "post": post.id,
+                "user": signedInUserID,
+                "kind": kind.rawValue,
+            ])
+        } catch let error as APIError where error.status == 400 {
+            // The unique (post, user, kind) index rejected a duplicate. Not an
+            // error worth showing: the reaction the person wanted is already
+            // there, and saying so would read as a failure (Requirement 14.4).
+        } catch {
+            self.error = (error as? APIError)?.localizedDescription ?? error.localizedDescription
+            return
+        }
+
+        // Shown straight away rather than waiting for the round trip. The
+        // reconciliation below is the authority, but it can be cancelled — a
+        // reaction that appears only sometimes is worse than one drawn a moment
+        // early from a write the server has already accepted.
+        addLocally(kind: kind, to: post.id)
+        error = nil
+        await loadReactions(for: [post.id])
+    }
+
+    private func addLocally(kind: ReactionKind, to postID: String) {
+        var existing = reactionsByPost[postID] ?? []
+        guard !existing.contains(where: { $0.user == signedInUserID && $0.kind == kind }) else { return }
+        existing.append(Reaction(id: "local-\(postID)-\(kind.rawValue)", post: postID, user: signedInUserID, kind: kind))
+        reactionsByPost[postID] = existing
+    }
+
+    /// Replaces what is known about the given posts' reactions, and only on
+    /// success.
+    ///
+    /// Nothing is cleared up front, which is the whole point. This runs inside
+    /// pull-to-refresh's task, and that task is cancelled the moment the refresh
+    /// control retracts — the posts request finishes first, this one does not,
+    /// and a version of this that emptied the map before fetching left every
+    /// reaction missing until the next launch. A cancelled or failed load now
+    /// leaves what is already on screen exactly where it was.
+    ///
+    /// Quiet on failure for the same reason: reactions are decoration on a
+    /// timeline that reads perfectly without them, and an error across the whole
+    /// screen because one secondary request was cancelled is worse than a row
+    /// briefly missing a heart.
+    private func loadReactions(for postIDs: [String]) async {
+        guard !postIDs.isEmpty else { return }
+        guard let fetched = try? await api.reactions(postIDs: postIDs) else { return }
+
+        var replacement: [String: [Reaction]] = [:]
+        for reaction in fetched {
+            replacement[reaction.post, default: []].append(reaction)
+        }
+        // Assigned per requested post, so a post that genuinely has no
+        // reactions any more loses them, without touching posts this call was
+        // not asked about.
+        for id in postIDs {
+            reactionsByPost[id] = replacement[id] ?? []
+        }
+    }
+
     /// Chosen so the first screenful arrives quickly while a scroll rarely has to
     /// wait: three screens' worth at a typical text size.
     static let pageSize = 30
@@ -272,6 +359,7 @@ final class HistoryModel {
             return false
         }
         posts.removeAll { $0.id == post.id }
+        reactionsByPost[post.id] = nil
         // Kept honest for the "N moments" footer, which would otherwise count
         // something that is no longer there.
         totalItems = max(0, totalItems - 1)
@@ -292,11 +380,15 @@ final class HistoryModel {
             // Guard against a duplicate arriving from a page boundary shifting
             // under us as new moments land: appending blindly would double a row.
             let known = Set(posts.map(\.id))
-            posts.append(contentsOf: page.posts.filter { !known.contains($0.id) })
+            let fresh = page.posts.filter { !known.contains($0.id) }
+            posts.append(contentsOf: fresh)
             totalItems = page.totalItems
             hasMore = page.hasMore
             nextPage = page.nextPage
             error = nil
+            // Only the posts this page added, so scrolling does not re-fetch
+            // reactions for everything above.
+            await loadReactions(for: fresh.map(\.id))
         } catch {
             self.error = (error as? APIError)?.localizedDescription ?? error.localizedDescription
         }
@@ -501,6 +593,16 @@ struct HistoryView: View {
                             .foregroundStyle(PearColor.textTertiary)
                     }
                 }
+
+                let kinds = model.reactionKinds(for: post)
+                if !kinds.isEmpty {
+                    HStack(spacing: 3) {
+                        ForEach(kinds, id: \.rawValue) { kind in
+                            Text(kind.emoji).font(.caption2)
+                        }
+                    }
+                    .padding(.top, 1)
+                }
             }
 
             Spacer(minLength: 4)
@@ -522,8 +624,10 @@ struct HistoryView: View {
         .modifier(MomentActions(
             post: post,
             canEdit: model.canEdit(post),
+            canReact: model.canReact(to: post),
             onEdit: { editing = post },
-            onDelete: { deleting = post }
+            onDelete: { deleting = post },
+            onReact: { kind in Task { await model.react(to: post, kind: kind) } }
         ))
     }
 
@@ -559,18 +663,24 @@ struct HistoryView: View {
     }
 }
 
-/// Edit and delete, offered by swipe *and* by long press.
+/// What you can do with a moment, which depends on whose it is.
 ///
-/// Both, because neither alone is discoverable: a swipe is the iOS convention
-/// for a list row and is what a practised thumb reaches for, and a context menu
-/// is what somebody finds when they press the thing they want to change and
-/// wait. Attached to every row and inert on somebody else's, so the gesture does
-/// not appear to work on some rows and silently not others.
+/// Yours: edit or delete, by swipe *and* by long press. Both, because neither
+/// alone is discoverable — a swipe is the iOS convention for a list row and is
+/// what a practised thumb reaches for, and a context menu is what somebody
+/// finds when they press the thing they want to change and wait.
+///
+/// Somebody else's: react to it. That used to be possible only on the home
+/// screen's hero, so only ever to the single most recent moment — come back
+/// after a day away and the things that happened while you were gone could be
+/// read and not answered.
 private struct MomentActions: ViewModifier {
     let post: Post
     let canEdit: Bool
+    let canReact: Bool
     let onEdit: () -> Void
     let onDelete: () -> Void
+    let onReact: (ReactionKind) -> Void
 
     func body(content: Content) -> some View {
         if canEdit {
@@ -590,6 +700,25 @@ private struct MomentActions: ViewModifier {
                     }
                     Button(role: .destructive, action: onDelete) {
                         Label("Delete moment", systemImage: "trash")
+                    }
+                }
+        } else if canReact {
+            content
+                // Leading edge, so reacting and deleting are never the same
+                // flick in the same direction on adjacent rows.
+                .swipeActions(edge: .leading, allowsFullSwipe: false) {
+                    ForEach(ReactionKind.allCases, id: \.rawValue) { kind in
+                        Button { onReact(kind) } label: {
+                            Text(kind.emoji)
+                        }
+                        .tint(PearColor.accent.opacity(0.25))
+                    }
+                }
+                .contextMenu {
+                    ForEach(ReactionKind.allCases, id: \.rawValue) { kind in
+                        Button { onReact(kind) } label: {
+                            Text("\(kind.emoji)  \(kind.accessibilityLabel)")
+                        }
                     }
                 }
         } else {

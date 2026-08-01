@@ -275,6 +275,10 @@ final class StubURLProtocol: URLProtocol {
     nonisolated(unsafe) private static var stub = Stub(status: 200, body: Data(), error: nil)
     nonisolated(unsafe) private static var capturedRequest: URLRequest?
     nonisolated(unsafe) private static var capturedBody: Data?
+    /// How many requests have been served since the last reset. Needed by
+    /// anything that batches: "the filter looked right" says nothing about
+    /// whether it was sent once or thirty times.
+    nonisolated(unsafe) private static var served = 0
 
     static func makeSession() -> URLSession {
         let configuration = URLSessionConfiguration.ephemeral
@@ -300,6 +304,7 @@ final class StubURLProtocol: URLProtocol {
         stub = Stub(status: 200, body: Data(), error: nil)
         capturedRequest = nil
         capturedBody = nil
+        served = 0
         lock.unlock()
     }
 
@@ -315,12 +320,19 @@ final class StubURLProtocol: URLProtocol {
         return capturedBody
     }
 
+    static var requestCount: Int {
+        lock.lock()
+        defer { lock.unlock() }
+        return served
+    }
+
     override class func canInit(with request: URLRequest) -> Bool { true }
 
     override class func canonicalRequest(for request: URLRequest) -> URLRequest { request }
 
     override func startLoading() {
         Self.lock.lock()
+        Self.served += 1
         Self.capturedRequest = request
         // URLSession strips httpBody from the protocol's request, so read the
         // stream when present.

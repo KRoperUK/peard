@@ -432,6 +432,30 @@ public extension APIClient {
         )
     }
 
+    /// Reactions to several posts at once, for a screen showing a page of them.
+    ///
+    /// Chunked at ten posts a request, which is not arbitrary: PocketBase caps
+    /// `perPage` at 500, and ten posts in a connection of the maximum twelve
+    /// members, each having used all three reaction kinds, is 360 — comfortably
+    /// under it. A single request for a whole 30-post page could reach 1080 and
+    /// would silently return the first 500, which looks exactly like "nobody
+    /// reacted to the older ones".
+    func reactions(postIDs: [String]) async throws -> [Reaction] {
+        var all: [Reaction] = []
+        for chunk in stride(from: 0, to: postIDs.count, by: 10).map({
+            Array(postIDs[$0..<min($0 + 10, postIDs.count)])
+        }) {
+            all += try await list(
+                "reactions",
+                of: Reaction.self,
+                filter: PeardFilter.anyEquals("post", chunk),
+                sort: nil,
+                perPage: 500
+            )
+        }
+        return all
+    }
+
     // MARK: Health
 
     /// `GET /api/health` — used by the Debug launch probe (Requirement 21.5).
