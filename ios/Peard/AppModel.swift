@@ -13,6 +13,11 @@ final class AppModel {
         /// network from here — see `bootstrap()`.
         case consent
         case auth
+        /// Signed in, with the connections screen showing. This is where
+        /// somebody with no connections lands: an empty list they can search
+        /// their contacts from, rather than a code they are made to create or
+        /// enter before the app will let them past.
+        case connections
         case pair(prefilledCode: String?)
         case home(pairID: String)
 
@@ -301,7 +306,7 @@ final class AppModel {
         do {
             connections = try await api.connections()
             guard let selected = resolvedSelection() else {
-                phase = .pair(prefilledCode: nil)
+                phase = .connections
                 return
             }
             sharedStore.selectedConnectionID = selected.id
@@ -312,14 +317,14 @@ final class AppModel {
                 await clearSessionAndReturnToAuth()
                 return
             }
-            // Transport or server failure: land on pairing with a retry
-            // control (Requirement 9.6).
+            // Transport or server failure: land on the connections screen with
+            // a retry control (Requirement 9.6).
             membershipFailed = true
-            phase = .pair(prefilledCode: nil)
+            phase = .connections
             banner = error.localizedDescription
         } catch {
             membershipFailed = true
-            phase = .pair(prefilledCode: nil)
+            phase = .connections
             banner = error.localizedDescription
         }
     }
@@ -349,11 +354,24 @@ final class AppModel {
         phase = .home(pairID: connectionID)
     }
 
-    /// Opens the pairing screen to add another connection. Unlike the first
-    /// visit this one is escapable, because there is a home to go back to.
+    /// Opens the connections screen to add another one — contacts first, with
+    /// codes a tap further on for the people not in your address book.
     func startAddingConnection() {
         banner = nil
+        phase = .connections
+    }
+
+    /// Opens the invite-code screen, which is now something somebody chooses
+    /// rather than the wall they land against.
+    func startPairing() {
+        banner = nil
         phase = .pair(prefilledCode: nil)
+    }
+
+    /// Back out of the code screen to the connections list.
+    func showConnections() {
+        banner = nil
+        phase = .connections
     }
 
     /// True when the pairing screen was reached from an existing connection, so
@@ -384,7 +402,12 @@ final class AppModel {
             phase = .home(pairID: selected.id)
         } else {
             sharedStore.selectedConnectionID = nil
-            phase = .pair(prefilledCode: nil)
+            // Not while they are typing a code in. This runs on every return to
+            // the foreground, and "you still have no connections" is not news
+            // worth taking somebody off the screen they are using to fix it —
+            // least of all with a half-entered code in the field.
+            if case .pair = phase { return }
+            phase = .connections
         }
     }
 

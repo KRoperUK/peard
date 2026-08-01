@@ -119,7 +119,50 @@ final class AppModelRoutingTests: XCTestCase {
     func testHomePhaseReportsItself() {
         XCTAssertTrue(AppModel.Phase.home(pairID: "p1").isHome)
         XCTAssertFalse(AppModel.Phase.pair(prefilledCode: nil).isHome)
+        XCTAssertFalse(AppModel.Phase.connections.isHome)
         XCTAssertFalse(AppModel.Phase.auth.isHome)
+    }
+
+    // MARK: Adding a connection
+
+    /// Adding somebody starts at the connections screen, where contacts are.
+    /// It used to start at the invite-code screen, which asked for a code
+    /// before it would show anything — and somebody who had just made an
+    /// account had no code and no way to get one from their address book.
+    func testAddingAConnectionStartsAtTheConnectionsScreen() {
+        app.startAddingConnection()
+
+        XCTAssertEqual(app.phase, .connections)
+    }
+
+    /// The code screen is still one tap away, for the people who are not in
+    /// your contacts.
+    func testTheCodeScreenIsStillReachable() {
+        app.startAddingConnection()
+
+        app.startPairing()
+
+        XCTAssertEqual(app.phase, .pair(prefilledCode: nil))
+    }
+
+    /// And escapable. With no connections, signing out used to be the only way
+    /// off it.
+    func testTheCodeScreenCanBeBackedOutOf() {
+        app.startPairing()
+
+        app.showConnections()
+
+        XCTAssertEqual(app.phase, .connections)
+    }
+
+    /// A deep-linked code still opens the code screen directly: somebody who
+    /// tapped an invite has already been handed the thing that screen is for.
+    func testAnInviteLinkStillGoesStraightToTheCode() async {
+        await app.bootstrap()
+
+        app.handle(url: URL(string: "peard://pair/ABC123")!)
+
+        XCTAssertEqual(app.phase, .pair(prefilledCode: "ABC123"))
     }
 
     /// Requirement 19.1 — a `peard://pair/CODE` link opens pairing with the code

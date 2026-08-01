@@ -1,7 +1,13 @@
 import PeardCore
 import SwiftUI
 
-/// Pairing screen (Requirement 10, 21.2, 21.3).
+/// Invite-code screen (Requirement 10, 21.2, 21.3).
+///
+/// Reached from `ConnectionsView` rather than landed on. It used to be the first
+/// thing a signed-in user with no connections saw, which made a code the price
+/// of entry — see that view for why contacts come first now. Codes still matter:
+/// they are how you pear up with somebody who is not in your address book, and
+/// how a group grows.
 struct PairView: View {
     @Environment(AppModel.self) private var app
 
@@ -11,8 +17,6 @@ struct PairView: View {
     @State private var code = ""
     @State private var busy: Busy?
     @State private var errorMessage: String?
-    @State private var showSignOutConfirmation = false
-    @State private var showFindFriends = false
 
     private enum Busy: Equatable { case invite, accept }
 
@@ -20,11 +24,10 @@ struct PairView: View {
 
     var body: some View {
         // Scrollable for the same reason the sign-in screen is: this is a tall
-        // screen — title, invite code, share button, find-friends, divider, code
-        // field, accept button, and up to two more rows for an error and a retry
-        // — and entering a code raises the keyboard over the bottom half of it.
-        // A fixed VStack simply clipped, with nothing to indicate the accept
-        // button was below the fold.
+        // screen — back, title, invite code, share button, divider, code field,
+        // accept button and an error row — and entering a code raises the
+        // keyboard over the bottom half of it. A fixed VStack simply clipped,
+        // with nothing to indicate the accept button was below the fold.
         ScrollView {
             content
                 .padding(32)
@@ -42,34 +45,20 @@ struct PairView: View {
         .onChange(of: prefilledCode) { _, newValue in
             if let newValue { code = newValue.uppercased() }
         }
-        .confirmationDialog(
-            "Sign out?",
-            isPresented: $showSignOutConfirmation,
-            titleVisibility: .visible
-        ) {
-            Button("Sign out", role: .destructive) {
-                Task { await app.signOut() }
-            }
-            Button("Cancel", role: .cancel) {}
-        } message: {
-            Text("Anything still waiting to send is discarded.")
-        }
-        .sheet(isPresented: $showFindFriends) {
-            FindFriendsView()
-        }
     }
 
     private var content: some View {
         VStack(spacing: 0) {
-            if app.canReturnHome {
-                HStack {
-                    Button("Back") { app.returnHome() }
-                        .font(.subheadline.bold())
-                        .foregroundStyle(PearColor.accent)
-                    Spacer()
-                }
-                .padding(.bottom, 16)
+            // Always present now. This screen is somewhere you chose to go, so
+            // there is always somewhere to go back to — before, with no
+            // connections, the only way off it was to sign out.
+            HStack {
+                Button("Back") { app.showConnections() }
+                    .font(.subheadline.bold())
+                    .foregroundStyle(PearColor.accent)
+                Spacer()
             }
+            .padding(.bottom, 16)
 
             Text(app.canReturnHome ? "Another connection 🍐" : "Pear up 🍐")
                 .font(.title.bold())
@@ -87,29 +76,11 @@ struct PairView: View {
 
             inviteSection
 
-            Button {
-                showFindFriends = true
-            } label: {
-                Text("Find friends from your contacts")
-                    .font(.footnote.bold())
-                    .foregroundStyle(PearColor.accent)
-            }
-            .padding(.top, 16)
-
             Divider()
                 .background(PearColor.divider)
                 .padding(.vertical, 28)
 
             codeEntrySection
-
-            if app.membershipFailed {
-                Button("Retry") {
-                    Task { await app.resolveMembership() }
-                }
-                .font(.footnote.bold())
-                .foregroundStyle(PearColor.accent)
-                .padding(.top, 16)
-            }
 
             if let errorMessage {
                 Text(errorMessage)
@@ -118,20 +89,6 @@ struct PairView: View {
                     .multilineTextAlignment(.center)
                     .padding(.top, 16)
                     .pearTransition()
-            }
-
-            if !app.canReturnHome {
-                // A plain gap rather than a Spacer: inside a ScrollView a
-                // Spacer has no fixed height to expand into and collapses to
-                // nothing, which would put "Sign out" directly under the accept
-                // button.
-                Color.clear.frame(height: 40)
-
-                Button("Sign out") {
-                    showSignOutConfirmation = true
-                }
-                .font(.footnote.bold())
-                .foregroundStyle(PearColor.textSecondary)
             }
         }
     }

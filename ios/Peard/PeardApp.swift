@@ -54,6 +54,8 @@ struct RootView: View {
                 PrivacyConsentView()
             case .auth:
                 AuthView()
+            case .connections:
+                ConnectionsView(api: app.api)
             case .pair(let prefilledCode):
                 PairView(prefilledCode: prefilledCode)
             case .home(let pairID):
@@ -70,6 +72,7 @@ struct RootView: View {
         case .loading: return "loading"
         case .consent: return "consent"
         case .auth: return "auth"
+        case .connections: return "connections"
         case .pair: return "pair"
         case .home(let pairID): return "home-\(pairID)"
         }

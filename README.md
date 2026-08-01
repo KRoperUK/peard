@@ -346,7 +346,8 @@ rather than tidy — Apple's JWKS, APNs and Let's Encrypt are all outbound TLS.
 Debug builds only (compiled out of Release entirely):
 
 - **🔧 Login Test User** — password sign-in as `test@peard.local`.
-- **Type `AAAAAA`** on the pairing screen — creates a pair with a seeded test
+- **Type `AAAAAA`** on the invite-code screen (Connections → "Use an invite
+  code") — creates a pair with a seeded test
   partner and two seeded tally posts, so one device is enough.
 - **Type `BBBBBB`** — creates a named three-person group ("Flatmates", with Ari
   and Bo) carrying a published custom moment, so groups, the connection switcher
@@ -570,6 +571,9 @@ or can be omitted.
 - [x] Read state, so "unread" means unread: an exact badge the app keeps current
       itself, a per-connection count on the rail, and a "New" line in the
       timeline marking where you got to
+- [x] An empty connections screen instead of a locked door — a new account lands
+      on its own contacts, searchable and invitable, rather than on a code it
+      has to create or be given before the app will show it anything
 - [ ] Live Activity for "instant photo drop" moments (ActivityKit push-to-update)
 - [ ] Android widget (Jetpack Glance) — blocked on the Android client decision above
 - [ ] Media storage (S3 compatible via PB filesystem settings)
