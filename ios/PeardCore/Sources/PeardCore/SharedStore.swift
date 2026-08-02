@@ -16,6 +16,7 @@ public final class SharedStore: @unchecked Sendable {
         public static let pendingWidgetLog = "pendingWidgetLog"
         public static let privacyPolicyAcceptedVersion = "privacyPolicyAcceptedVersion"
         public static let privacyPolicyAcceptedAt = "privacyPolicyAcceptedAt"
+        public static let appearance = "appearance"
     }
 
     public static let appGroupIdentifier = "group.com.peard.app"
@@ -83,6 +84,20 @@ public final class SharedStore: @unchecked Sendable {
     public var messagesConnectionID: String? {
         get { defaults?.string(forKey: Key.messagesConnectionID) }
         set { set(newValue, forKey: Key.messagesConnectionID) }
+    }
+
+    // MARK: Appearance
+
+    /// Whether the app follows the system's light/dark setting or is pinned.
+    ///
+    /// In the App Group rather than the app's own defaults so it sits with the
+    /// rest of the shared state. The extensions do not act on it — WidgetKit
+    /// renders a widget in the system's appearance whatever its host app
+    /// prefers, and that is Apple's call rather than something to work around —
+    /// but a second home for one setting is a second thing to keep in step.
+    public var appearance: AppearancePreference {
+        get { AppearancePreference(storedValue: defaults?.string(forKey: Key.appearance)) }
+        set { set(newValue.rawValue, forKey: Key.appearance) }
     }
 
     // MARK: Widget optimistic feedback

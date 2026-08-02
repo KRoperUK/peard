@@ -236,3 +236,42 @@ final class CatalogueFingerprintTests: XCTestCase {
         XCTAssertNotEqual(before, after)
     }
 }
+
+/// What the root view hands to `preferredColorScheme`.
+@MainActor
+final class AppearanceSchemeTests: XCTestCase {
+    private func model() -> AppModel {
+        AppModel(sharedStore: SharedStore(defaults: UserDefaults(suiteName: "peard-appearance-\(UUID().uuidString)")))
+    }
+
+    /// nil is what hands the decision back to the phone. Passing a scheme here
+    /// would pin the app to whatever it was last set to and quietly ignore the
+    /// system setting.
+    func testSystemPassesNothingThrough() {
+        let app = model()
+        app.appearance = .system
+
+        XCTAssertNil(app.preferredColorScheme)
+    }
+
+    func testAnOverrideIsPassedThrough() {
+        let app = model()
+
+        app.appearance = .dark
+        XCTAssertEqual(app.preferredColorScheme, .dark)
+
+        app.appearance = .light
+        XCTAssertEqual(app.preferredColorScheme, .light)
+    }
+
+    /// The choice has to outlive the launch that made it.
+    func testTheChoiceIsWrittenToTheSharedStore() {
+        let store = SharedStore(defaults: UserDefaults(suiteName: "peard-appearance-\(UUID().uuidString)"))
+        let app = AppModel(sharedStore: store)
+
+        app.appearance = .dark
+
+        XCTAssertEqual(store.appearance, .dark)
+        XCTAssertEqual(AppModel(sharedStore: store).appearance, .dark)
+    }
+}

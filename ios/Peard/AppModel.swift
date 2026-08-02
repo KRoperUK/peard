@@ -36,6 +36,16 @@ final class AppModel {
     /// every screen that draws one — see `FileTokenStore`.
     let fileTokens: FileTokenStore
     let sharedStore: SharedStore
+
+    /// Light, dark, or whatever the phone is doing.
+    ///
+    /// Mirrored into an observable property rather than read from the store on
+    /// every body evaluation: the root view keys `preferredColorScheme` on this,
+    /// and a plain `UserDefaults` read is invisible to SwiftUI — the setting
+    /// would take a relaunch to show up.
+    var appearance: AppearancePreference {
+        didSet { sharedStore.appearance = appearance }
+    }
     let widgetSync: WidgetSync
     let push: PushCoordinator
     /// Moments logged on the device but not yet accepted by the server.
@@ -95,6 +105,7 @@ final class AppModel {
         self.config = config
         self.sessionStore = sessionStore
         self.sharedStore = sharedStore
+        self.appearance = sharedStore.appearance
         let api = APIClient(baseURL: config.serverURL, tokenProvider: sessionStore)
         self.api = api
         self.fileTokens = FileTokenStore(api: api)
@@ -818,5 +829,17 @@ final class AppModel {
         // to be standing on is not a sensible reason for the badge to be right
         // or wrong, so this lives at the app level where it applies either way.
         await refreshConnections()
+    }
+}
+
+extension AppModel {
+    /// What `preferredColorScheme` should be given, which is nothing at all
+    /// when the answer is "ask the phone".
+    var preferredColorScheme: ColorScheme? {
+        switch appearance {
+        case .system: return nil
+        case .light: return .light
+        case .dark: return .dark
+        }
     }
 }

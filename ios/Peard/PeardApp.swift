@@ -16,6 +16,11 @@ struct PeardApp: App {
         WindowGroup {
             RootView()
                 .environment(model)
+                // nil for `.system`, which is what hands the decision back to
+                // the phone — passing a scheme unconditionally would pin the
+                // app to whatever it was last set to and ignore the setting
+                // somebody has already made once, at the system level.
+                .preferredColorScheme(model.preferredColorScheme)
                 .task {
                     appDelegate.model = model
                     await model.bootstrap()
@@ -73,7 +78,12 @@ struct RootView: View {
             }
         }
         .pearAnimation(value: phaseIdentity)
-        // Requirement 20.3 — no colour-scheme override; the system setting wins.
+        // The colour scheme is applied above this, on the window group, so it
+        // reaches sheets and full-screen covers too — those are presented
+        // outside this hierarchy and would otherwise keep the system's
+        // appearance while the screen behind them changed. Requirement 20.3
+        // (the system setting wins) still holds by default: the override is
+        // opt-in, and `.system` passes nil straight back to the phone.
     }
 
     private var phaseIdentity: String {

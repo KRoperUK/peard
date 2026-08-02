@@ -46,6 +46,7 @@ struct ConnectionSettingsView: View {
                 pendingSection
                 yourNameSection
                 discoverabilitySection
+                appearanceSection
                 accountSection
                 AboutSection(api: app.api, serverURL: model.serverURL)
                 leaveSection
@@ -261,6 +262,34 @@ struct ConnectionSettingsView: View {
             if model.canRemoveMembers && !model.otherMembers.isEmpty {
                 Text("Swipe a member to remove them. Only you can, because you started this connection.")
             }
+        }
+    }
+
+    /// Light, dark, or follow the phone.
+    ///
+    /// The palette has had both variants since it was built, so this is not new
+    /// capability — it is the ability to disagree with the phone. That is a real
+    /// preference: light sensitivity often means wanting a dark app inside an
+    /// otherwise light system, and reading in bed is the same wish in reverse.
+    private var appearanceSection: some View {
+        Section {
+            Picker("Appearance", selection: Binding(
+                get: { app.appearance },
+                set: { app.appearance = $0 }
+            )) {
+                ForEach(AppearancePreference.allCases, id: \.self) { option in
+                    Text(option.title).tag(option)
+                }
+            }
+            .pickerStyle(.segmented)
+            .accessibilityLabel("Appearance")
+        } header: {
+            Text("Appearance")
+        } footer: {
+            // Says what the current choice means rather than describing all
+            // three: "System" is the only one that needs explaining, and it is
+            // the default, so most people read this once and never again.
+            Text(app.appearance.subtitle)
         }
     }
 

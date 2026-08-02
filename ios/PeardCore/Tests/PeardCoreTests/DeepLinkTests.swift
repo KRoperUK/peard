@@ -207,3 +207,32 @@ final class FileTokenDecorationTests: XCTestCase {
         XCTAssertEqual(FileTokenStore.decorate("/f.jpg", token: ""), "/f.jpg")
     }
 }
+
+/// Following the phone, or not.
+final class AppearancePreferenceTests: XCTestCase {
+    /// Following the system is the default and stays it. An app that decides
+    /// for itself on first launch is an app ignoring a setting somebody already
+    /// made once, at the system level.
+    func testTheDefaultIsToFollowTheSystem() {
+        XCTAssertEqual(AppearancePreference.default, .system)
+        XCTAssertEqual(AppearancePreference(storedValue: nil), .system)
+    }
+
+    /// A value written by a later build, or a corrupted default, must not be a
+    /// launch failure.
+    func testAnUnknownStoredValueFallsBack() {
+        XCTAssertEqual(AppearancePreference(storedValue: "sepia"), .system)
+        XCTAssertEqual(AppearancePreference(storedValue: ""), .system)
+    }
+
+    func testEachChoiceRoundTripsThroughStorage() {
+        for preference in AppearancePreference.allCases {
+            XCTAssertEqual(AppearancePreference(storedValue: preference.rawValue), preference)
+        }
+    }
+
+    /// All three are offered, in the order the picker shows them.
+    func testTheOrderIsSystemLightDark() {
+        XCTAssertEqual(AppearancePreference.allCases, [.system, .light, .dark])
+    }
+}

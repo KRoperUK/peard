@@ -26,6 +26,7 @@ import (
 	"peard/internal/contacts"
 	"peard/internal/export"
 	"peard/internal/limits"
+	"peard/internal/media"
 	"peard/internal/pairs"
 	"peard/internal/posts"
 	"peard/internal/profile"
@@ -57,6 +58,7 @@ func main() {
 	})
 
 	limits.Register(app)
+	media.Register(app)
 	peardauth.Register(app)
 	pairs.Register(app)
 	posts.Register(app)
