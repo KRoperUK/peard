@@ -114,3 +114,27 @@ func mustParse(t *testing.T, value string) time.Time {
 	}
 	return parsed
 }
+
+// "When did we last…" is answered by taking the later of the two authorship
+// rows a kind produces, because the question is about the connection rather
+// than about whose turn it was.
+//
+// The comparison is lexicographic on the stored form. That is only correct
+// because the format is zero-padded and fixed-width, which is a property worth
+// asserting rather than assuming — a change to it would silently make "last"
+// mean "whichever sorts highest as text".
+func TestStoredTimestampsCompareChronologicallyAsText(t *testing.T) {
+	cases := [][2]string{
+		{"2026-08-01 09:00:00.000Z", "2026-08-01 10:00:00.000Z"},
+		{"2026-08-01 09:00:00.000Z", "2026-08-02 09:00:00.000Z"},
+		{"2026-08-09 23:59:59.999Z", "2026-08-10 00:00:00.000Z"},
+		{"2026-09-30 23:59:59.999Z", "2026-10-01 00:00:00.000Z"},
+		{"2026-12-31 23:59:59.999Z", "2027-01-01 00:00:00.000Z"},
+	}
+	for _, pair := range cases {
+		earlier, later := pair[0], pair[1]
+		if !(earlier < later) {
+			t.Errorf("%q should sort before %q as text", earlier, later)
+		}
+	}
+}

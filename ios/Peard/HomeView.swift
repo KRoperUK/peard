@@ -161,6 +161,7 @@ struct HomeView: View {
                 moments: model.moments,
                 pendingKind: model.quickSend?.moment.kind,
                 isBusy: model.isBusy,
+                lastAt: model.lastLoggedByKind,
                 onTap: { model.tap(moment: $0) },
                 onMore: { showMomentSheet = true }
             )

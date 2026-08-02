@@ -18,6 +18,12 @@ public struct ConnectionTallies: Codable, Hashable, Sendable {
         public let label: String
         public let mine: TallyPeriods
         public let others: TallyPeriods
+        /// When this moment last happened, whoever logged it.
+        ///
+        /// The connection's, not yours: "when did we last" is a question about
+        /// the two of you rather than about whose turn it was. Nil on a server
+        /// that predates it, and on a kind with nothing logged.
+        public let lastAt: Date?
 
         public var id: String { kind.rawValue }
 
@@ -36,6 +42,7 @@ public struct ConnectionTallies: Codable, Hashable, Sendable {
 
         enum CodingKeys: String, CodingKey {
             case kind, emoji, label, mine, others
+            case lastAt = "last_at"
         }
 
         public init(
@@ -43,13 +50,15 @@ public struct ConnectionTallies: Codable, Hashable, Sendable {
             emoji: String,
             label: String,
             mine: TallyPeriods = .zero,
-            others: TallyPeriods = .zero
+            others: TallyPeriods = .zero,
+            lastAt: Date? = nil
         ) {
             self.kind = kind
             self.emoji = emoji
             self.label = label
             self.mine = mine
             self.others = others
+            self.lastAt = lastAt
         }
 
         public init(from decoder: any Decoder) throws {
@@ -59,6 +68,10 @@ public struct ConnectionTallies: Codable, Hashable, Sendable {
             label = try container.decodeIfPresent(String.self, forKey: .label) ?? MomentSlug.humanised(kind)
             mine = try container.decodeIfPresent(TallyPeriods.self, forKey: .mine) ?? .zero
             others = try container.decodeIfPresent(TallyPeriods.self, forKey: .others) ?? .zero
+            // `try?` rather than `decodeIfPresent`: an older server omits it,
+            // and one that has the column but no rows sends an empty string,
+            // which is not a date and must not fail the whole payload.
+            lastAt = try? container.decode(Date.self, forKey: .lastAt)
         }
     }
 

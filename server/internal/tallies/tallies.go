@@ -59,7 +59,12 @@ SELECT
     SUM(CASE WHEN created >= {:day}   THEN 1 ELSE 0 END)         AS day_count,
     SUM(CASE WHEN created >= {:week}  THEN 1 ELSE 0 END)         AS week_count,
     SUM(CASE WHEN created >= {:month} THEN 1 ELSE 0 END)         AS month_count,
-    COUNT(*)                                                    AS all_count
+    COUNT(*)                                                    AS all_count,
+    -- When this kind last happened, whoever logged it. Grouped alongside the
+    -- counts rather than fetched per kind: "when did we last..." is the
+    -- question the counts are usually a proxy for, and a second query per
+    -- moment to answer it would be a query per row of the breakdown.
+    MAX(created)                                                AS last_at
 FROM posts
 WHERE pair = {:pair} AND type = 'event'
 GROUP BY event_kind, mine
@@ -90,6 +95,9 @@ type row struct {
 	Week      int    `db:"week_count"`
 	Month     int    `db:"month_count"`
 	All       int    `db:"all_count"`
+	// Stored form, e.g. "2026-08-02 01:23:45.678Z". Passed through as-is: the
+	// client decodes the same format everywhere else.
+	LastAt string `db:"last_at"`
 }
 
 func handler(app core.App) func(e *core.RequestEvent) error {
@@ -128,6 +136,9 @@ func handler(app core.App) func(e *core.RequestEvent) error {
 		var mineTotal, othersTotal counts
 		perKindMine := map[string]counts{}
 		perKindOthers := map[string]counts{}
+		// The later of the two authorship rows, because "when did we last" is
+		// about the connection rather than about whose turn it was.
+		perKindLastAt := map[string]string{}
 		order := make([]string, 0, len(rows))
 		seen := map[string]bool{}
 
@@ -142,6 +153,12 @@ func handler(app core.App) func(e *core.RequestEvent) error {
 			if !seen[kind] {
 				seen[kind] = true
 				order = append(order, kind)
+			}
+			// Lexicographic max is chronological max here: the stored format is
+			// zero-padded and fixed-width, which is the property the rest of
+			// this server already relies on for date comparisons in SQL.
+			if r.LastAt > perKindLastAt[kind] {
+				perKindLastAt[kind] = r.LastAt
 			}
 			if r.Mine == 1 {
 				perKindMine[kind] = added(perKindMine[kind], r)
@@ -159,12 +176,13 @@ func handler(app core.App) func(e *core.RequestEvent) error {
 			mine := perKindMine[kind]
 			others := perKindOthers[kind]
 			kinds = append(kinds, map[string]any{
-				"kind":   kind,
-				"emoji":  d.Emoji,
-				"label":  d.Label,
-				"mine":   mine,
-				"others": others,
-				"total":  mine.All + others.All,
+				"kind":    kind,
+				"emoji":   d.Emoji,
+				"label":   d.Label,
+				"mine":    mine,
+				"others":  others,
+				"total":   mine.All + others.All,
+				"last_at": perKindLastAt[kind],
 			})
 		}
 

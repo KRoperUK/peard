@@ -316,3 +316,57 @@ final class AppIconChoiceTests: XCTestCase {
         }
     }
 }
+
+/// "When did we last…", as it reads under an emoji on a tile.
+final class ElapsedAgeTests: XCTestCase {
+    private let now = Date(timeIntervalSince1970: 1_800_000_000)
+
+    private func age(daysAgo: Double = 0, hoursAgo: Double = 0, minutesAgo: Double = 0) -> String? {
+        let then = now.addingTimeInterval(-(daysAgo * 86_400 + hoursAgo * 3_600 + minutesAgo * 60))
+        return ElapsedTime.age(for: then, now: now)
+    }
+
+    /// Nothing logged is not "a long time ago", it is nothing — the caller draws
+    /// no label at all rather than a misleading one.
+    func testNoDateIsNoLabel() {
+        XCTAssertNil(ElapsedTime.age(for: nil, now: now))
+    }
+
+    /// Coarser than the timeline's, deliberately: under the hour is "now",
+    /// because a tile is not a clock.
+    func testWithinTheHourReadsAsNow() {
+        XCTAssertEqual(age(minutesAgo: 0), "now")
+        XCTAssertEqual(age(minutesAgo: 59), "now")
+        XCTAssertEqual(age(minutesAgo: 61), "1h")
+    }
+
+    func testHoursThenDays() {
+        XCTAssertEqual(age(hoursAgo: 23), "23h")
+        XCTAssertEqual(age(daysAgo: 1), "1d")
+        XCTAssertEqual(age(daysAgo: 6), "6d")
+    }
+
+    /// The one that matters: a fortnight reads as weeks, not as "14d".
+    func testAWeekOrMoreReadsInWeeks() {
+        XCTAssertEqual(age(daysAgo: 7), "1w")
+        XCTAssertEqual(age(daysAgo: 21), "3w")
+        XCTAssertEqual(age(daysAgo: 59), "8w")
+    }
+
+    /// And a season reads as months. "112d" says less than "3mo" about whether
+    /// something is worth doing again.
+    func testTwoMonthsOrMoreReadsInMonths() {
+        XCTAssertEqual(age(daysAgo: 60), "2mo")
+        XCTAssertEqual(age(daysAgo: 112), "3mo")
+    }
+
+    func testAYearOrMoreReadsInYears() {
+        XCTAssertEqual(age(daysAgo: 365), "1y")
+        XCTAssertEqual(age(daysAgo: 900), "2y")
+    }
+
+    /// A clock that disagrees must not produce "-3d".
+    func testAFutureDateDoesNotGoNegative() {
+        XCTAssertEqual(ElapsedTime.age(for: now.addingTimeInterval(3600), now: now), "now")
+    }
+}

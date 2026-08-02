@@ -147,6 +147,31 @@ final class HomeModel {
     /// The moments offered on the home screen.
     var moments: [Moment] { MomentCatalogue.available(customKinds: customKinds) }
 
+    /// When each moment last happened here, keyed by kind.
+    ///
+    /// From the tallies rather than the loaded timeline: the home screen holds
+    /// a page, so a moment nobody has logged for a month is exactly the one the
+    /// page would not contain — and it is the one worth saying "5w" about.
+    ///
+    /// A queued send counts. It has not reached the server, but it happened,
+    /// and a tile reading "3w" a second after being tapped would be wrong in
+    /// the way people notice.
+    var lastLoggedByKind: [String: Date] {
+        var result: [String: Date] = [:]
+        for kind in serverTallies.kinds {
+            if let lastAt = kind.lastAt {
+                result[kind.kind.rawValue] = lastAt
+            }
+        }
+        for send in pendingSends {
+            let slug = send.kind.rawValue
+            if result[slug].map({ send.queuedAt > $0 }) ?? true {
+                result[slug] = send.queuedAt
+            }
+        }
+        return result
+    }
+
     /// The recommended moments this connection has not published yet.
     var suggestedMoments: [Moment] { MomentCatalogue.unusedPresets(customKinds: customKinds) }
 

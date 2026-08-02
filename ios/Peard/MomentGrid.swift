@@ -19,6 +19,13 @@ struct MomentGrid: View {
     /// The moment currently counting down, drawn as selected.
     let pendingKind: EventKind?
     let isBusy: Bool
+    /// When each moment last happened in this connection, keyed by kind.
+    ///
+    /// "When did we last…" is the question the tallies are usually a proxy for,
+    /// and it was the one thing the grid could not answer: finding out meant
+    /// filtering the timeline and scrolling. Empty where it is not known — an
+    /// older server, or a picker that has no history to speak of.
+    var lastAt: [String: Date] = [:]
     let onTap: (Moment) -> Void
     /// Nil where inventing a moment does not belong — the photo sheet asks what
     /// a picture is *of*, and publishing a new moment mid-send is a different
@@ -45,6 +52,10 @@ struct MomentGrid: View {
         .opacity(isBusy ? 0.6 : 1)
     }
 
+    private func age(for moment: Moment) -> String? {
+        ElapsedTime.age(for: lastAt[moment.kind.rawValue])
+    }
+
     private func tile(for moment: Moment) -> some View {
         let isPending = pendingKind == moment.kind
         return Button {
@@ -58,6 +69,13 @@ struct MomentGrid: View {
                     .foregroundStyle(PearColor.textSecondary)
                     .lineLimit(1)
                     .minimumScaleFactor(0.8)
+                // Held open even when there is nothing to say, so a grid of
+                // mixed tiles does not come out ragged — the same reason the
+                // Messages tray holds its status line.
+                Text(age(for: moment) ?? " ")
+                    .font(.caption2)
+                    .foregroundStyle(PearColor.textTertiary)
+                    .lineLimit(1)
             }
             .frame(maxWidth: .infinity)
             .padding(.vertical, 14)
@@ -74,9 +92,14 @@ struct MomentGrid: View {
             .contentShape(RoundedRectangle(cornerRadius: 14))
         }
         .buttonStyle(.plain)
+        // The age is drawn as a bare "3w" under the label, which means nothing
+        // read aloud on its own.
+        .accessibilityLabel(
+            age(for: moment).map { "Log \(moment.label). Last one \($0) ago" }
+                ?? "Log \(moment.label)"
+        )
         // Requirement 12.10.
         .disabled(isBusy)
-        .accessibilityLabel("Log \(moment.label)")
         .accessibilityHint("Sends in \(Int(QuickSend.delay)) seconds unless you add a note")
     }
 

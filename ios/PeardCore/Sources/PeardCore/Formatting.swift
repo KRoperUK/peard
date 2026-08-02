@@ -12,6 +12,33 @@ public enum ElapsedTime {
         if hours < 24 { return "\(hours)h" }
         return "\(hours / 24)d"
     }
+
+    /// How long ago something last happened, for "when did we last…".
+    ///
+    /// Separate from `label` rather than an extension of it, because the two
+    /// answer different questions over different spans. A timeline row is
+    /// minutes-to-days old and "21d" there is fine; a moment nobody has logged
+    /// since spring is the interesting case here, and "112d" says less than
+    /// "4mo" about whether it is worth doing again.
+    ///
+    /// Whole units, floored, and deliberately coarse: this sits under an emoji
+    /// on a 80-point tile, and the difference between 6 and 7 weeks is not what
+    /// anybody is reading it for.
+    public static func age(for date: Date?, now: Date = Date()) -> String? {
+        guard let date else { return nil }
+        let seconds = max(0, now.timeIntervalSince(date))
+        let minutes = Int(seconds / 60)
+        if minutes < 60 { return "now" }
+        let hours = minutes / 60
+        if hours < 24 { return "\(hours)h" }
+        let days = hours / 24
+        if days < 7 { return "\(days)d" }
+        let weeks = days / 7
+        if days < 60 { return "\(weeks)w" }
+        let months = days / 30
+        if months < 12 { return "\(months)mo" }
+        return "\(days / 365)y"
+    }
 }
 
 /// Partner display-name rules (Requirement 11.7, 11.8).
