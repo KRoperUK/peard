@@ -21,10 +21,19 @@ public extension APIClient {
 
     /// `GET /api/peard/widget/connections?token=…` — the choices a configurable
     /// widget offers.
-    func widgetConnections(token: String) async throws -> [WidgetConnection] {
+    /// - Parameter withMoments: also return each connection's catalogue.
+    ///
+    ///   The Shortcuts moment picker needs every connection's moments at once,
+    ///   and used to get them one connection at a time through `widgetFeed` —
+    ///   a whole feed (tallies, latest post, unread count) fetched per
+    ///   connection to read one list out of it. Off by default because the
+    ///   widget's own configuration picker does not want them.
+    func widgetConnections(token: String, withMoments: Bool = false) async throws -> [WidgetConnection] {
+        var query = ["token": token]
+        if withMoments { query["moments"] = "1" }
         let list: WidgetConnectionList = try await get(
             path: "/api/peard/widget/connections",
-            query: ["token": token]
+            query: query
         )
         return list.connections
     }

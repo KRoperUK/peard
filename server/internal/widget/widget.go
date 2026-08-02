@@ -81,12 +81,21 @@ func resolveToken(app core.App, e *core.RequestEvent, token string) (string, err
 // Deliberately thinner than /api/peard/connections: a title, whether it is a
 // group, and the id. The widget needs enough to draw a picker and nothing more,
 // and this endpoint is reachable with the widget token rather than a session.
+//
+// `?moments=1` adds each connection's catalogue. The Shortcuts moment picker
+// needs every connection's moments at once — a custom kind is only valid in the
+// connection that published it, so the picker names both — and was fetching them
+// one connection at a time through the feed endpoint, which is a full feed
+// (tallies, latest post, unread count) per connection to read one list. Opt-in
+// rather than always-on because the widget's own picker does not want them and
+// this walks moment_kinds once per connection.
 func connectionsHandler(app core.App) func(e *core.RequestEvent) error {
 	return func(e *core.RequestEvent) error {
 		userID, err := resolveToken(app, e, e.Request.URL.Query().Get("token"))
 		if err != nil {
 			return err
 		}
+		withMoments := e.Request.URL.Query().Get("moments") == "1"
 
 		memberships, ferr := app.FindRecordsByFilter("pair_members",
 			"user = {:user}", "created", maxConnections, 0, dbx.Params{"user": userID})
@@ -102,12 +111,16 @@ func connectionsHandler(app core.App) func(e *core.RequestEvent) error {
 			if merr != nil {
 				continue
 			}
-			out = append(out, map[string]any{
+			connection := map[string]any{
 				"id":           pairID,
 				"title":        connectionTitle(app, pairID, members, userID),
 				"member_count": len(members),
 				"is_group":     len(members) > 2,
-			})
+			}
+			if withMoments {
+				connection["moments"] = availableMoments(app, pairID)
+			}
+			out = append(out, connection)
 		}
 		return e.JSON(http.StatusOK, map[string]any{"connections": out})
 	}

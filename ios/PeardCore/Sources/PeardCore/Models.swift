@@ -1036,18 +1036,29 @@ public struct WidgetConnection: Codable, Hashable, Sendable, Identifiable {
     public let title: String
     public let memberCount: Int
     public let isGroup: Bool
+    /// What this connection can log, present only when the caller asked for it
+    /// (`widgetConnections(token:withMoments:)`). Nil means "not requested",
+    /// which is not the same as "none" — every connection can log the built-ins.
+    public let moments: [WidgetFeed.AvailableMoment]?
 
     enum CodingKeys: String, CodingKey {
-        case id, title
+        case id, title, moments
         case memberCount = "member_count"
         case isGroup = "is_group"
     }
 
-    public init(id: String, title: String, memberCount: Int = 2, isGroup: Bool = false) {
+    public init(
+        id: String,
+        title: String,
+        memberCount: Int = 2,
+        isGroup: Bool = false,
+        moments: [WidgetFeed.AvailableMoment]? = nil
+    ) {
         self.id = id
         self.title = title
         self.memberCount = memberCount
         self.isGroup = isGroup
+        self.moments = moments
     }
 
     public init(from decoder: any Decoder) throws {
@@ -1056,6 +1067,7 @@ public struct WidgetConnection: Codable, Hashable, Sendable, Identifiable {
         title = try container.decodeIfPresent(String.self, forKey: .title) ?? PartnerLabel.fallback
         memberCount = try container.decodeIfPresent(Int.self, forKey: .memberCount) ?? 2
         isGroup = try container.decodeIfPresent(Bool.self, forKey: .isGroup) ?? false
+        moments = try container.decodeIfPresent([WidgetFeed.AvailableMoment].self, forKey: .moments)
     }
 
     public var subtitle: String {

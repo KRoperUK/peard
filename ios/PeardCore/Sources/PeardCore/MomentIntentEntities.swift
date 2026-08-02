@@ -62,20 +62,14 @@ public struct ConnectionQuery: EntityQuery {
 /// Public because the Shortcuts moment picker lives in the app target rather
 /// than here — see `MomentShortcuts.swift`, and the reason it had to move.
 public enum MomentIntentSource {
-    public static func connections(store: SharedStore = .shared) async throws -> [WidgetConnection] {
+    public static func connections(
+        withMoments: Bool = false,
+        store: SharedStore = .shared
+    ) async throws -> [WidgetConnection] {
         guard
             let token = store.widgetToken, !token.isEmpty,
             let baseURL = store.apiBaseURL
         else { return [] }
-        return try await APIClient(baseURL: baseURL).widgetConnections(token: token)
-    }
-
-    public static func moments(pairID: String, store: SharedStore = .shared) async throws -> [WidgetFeed.AvailableMoment] {
-        guard
-            let token = store.widgetToken, !token.isEmpty,
-            let baseURL = store.apiBaseURL
-        else { return [] }
-        let feed = try await APIClient(baseURL: baseURL).widgetFeed(token: token, pairID: pairID)
-        return feed.moments ?? []
+        return try await APIClient(baseURL: baseURL).widgetConnections(token: token, withMoments: withMoments)
     }
 }

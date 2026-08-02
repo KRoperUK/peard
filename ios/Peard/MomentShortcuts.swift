@@ -196,30 +196,18 @@ struct MomentOptionsProvider: DynamicOptionsProvider {
     /// A failure leaves the built-ins rather than an empty picker: they work in
     /// every connection, and a picker with nothing in it reads as an app that
     /// cannot log anything.
+    ///
+    /// One request. This used to be one per connection — a whole feed, tallies
+    /// and latest post and all, fetched for each one just to read its catalogue
+    /// out — which is why `/api/peard/widget/connections` learned `?moments=1`.
     static func load() async -> [MomentOption] {
-        let connections = (try? await MomentIntentSource.connections()) ?? []
+        let connections = (try? await MomentIntentSource.connections(withMoments: true)) ?? []
         guard !connections.isEmpty else { return MomentOption.builtins }
         if connections.count > connectionLimit {
             NSLog("[Peard] moment picker showing %d of %d connections", connectionLimit, connections.count)
         }
-        let shown = connections.prefix(connectionLimit).map(ConnectionEntity.init)
-
-        // Fetched concurrently: one request per connection, and doing them in
-        // turn is what would make this picker feel broken on a slow network.
-        let fetched = await withTaskGroup(of: (String, [WidgetFeed.AvailableMoment]).self) { group in
-            for connection in shown {
-                group.addTask {
-                    let moments = (try? await MomentIntentSource.moments(pairID: connection.id)) ?? []
-                    return (connection.id, moments)
-                }
-            }
-            var results: [String: [WidgetFeed.AvailableMoment]] = [:]
-            for await (id, moments) in group { results[id] = moments }
-            return results
-        }
-
-        // Stable order: the group finishes in whatever order the network
-        // returns, and a picker whose rows move between openings is unusable.
-        return MomentOption.all(from: shown.map { ($0, fetched[$0.id] ?? []) })
+        return MomentOption.all(from: connections.prefix(connectionLimit).map {
+            (ConnectionEntity($0), $0.moments ?? [])
+        })
     }
 }
