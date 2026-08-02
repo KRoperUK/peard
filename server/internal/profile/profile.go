@@ -27,7 +27,8 @@ import (
 // maxDisplayNameLength matches the users.display_name column (80 characters).
 const maxDisplayNameLength = 80
 
-// Register binds the profile routes.
+// Register binds the profile routes and keeps `name` in step with
+// `display_name`.
 func Register(app core.App) {
 	app.OnServe().BindFunc(func(se *core.ServeEvent) error {
 		g := se.Router.Group("/api/peard/profile")
@@ -37,6 +38,36 @@ func Register(app core.App) {
 		se.Router.DELETE("/api/peard/account", deleteAccountHandler(app)).Bind(apis.RequireAuth())
 		return se.Next()
 	})
+	registerNameMirror(app)
+}
+
+// registerNameMirror fills the stock `name` field from `display_name` whenever
+// it would otherwise be blank.
+//
+// Pear'd never writes `name`: the app's own field is `display_name`, added by
+// the init migration because the default one carries no meaning here. But
+// PocketBase's admin console labels a relation with `name`, so every
+// pair_members row, every post and every reaction rendered as a bare record id
+// — the console was unusable for exactly the thing it is good at, which is
+// following relations while working out what happened.
+//
+// Only when blank. Somebody who sets `name` in the console meant to, and having
+// it silently overwritten on the next profile save would be worse than the
+// problem this fixes.
+//
+// A hook rather than a computed column because there is nowhere to compute it:
+// the console reads the stored row.
+func registerNameMirror(app core.App) {
+	mirror := func(e *core.RecordEvent) error {
+		if strings.TrimSpace(e.Record.GetString("name")) == "" {
+			if display := strings.TrimSpace(e.Record.GetString("display_name")); display != "" {
+				e.Record.Set("name", display)
+			}
+		}
+		return e.Next()
+	}
+	app.OnRecordCreate("users").BindFunc(mirror)
+	app.OnRecordUpdate("users").BindFunc(mirror)
 }
 
 // deleteAccountHandler erases the caller's account outright.
