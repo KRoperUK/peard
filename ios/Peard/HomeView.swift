@@ -241,16 +241,12 @@ struct HomeView: View {
     @ViewBuilder
     private func heroThumbnail(for post: Post) -> some View {
         if post.type == .photo, let path = post.mediaThumbnailPath() {
-            AsyncImage(url: URL(string: model.serverURL.absoluteString + path)) { phase in
-                switch phase {
-                case .success(let image):
-                    image.resizable().scaledToFill()
-                case .failure:
-                    Text("📷").font(.system(size: 32)).accessibilityHidden(true)
-                default:
-                    ProgressView()
-                }
+            ProtectedImage(serverURL: model.serverURL, path: path) {
+                ProgressView()
+            } failure: {
+                Text("📷").font(.system(size: 32)).accessibilityHidden(true)
             }
+            .scaledToFill()
             .frame(width: 72, height: 72)
             .clipShape(RoundedRectangle(cornerRadius: 12))
             .contentShape(RoundedRectangle(cornerRadius: 12))

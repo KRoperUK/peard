@@ -1439,3 +1439,9 @@ public struct ServerStatus: Codable, Hashable, Sendable {
         go = try container.decodeIfPresent(String.self, forKey: .go) ?? "unknown"
     }
 }
+
+/// Response of `POST /api/files/token`.
+public struct FileTokenIssue: Codable, Hashable, Sendable {
+    public let token: String
+    public init(token: String) { self.token = token }
+}

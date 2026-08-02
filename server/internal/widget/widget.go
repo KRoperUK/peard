@@ -371,6 +371,24 @@ func feedHandler(app core.App) func(e *core.RequestEvent) error {
 		if media := latest.GetString("media"); media != "" {
 			mediaURL = fmt.Sprintf("%s/api/files/%s/%s/%s?thumb=512x512",
 				baseURL(app, e), latest.Collection().Id, latest.Id, url.PathEscape(media))
+			// posts.media is a protected file field, so the bytes need a file
+			// token. The widget cannot mint one — that endpoint wants a real
+			// session and the extension has only its widget token — so the
+			// token is minted here, for the user this feed belongs to, and
+			// travels with the URL.
+			//
+			// A failure drops the media rather than failing the feed: a widget
+			// showing the moment without its photo is worth much more than one
+			// showing nothing at all.
+			if owner, err := app.FindRecordById("users", userID); err == nil {
+				if fileToken, terr := owner.NewFileToken(); terr == nil {
+					mediaURL += "&token=" + fileToken
+				} else {
+					mediaURL = ""
+				}
+			} else {
+				mediaURL = ""
+			}
 		}
 		kind := latest.GetString("event_kind")
 		descriptor := moments.Resolve(app, chosenPair, kind)

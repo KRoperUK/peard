@@ -161,3 +161,49 @@ extension DeepLinkTests {
         XCTAssertFalse(invite.shareMessage.contains("peard://"))
     }
 }
+
+/// Appending a file token to an image path.
+///
+/// `posts.media` is a protected file field: without `?token=` the server
+/// answers 404, and joining the query wrongly produces exactly that — so the
+/// rule is worth asserting rather than eyeballing.
+final class FileTokenDecorationTests: XCTestCase {
+    func testABarePathGetsAQuestionMark() {
+        XCTAssertEqual(
+            FileTokenStore.decorate("/api/files/posts/p1/photo.jpg", token: "abc"),
+            "/api/files/posts/p1/photo.jpg?token=abc"
+        )
+    }
+
+    /// The thumbnail path already carries a query, which is the common case —
+    /// every timeline row and the home hero use it.
+    func testAPathWithAQueryGetsAnAmpersand() {
+        XCTAssertEqual(
+            FileTokenStore.decorate("/api/files/posts/p1/photo.jpg?thumb=512x512", token: "abc"),
+            "/api/files/posts/p1/photo.jpg?thumb=512x512&token=abc"
+        )
+    }
+
+    /// A real JWT is base64url — alphanumerics, `-`, `_` and `.` — and must
+    /// survive untouched, or every image 404s.
+    func testAJWTPassesThroughUnchanged() {
+        let jwt = "eyJhbGc.eyJpZCI6-_x.SflKxwRJ"
+
+        XCTAssertEqual(FileTokenStore.decorate("/f.jpg", token: jwt), "/f.jpg?token=" + jwt)
+    }
+
+    /// Anything outside the unreserved set is escaped. `+` especially: a great
+    /// many servers decode it as a space, which would turn a valid token into a
+    /// rejected one for no visible reason.
+    func testQuerySignificantCharactersAreEscaped() {
+        let decorated = FileTokenStore.decorate("/f.jpg", token: "a+b/c=d&e")
+
+        XCTAssertEqual(decorated, "/f.jpg?token=a%2Bb%2Fc%3Dd%26e")
+    }
+
+    /// No token is not a token. Appending an empty one would produce a URL that
+    /// looks authenticated and is not.
+    func testAnEmptyTokenIsNotAppended() {
+        XCTAssertEqual(FileTokenStore.decorate("/f.jpg", token: ""), "/f.jpg")
+    }
+}

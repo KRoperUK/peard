@@ -32,6 +32,9 @@ final class AppModel {
     let config: PeardConfig
     let sessionStore: KeychainSessionStore
     let api: APIClient
+    /// The token protected photos are fetched with. One per session, shared by
+    /// every screen that draws one — see `FileTokenStore`.
+    let fileTokens: FileTokenStore
     let sharedStore: SharedStore
     let widgetSync: WidgetSync
     let push: PushCoordinator
@@ -94,6 +97,7 @@ final class AppModel {
         self.sharedStore = sharedStore
         let api = APIClient(baseURL: config.serverURL, tokenProvider: sessionStore)
         self.api = api
+        self.fileTokens = FileTokenStore(api: api)
         self.widgetSync = WidgetSync(api: api, store: sharedStore, baseURL: config.serverURL)
         self.push = PushCoordinator(api: api, session: sessionStore, store: sharedStore)
         self.sendQueue = sendQueue ?? SendQueue(store: FilePendingSendStore.appGroup())

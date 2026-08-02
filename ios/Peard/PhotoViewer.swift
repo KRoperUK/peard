@@ -14,6 +14,7 @@ import SwiftUI
 /// half of something somebody said.
 struct PhotoViewer: View {
     @Environment(\.dismiss) private var dismiss
+    @Environment(AppModel.self) private var app
 
     let post: Post
     let serverURL: URL
@@ -33,9 +34,11 @@ struct PhotoViewer: View {
     @State private var failed = false
     @State private var saveOutcome: String?
 
-    private var url: URL? {
+    /// Built at load time rather than up front, because the token has to be
+    /// fetched: `posts.media` is protected, and the path alone is a 404.
+    private func url(token: String) -> URL? {
         guard let path = post.mediaPath() else { return nil }
-        return URL(string: serverURL.absoluteString + path)
+        return URL(string: serverURL.absoluteString + FileTokenStore.decorate(path, token: token))
     }
 
     private var isZoomedIn: Bool { zoom > 1.01 }
@@ -99,7 +102,7 @@ struct PhotoViewer: View {
     /// a missing file with a JSON error body, and `UIImage(data:)` would simply
     /// return nil on it, which reads the same as a corrupt photo.
     private func load() async {
-        guard let url else {
+        guard let token = await app.fileTokens.current(), let url = url(token: token) else {
             failed = true
             return
         }

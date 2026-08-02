@@ -858,16 +858,12 @@ struct HistoryView: View {
     @ViewBuilder
     private func thumbnail(for post: Post) -> some View {
         if post.type == .photo, let path = post.mediaThumbnailPath() {
-            AsyncImage(url: URL(string: serverURL.absoluteString + path)) { phase in
-                switch phase {
-                case .success(let image):
-                    image.resizable().scaledToFill()
-                case .failure:
-                    Text("📷").font(.title3)
-                default:
-                    ProgressView()
-                }
+            ProtectedImage(serverURL: serverURL, path: path) {
+                ProgressView()
+            } failure: {
+                Text("📷").font(.title3)
             }
+            .scaledToFill()
             .frame(width: 36, height: 36)
             .clipShape(RoundedRectangle(cornerRadius: 8))
         } else {

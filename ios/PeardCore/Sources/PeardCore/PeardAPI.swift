@@ -361,6 +361,16 @@ public extension APIClient {
         )
     }
 
+    /// `POST /api/files/token` — a short-lived token for protected files.
+    ///
+    /// `posts.media` is protected, so its bytes are only served with one of
+    /// these, and PocketBase checks it against `posts.ViewRule` — a token
+    /// belonging to somebody outside the connection is refused exactly as a
+    /// missing one is. Managed by `FileTokenStore`, which is what callers use.
+    func issueFileToken() async throws -> FileTokenIssue {
+        try await post(path: "/api/files/token")
+    }
+
     /// Renames a published moment, or gives it a different emoji.
     ///
     /// The slug is deliberately not editable. It is what every post already

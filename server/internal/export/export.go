@@ -41,6 +41,20 @@ func exportHandler(app core.App) func(e *core.RequestEvent) error {
 			return e.NotFoundError("user not found", err)
 		}
 
+		// posts.media is a protected file field, so a bare URL is a 404 to
+		// everybody including its owner. The links below carry a file token, so
+		// the export is a thing somebody can actually open — which is the point
+		// of it, and a commitment the privacy policy makes.
+		//
+		// The token expires (30 minutes), so the links do too. That is stated
+		// in the payload rather than left to be discovered: an export whose
+		// photos quietly stop resolving next week is worse than one that says
+		// when to use it.
+		fileToken, ferr := user.NewFileToken()
+		if ferr != nil {
+			fileToken = ""
+		}
+
 		memberships, err := app.FindRecordsByFilter("pair_members",
 			"user = {:user}", "created", maxConnections, 0, dbx.Params{"user": userID})
 		if err != nil {
@@ -80,14 +94,19 @@ func exportHandler(app core.App) func(e *core.RequestEvent) error {
 				"created":    post.GetString("created"),
 			}
 			if media := post.GetString("media"); media != "" {
-				moment["media_url"] = fmt.Sprintf("%s/api/files/%s/%s/%s",
+				mediaURL := fmt.Sprintf("%s/api/files/%s/%s/%s",
 					baseURL(app, e), post.Collection().Id, post.Id, url.PathEscape(media))
+				if fileToken != "" {
+					mediaURL += "?token=" + fileToken
+				}
+				moment["media_url"] = mediaURL
 			}
 			moments = append(moments, moment)
 		}
 
 		return e.JSON(http.StatusOK, map[string]any{
 			"exported_at": time.Now().UTC().Format(time.RFC3339),
+			"media_note":  "Photo links carry a temporary access token and stop working about 30 minutes after this export. Re-export to get fresh ones.",
 			"profile": map[string]any{
 				"id":           user.Id,
 				"email":        user.GetString("email"),
