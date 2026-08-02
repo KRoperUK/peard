@@ -227,10 +227,18 @@ public extension APIClient {
     /// too. `phone` is never required: leaving it empty still lets email
     /// matching work.
     @discardableResult
-    func updateDiscoverability(discoverable: Bool, phone: String) async throws -> DiscoverabilityStatus {
+    func updateDiscoverability(
+        discoverable: Bool,
+        phone: String,
+        contactEmail: String = ""
+    ) async throws -> DiscoverabilityStatus {
         try await post(
             path: "/api/peard/contacts/settings",
-            typedFields: ["discoverable": .bool(discoverable), "phone": .string(phone)]
+            typedFields: [
+                "discoverable": .bool(discoverable),
+                "phone": .string(phone),
+                "contact_email": .string(contactEmail),
+            ]
         )
     }
 

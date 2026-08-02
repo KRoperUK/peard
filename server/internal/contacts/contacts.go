@@ -61,8 +61,31 @@ func Register(app core.App) {
 // account, or the discoverability settings route below all funnel through
 // the same users collection save.
 func applyContactHashes(record *core.Record) {
-	record.Set("email_hash", HashEmail(record.GetString("email")))
+	record.Set("email_hash", HashEmail(MatchableEmail(record)))
 	record.Set("phone_hash", HashPhone(record.GetString("phone")))
+}
+
+// MatchableEmail is the address to hash for contact matching: whatever the user
+// nominated, else the account's own.
+//
+// They differ for Sign in with Apple accounts that chose to hide their address.
+// The relay Apple issues — `something@privaterelay.appleid.com` — is generated
+// per app, per account, so it has never been anybody's address and cannot be in
+// anybody's contacts. Hashing it is hashing a value with no possible match.
+func MatchableEmail(record *core.Record) string {
+	if nominated := strings.TrimSpace(record.GetString("contact_email")); nominated != "" {
+		return nominated
+	}
+	return record.GetString("email")
+}
+
+// appleRelayDomain is the suffix Apple issues hidden addresses under.
+const appleRelayDomain = "@privaterelay.appleid.com"
+
+// IsAppleRelayEmail reports whether an address is one Apple generated to hide
+// somebody's real one.
+func IsAppleRelayEmail(email string) bool {
+	return strings.HasSuffix(strings.ToLower(strings.TrimSpace(email)), appleRelayDomain)
 }
 
 func settingsHandler(app core.App) func(e *core.RequestEvent) error {
@@ -70,6 +93,7 @@ func settingsHandler(app core.App) func(e *core.RequestEvent) error {
 		var body struct {
 			Discoverable bool   `json:"discoverable" form:"discoverable"`
 			Phone        string `json:"phone" form:"phone"`
+			ContactEmail string `json:"contact_email" form:"contact_email"`
 		}
 		if err := e.BindBody(&body); err != nil {
 			return e.BadRequestError("invalid request body", err)
@@ -84,8 +108,22 @@ func settingsHandler(app core.App) func(e *core.RequestEvent) error {
 		if err != nil {
 			return e.NotFoundError("user not found", err)
 		}
+		// Normalised the same way the hash normalises, so what is stored is
+		// what will be matched — a stored address that differs from its own
+		// hash by a capital letter is a bug nobody would ever see.
+		contactEmail := NormaliseEmail(body.ContactEmail)
+		if contactEmail != "" && !strings.Contains(contactEmail, "@") {
+			return e.BadRequestError("that does not look like an email address", nil)
+		}
+		// Nominating the relay address itself is the one thing that cannot
+		// help: it is the address this field exists to work around.
+		if IsAppleRelayEmail(contactEmail) {
+			return e.BadRequestError("that is a private relay address — use one people have for you", nil)
+		}
+
 		user.Set("discoverable", body.Discoverable)
 		user.Set("phone", phone)
+		user.Set("contact_email", contactEmail)
 		if err := app.Save(user); err != nil {
 			return e.BadRequestError("failed to save", err)
 		}
@@ -93,6 +131,11 @@ func settingsHandler(app core.App) func(e *core.RequestEvent) error {
 		return e.JSON(http.StatusOK, map[string]any{
 			"discoverable": user.GetBool("discoverable"),
 			"phone":        user.GetString("phone"),
+			// Echoed so the app can show what is actually stored rather than
+			// what was typed, and so it knows whether to offer the field at
+			// all.
+			"contact_email":  user.GetString("contact_email"),
+			"email_is_relay": IsAppleRelayEmail(user.GetString("email")),
 		})
 	}
 }

@@ -22,6 +22,8 @@ import (
 
 	"github.com/pocketbase/pocketbase/apis"
 	"github.com/pocketbase/pocketbase/core"
+
+	"peard/internal/contacts"
 )
 
 // maxDisplayNameLength matches the users.display_name column (80 characters).
@@ -178,5 +180,11 @@ func present(user *core.Record) map[string]any {
 		// than always opening on its default.
 		"discoverable": user.GetBool("discoverable"),
 		"phone":        user.GetString("phone"),
+		// The address contact matching hashes, when it is not the account's
+		// own — see internal/contacts. Surfaced with the flag that explains
+		// why it exists, so the Settings screen can offer the field to the
+		// accounts that need it and stay out of the way for everybody else.
+		"contact_email":  user.GetString("contact_email"),
+		"email_is_relay": contacts.IsAppleRelayEmail(user.GetString("email")),
 	}
 }

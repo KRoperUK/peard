@@ -1180,11 +1180,22 @@ public struct UserProfile: Codable, Hashable, Sendable, Identifiable {
     public let discoverable: Bool
     /// Only ever set via the discoverability settings route, never at signup.
     public let phone: String
+    /// An address other people would recognise, hashed for contact matching in
+    /// place of `email`. Empty when the account's own address is the one to
+    /// match on, which is the usual case.
+    public let contactEmail: String
+    /// True when `email` is a Sign in with Apple private relay address —
+    /// `something@privaterelay.appleid.com`. Those are generated per app, per
+    /// account, so nobody can have one in their contacts and matching on it
+    /// can never succeed. It is the whole reason `contactEmail` exists.
+    public let emailIsRelay: Bool
 
     enum CodingKeys: String, CodingKey {
         case id, email, discoverable, phone
         case displayName = "display_name"
         case avatarFilename = "avatar"
+        case contactEmail = "contact_email"
+        case emailIsRelay = "email_is_relay"
     }
 
     public init(
@@ -1193,7 +1204,9 @@ public struct UserProfile: Codable, Hashable, Sendable, Identifiable {
         email: String? = nil,
         avatarFilename: String? = nil,
         discoverable: Bool = false,
-        phone: String = ""
+        phone: String = "",
+        contactEmail: String = "",
+        emailIsRelay: Bool = false
     ) {
         self.id = id
         self.displayName = displayName
@@ -1201,6 +1214,8 @@ public struct UserProfile: Codable, Hashable, Sendable, Identifiable {
         self.avatarFilename = avatarFilename
         self.discoverable = discoverable
         self.phone = phone
+        self.contactEmail = contactEmail
+        self.emailIsRelay = emailIsRelay
     }
 
     public init(from decoder: any Decoder) throws {
@@ -1211,6 +1226,12 @@ public struct UserProfile: Codable, Hashable, Sendable, Identifiable {
         avatarFilename = try container.decodeIfPresent(String.self, forKey: .avatarFilename)
         discoverable = try container.decodeIfPresent(Bool.self, forKey: .discoverable) ?? false
         phone = try container.decodeIfPresent(String.self, forKey: .phone) ?? ""
+        contactEmail = try container.decodeIfPresent(String.self, forKey: .contactEmail) ?? ""
+        // Absent on a server that predates the field, which is not the same as
+        // "not a relay address" — but the address itself is right here, so the
+        // client can answer the question rather than assume an answer.
+        emailIsRelay = try container.decodeIfPresent(Bool.self, forKey: .emailIsRelay)
+            ?? AppleRelayEmail.isRelay(email)
     }
 
     /// What other members would see today: the set name, else the email's local
@@ -1295,10 +1316,35 @@ struct ContactMatchList: Codable, Hashable, Sendable {
 public struct DiscoverabilityStatus: Codable, Hashable, Sendable {
     public let discoverable: Bool
     public let phone: String
+    /// The address matching hashes in place of the account's own, echoed back
+    /// as stored — normalised, so what is shown is what will actually match.
+    public let contactEmail: String
+    public let emailIsRelay: Bool
 
-    public init(discoverable: Bool, phone: String) {
+    enum CodingKeys: String, CodingKey {
+        case discoverable, phone
+        case contactEmail = "contact_email"
+        case emailIsRelay = "email_is_relay"
+    }
+
+    public init(
+        discoverable: Bool,
+        phone: String,
+        contactEmail: String = "",
+        emailIsRelay: Bool = false
+    ) {
         self.discoverable = discoverable
         self.phone = phone
+        self.contactEmail = contactEmail
+        self.emailIsRelay = emailIsRelay
+    }
+
+    public init(from decoder: any Decoder) throws {
+        let container = try decoder.container(keyedBy: CodingKeys.self)
+        discoverable = try container.decodeIfPresent(Bool.self, forKey: .discoverable) ?? false
+        phone = try container.decodeIfPresent(String.self, forKey: .phone) ?? ""
+        contactEmail = try container.decodeIfPresent(String.self, forKey: .contactEmail) ?? ""
+        emailIsRelay = try container.decodeIfPresent(Bool.self, forKey: .emailIsRelay) ?? false
     }
 }
 

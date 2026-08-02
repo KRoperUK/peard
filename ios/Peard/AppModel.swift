@@ -587,9 +587,13 @@ final class AppModel {
     /// `APIClient.updateDiscoverability(discoverable:phone:)`. Searching your
     /// own contacts needs none of this; it only governs whether this account
     /// can appear in someone *else's* results.
-    func updateDiscoverability(discoverable: Bool, phone: String) async {
+    func updateDiscoverability(discoverable: Bool, phone: String, contactEmail: String = "") async {
         do {
-            let status = try await api.updateDiscoverability(discoverable: discoverable, phone: phone)
+            let status = try await api.updateDiscoverability(
+                discoverable: discoverable,
+                phone: phone,
+                contactEmail: contactEmail
+            )
             profile = profile.map {
                 UserProfile(
                     id: $0.id,
@@ -597,7 +601,13 @@ final class AppModel {
                     email: $0.email,
                     avatarFilename: $0.avatarFilename,
                     discoverable: status.discoverable,
-                    phone: status.phone
+                    phone: status.phone,
+                    // The server normalises what it stores, so the echo is
+                    // taken rather than what was typed — otherwise the "has
+                    // changes" check compares a trimmed value against an
+                    // untrimmed one and the Save button never goes quiet.
+                    contactEmail: status.contactEmail,
+                    emailIsRelay: $0.emailIsRelay
                 )
             }
         } catch {

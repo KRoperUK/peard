@@ -31,6 +31,7 @@ struct ConnectionSettingsView: View {
     @State private var exportError: String?
     @State private var discoverable = false
     @State private var phoneText = ""
+    @State private var contactEmailText = ""
     @State private var isSavingDiscoverability = false
     @FocusState private var nameFieldFocused: Bool
     @FocusState private var displayNameFieldFocused: Bool
@@ -67,6 +68,7 @@ struct ConnectionSettingsView: View {
                 displayNameText = app.profile?.displayName ?? ""
                 discoverable = app.profile?.discoverable ?? false
                 phoneText = app.profile?.phone ?? ""
+                contactEmailText = app.profile?.contactEmail ?? ""
             }
             // The name fields are seeded from state that changes from elsewhere:
             // another member renames the group, or the display name is saved and
@@ -460,6 +462,21 @@ struct ConnectionSettingsView: View {
                     Task { await saveDiscoverability(discoverable: newValue) }
                 }
 
+            if discoverable, app.profile?.emailIsRelay == true {
+                // Only for the accounts this can help. Sign in with Apple's
+                // relay address is generated per app, per account, so it has
+                // never been anybody's address — matching on it cannot succeed,
+                // and until this field existed those accounts could turn the
+                // toggle on and simply never be found.
+                TextField("Email people have for you", text: $contactEmailText)
+                    .keyboardType(.emailAddress)
+                    .textContentType(.emailAddress)
+                    .textInputAutocapitalization(.never)
+                    .autocorrectionDisabled()
+                    .accessibilityLabel("Email people have for you")
+                    .accessibilityHint("Used only to match your contacts, never shown to anybody")
+            }
+
             if discoverable {
                 TextField("Phone number (optional)", text: $phoneText)
                     .keyboardType(.phonePad)
@@ -474,30 +491,53 @@ struct ConnectionSettingsView: View {
                     if isSavingDiscoverability {
                         ProgressView()
                     } else {
-                        Text("Save phone number")
+                        Text(app.profile?.emailIsRelay == true ? "Save" : "Save phone number")
                     }
                 }
-                .disabled(isSavingDiscoverability || phoneText == (app.profile?.phone ?? ""))
+                .disabled(isSavingDiscoverability || !discoverabilityHasChanges)
             }
         } header: {
             Text("Discoverable")
         } footer: {
-            Text(
-                "Pear'd compares one-way hashes of contact info, never raw emails or phone numbers, "
-                    + "and only for people who've turned this on. Your email is always included; "
-                    + "adding a phone number lets people who only have that find you too."
-            )
+            Text(discoverabilityFooter)
         }
     }
 
+    /// The footer explains the mechanism, and for a relay account it has to
+    /// explain one more thing: why the email box is there at all. Somebody who
+    /// hid their address chose to, and being asked for one without a reason
+    /// reads as the app going back on that.
+    private var discoverabilityFooter: String {
+        let base = "Pear'd compares one-way hashes of contact info, never raw emails or phone numbers, "
+            + "and only for people who've turned this on."
+        guard app.profile?.emailIsRelay == true else {
+            return base + " Your email is always included; adding a phone number lets people who "
+                + "only have that find you too."
+        }
+        return base + " You signed in with Apple and hid your email, so the address we have for you "
+            + "is a private relay one that nobody else has — matching on it can never find you. "
+            + "Give an address people actually have, and we'll match on that instead. It's hashed "
+            + "like everything else and never shown to anyone."
+    }
+
+    /// True when either field differs from what the server last returned.
+    private var discoverabilityHasChanges: Bool {
+        phoneText != (app.profile?.phone ?? "")
+            || contactEmailText != (app.profile?.contactEmail ?? "")
+    }
+
     private func saveDiscoverabilityIfChanged() {
-        guard phoneText != (app.profile?.phone ?? "") else { return }
+        guard discoverabilityHasChanges else { return }
         Task { await saveDiscoverability(discoverable: discoverable) }
     }
 
     private func saveDiscoverability(discoverable: Bool) async {
         isSavingDiscoverability = true
-        await app.updateDiscoverability(discoverable: discoverable, phone: phoneText)
+        await app.updateDiscoverability(
+            discoverable: discoverable,
+            phone: phoneText,
+            contactEmail: contactEmailText
+        )
         phoneText = app.profile?.phone ?? phoneText
         isSavingDiscoverability = false
     }

@@ -236,3 +236,42 @@ final class AppearancePreferenceTests: XCTestCase {
         XCTAssertEqual(AppearancePreference.allCases, [.system, .light, .dark])
     }
 }
+
+/// Sign in with Apple's hidden addresses, and the field that works around them.
+final class AppleRelayEmailTests: XCTestCase {
+    func testRelayAddressesAreRecognised() {
+        XCTAssertTrue(AppleRelayEmail.isRelay("abc123@privaterelay.appleid.com"))
+        XCTAssertTrue(AppleRelayEmail.isRelay("ABC123@PrivateRelay.AppleID.com"))
+        XCTAssertTrue(AppleRelayEmail.isRelay("  spaced@privaterelay.appleid.com  "))
+    }
+
+    /// The domain has to be the suffix, not merely present — otherwise
+    /// `privaterelay.appleid.com@example.com` would be misread as one.
+    func testOtherAddressesAreNot() {
+        XCTAssertFalse(AppleRelayEmail.isRelay("someone@example.com"))
+        XCTAssertFalse(AppleRelayEmail.isRelay("someone@appleid.com"))
+        XCTAssertFalse(AppleRelayEmail.isRelay("privaterelay.appleid.com@example.com"))
+        XCTAssertFalse(AppleRelayEmail.isRelay(""))
+        XCTAssertFalse(AppleRelayEmail.isRelay(nil))
+    }
+
+    /// A server that predates the flag sends no `email_is_relay`, which is not
+    /// the same as "not a relay address" — the address itself is in the same
+    /// payload, so the client answers rather than assumes.
+    func testAnOlderServerStillGetsTheRightAnswer() throws {
+        let json = #"{"id":"u1","email":"abc@privaterelay.appleid.com"}"#
+        let profile = try JSONDecoder.peard.decode(UserProfile.self, from: Data(json.utf8))
+
+        XCTAssertTrue(profile.emailIsRelay)
+        XCTAssertEqual(profile.contactEmail, "")
+    }
+
+    /// And it believes the server when the server does say.
+    func testTheServersAnswerWins() throws {
+        let json = #"{"id":"u1","email":"me@example.com","email_is_relay":false,"contact_email":"other@example.com"}"#
+        let profile = try JSONDecoder.peard.decode(UserProfile.self, from: Data(json.utf8))
+
+        XCTAssertFalse(profile.emailIsRelay)
+        XCTAssertEqual(profile.contactEmail, "other@example.com")
+    }
+}

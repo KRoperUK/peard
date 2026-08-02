@@ -216,3 +216,28 @@ func TestMatchRequiresAuth(t *testing.T) {
 		t.Fatalf("match without auth = %d, want 401 or 403", code)
 	}
 }
+
+// A Sign in with Apple relay address is generated per app, per account, so it
+// has never been anybody's address and cannot be in anybody's contacts.
+// Matching on it is matching on a value nothing can produce.
+func TestAppleRelayAddressesAreRecognised(t *testing.T) {
+	for _, email := range []string{
+		"abc123@privaterelay.appleid.com",
+		"ABC123@PrivateRelay.AppleID.com",
+		"  spaced@privaterelay.appleid.com  ",
+	} {
+		if !contacts.IsAppleRelayEmail(email) {
+			t.Errorf("%q should be recognised as a relay address", email)
+		}
+	}
+	for _, email := range []string{
+		"someone@example.com",
+		"someone@appleid.com",
+		"privaterelay.appleid.com@example.com",
+		"",
+	} {
+		if contacts.IsAppleRelayEmail(email) {
+			t.Errorf("%q should not be a relay address", email)
+		}
+	}
+}
