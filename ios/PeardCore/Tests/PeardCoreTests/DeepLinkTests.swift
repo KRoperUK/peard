@@ -275,3 +275,44 @@ final class AppleRelayEmailTests: XCTestCase {
         XCTAssertEqual(profile.contactEmail, "other@example.com")
     }
 }
+
+/// Which pear is on the home screen.
+final class AppIconChoiceTests: XCTestCase {
+    /// The subtle one: UIKit uses nil to mean "the primary icon", both when
+    /// reporting and when setting. The default must map to nil in each
+    /// direction or the picker and the home screen disagree.
+    func testTheDefaultIsNilInBothDirections() {
+        XCTAssertNil(AppIconChoice.orchard.alternateName)
+        XCTAssertEqual(AppIconChoice(alternateName: nil), .orchard)
+        XCTAssertEqual(AppIconChoice.default, .orchard)
+    }
+
+    func testEachAlternateRoundTrips() {
+        for choice in AppIconChoice.allCases {
+            XCTAssertEqual(AppIconChoice(alternateName: choice.alternateName), choice)
+        }
+    }
+
+    /// An icon removed from a later build, still set on somebody's phone, must
+    /// read back as something rather than crash the picker.
+    func testAnUnknownIconFallsBackToTheDefault() {
+        XCTAssertEqual(AppIconChoice(alternateName: "AppIconRetired"), .orchard)
+    }
+
+    /// The names have to match the asset sets, which are what
+    /// ASSETCATALOG_COMPILER_ALTERNATE_APPICON_NAMES lists in project.yml.
+    /// A mismatch fails at runtime, not at build time.
+    func testTheAlternateNamesAreTheOnesDeclared() {
+        XCTAssertEqual(
+            AppIconChoice.allCases.compactMap(\.alternateName),
+            ["AppIconAmber", "AppIconBlush", "AppIconInk"]
+        )
+    }
+
+    func testEveryChoiceHasAPreviewAndATitle() {
+        for choice in AppIconChoice.allCases {
+            XCTAssertFalse(choice.title.isEmpty)
+            XCTAssertTrue(choice.previewAssetName.hasPrefix("IconPreview"))
+        }
+    }
+}

@@ -96,6 +96,13 @@ targets:
     settings:
       base:
         ASSETCATALOG_COMPILER_APPICON_NAME: AppIcon
+        # Alternate icons, chosen at runtime with setAlternateIconName(_:).
+        # They have to be named here as well as existing in the catalogue:
+        # without INCLUDE_ALL_APPICON_ASSETS the compiler strips every set that
+        # is not the primary, and the call then fails at runtime with a message
+        # about an icon that is plainly on disk.
+        ASSETCATALOG_COMPILER_ALTERNATE_APPICON_NAMES: AppIconAmber AppIconBlush AppIconInk
+        ASSETCATALOG_COMPILER_INCLUDE_ALL_APPICON_ASSETS: YES
         ASSETCATALOG_COMPILER_GLOBAL_ACCENT_COLOR_NAME: AccentColor
         CODE_SIGN_STYLE: Automatic
         CURRENT_PROJECT_VERSION: 1

@@ -48,6 +48,7 @@ struct ConnectionSettingsView: View {
                 yourNameSection
                 discoverabilitySection
                 appearanceSection
+                appIconSection
                 accountSection
                 AboutSection(api: app.api, serverURL: model.serverURL)
                 leaveSection
@@ -500,6 +501,46 @@ struct ConnectionSettingsView: View {
             Text("Discoverable")
         } footer: {
             Text(discoverabilityFooter)
+        }
+    }
+
+    /// Which pear is on the home screen.
+    ///
+    /// A row of the actual artwork rather than a list of names: the whole
+    /// choice is what it looks like, and a segmented control of four words
+    /// would make somebody pick one to find out.
+    private var appIconSection: some View {
+        Section {
+            HStack(spacing: 14) {
+                ForEach(AppIconChoice.allCases, id: \.self) { choice in
+                    Button {
+                        Task { await app.setAppIcon(choice) }
+                    } label: {
+                        Image(choice.previewAssetName)
+                            .resizable()
+                            .aspectRatio(1, contentMode: .fit)
+                            .clipShape(RoundedRectangle(cornerRadius: 14))
+                            .overlay {
+                                RoundedRectangle(cornerRadius: 14)
+                                    .strokeBorder(
+                                        app.appIcon == choice ? PearColor.accent : PearColor.divider,
+                                        lineWidth: app.appIcon == choice ? 3 : 1
+                                    )
+                            }
+                    }
+                    .buttonStyle(.plain)
+                    .accessibilityLabel(choice.title)
+                    // Selection is a ring, which is colour — so the trait says
+                    // it too, for anyone the ring does not reach.
+                    .accessibilityAddTraits(app.appIcon == choice ? [.isSelected, .isButton] : .isButton)
+                }
+            }
+            .frame(maxWidth: .infinity)
+            .padding(.vertical, 4)
+        } header: {
+            Text("App icon")
+        } footer: {
+            Text("\(app.appIcon.title). iOS shows its own confirmation when this changes.")
         }
     }
 

@@ -24,6 +24,9 @@ struct PeardApp: App {
                 .task {
                     appDelegate.model = model
                     await model.bootstrap()
+                    // After bootstrap, so a cold launch from a quick action has
+                    // a loaded session to log against.
+                    appDelegate.performPendingShortcut()
                 }
                 .onOpenURL { url in
                     model.handle(url: url)
@@ -46,6 +49,10 @@ struct PeardApp: App {
         .onChange(of: scenePhase) { previous, phase in
             guard phase == .active, previous != .active else { return }
             Task { await model.applicationDidBecomeActive() }
+            // Rebuilt on every foreground: the labels come from
+            // MomentCatalogue, and the menu is otherwise whatever it was when
+            // the app was installed.
+            QuickActions.install()
         }
     }
 }
@@ -109,7 +116,60 @@ final class AppDelegate: NSObject, UIApplicationDelegate, UNUserNotificationCent
     ) -> Bool {
         UNUserNotificationCenter.current().delegate = self
         PushCoordinator.registerNotificationCategories()
+        QuickActions.install()
+
+        // A launch *from* a quick action delivers it here rather than through
+        // the delegate callback below, and returning false suppresses that
+        // second delivery — which would otherwise log the moment twice.
+        if let item = launchOptions?[.shortcutItem] as? UIApplicationShortcutItem {
+            pendingShortcut = item
+            return false
+        }
         return true
+    }
+
+    /// Held when the app was launched cold by a quick action, because at that
+    /// point there is no session loaded and nothing to log against yet.
+    private var pendingShortcut: UIApplicationShortcutItem?
+
+    /// A quick action while the app was already running.
+    func application(
+        _ application: UIApplication,
+        performActionFor shortcutItem: UIApplicationShortcutItem,
+        completionHandler: @escaping (Bool) -> Void
+    ) {
+        completionHandler(perform(shortcutItem))
+    }
+
+    /// Logs the moment a quick action asked for.
+    ///
+    /// Straight through `MomentLogging`, the same path the widget's buttons and
+    /// Siri take: it authenticates with the App Group's token rather than the
+    /// session, so it works before the app has finished launching and needs no
+    /// screen.
+    @discardableResult
+    func perform(_ item: UIApplicationShortcutItem) -> Bool {
+        guard let moment = QuickActions.moment(for: item) else { return false }
+        Task {
+            await MomentLogging.perform(
+                kind: moment.kind,
+                // No connection: the same "whichever is liveliest" fallback an
+                // unconfigured widget uses. A quick action is fired from the
+                // home screen, which has no context to choose from.
+                pairID: nil,
+                emoji: moment.emoji,
+                label: moment.label
+            )
+            await model?.applicationDidBecomeActive()
+        }
+        return true
+    }
+
+    /// Runs a shortcut that arrived with a cold launch, once there is a model.
+    func performPendingShortcut() {
+        guard let pendingShortcut else { return }
+        self.pendingShortcut = nil
+        perform(pendingShortcut)
     }
 
     func application(

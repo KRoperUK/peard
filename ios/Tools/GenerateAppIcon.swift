@@ -164,6 +164,67 @@ private struct Palette {
     let seam: UInt32?  // nil means erase to transparency
     let opaque: Bool
 
+    /// A complete set for one icon: the three appearances Apple asks for.
+    ///
+    /// Alternate icons are the same drawing in a different hue, so a family is
+    /// four colours and a ground rather than a whole new palette — which is the
+    /// only reason offering several is cheap.
+    struct Family {
+        /// The asset-catalogue name. The default one is "AppIcon"; the rest are
+        /// what `setAlternateIconName(_:)` is given.
+        let assetName: String
+        /// What the picker calls it.
+        let title: String
+        let light: Palette
+        let dark: Palette
+        let tinted: Palette
+
+        /// Tinted is greyscale in every family — the system supplies the tint,
+        /// so hue here would be thrown away. Shared rather than repeated.
+        static let sharedTinted = Palette(
+            background: nil,
+            backBody: 0x8A_8A_8A,
+            backStemLeaf: 0x6E_6E_6E,
+            frontBody: 0xF2_F2_F2,
+            frontLeaf: 0xC8_C8_C8,
+            seam: nil,
+            opaque: false
+        )
+
+        static func make(
+            assetName: String,
+            title: String,
+            ground: (top: UInt32, bottom: UInt32),
+            seam: UInt32,
+            lightBack: UInt32, lightBackStem: UInt32, lightFront: UInt32, lightFrontLeaf: UInt32,
+            darkBack: UInt32, darkBackStem: UInt32, darkFront: UInt32, darkFrontLeaf: UInt32
+        ) -> Family {
+            Family(
+                assetName: assetName,
+                title: title,
+                light: Palette(
+                    background: ground,
+                    backBody: lightBack,
+                    backStemLeaf: lightBackStem,
+                    frontBody: lightFront,
+                    frontLeaf: lightFrontLeaf,
+                    seam: seam,
+                    opaque: true
+                ),
+                dark: Palette(
+                    background: nil,
+                    backBody: darkBack,
+                    backStemLeaf: darkBackStem,
+                    frontBody: darkFront,
+                    frontLeaf: darkFrontLeaf,
+                    seam: nil,
+                    opaque: false
+                ),
+                tinted: sharedTinted
+            )
+        }
+    }
+
     /// Light: warm cream ground, PearAccent-family greens.
     static let light = Palette(
         background: (top: 0xFD_FA_F2, bottom: 0xF1_E5_CB),
@@ -323,14 +384,163 @@ private let iconSet = URL(fileURLWithPath: #filePath)
     .deletingLastPathComponent()   // ios
     .appendingPathComponent("Peard/Assets.xcassets/AppIcon.appiconset")
 
-private let variants: [(name: String, palette: Palette)] = [
-    ("AppIcon-1024.png", .light),
-    ("AppIcon-1024-Dark.png", .dark),
-    ("AppIcon-1024-Tinted.png", .tinted),
+/// Writes the Contents.json that binds the three PNGs to their appearances.
+///
+/// Generated rather than committed by hand: an alternate icon that is missing
+/// one appearance fails at build time with a message about the asset
+/// catalogue, not about the icon, and three sets of it is three chances to get
+/// that wrong.
+private func writeContents(for family: Palette.Family, in set: URL) {
+    let json = """
+    {
+      "images" : [
+        {
+          "filename" : "\(family.assetName)-1024.png",
+          "idiom" : "universal",
+          "platform" : "ios",
+          "size" : "1024x1024"
+        },
+        {
+          "appearances" : [
+            {
+              "appearance" : "luminosity",
+              "value" : "dark"
+            }
+          ],
+          "filename" : "\(family.assetName)-1024-Dark.png",
+          "idiom" : "universal",
+          "platform" : "ios",
+          "size" : "1024x1024"
+        },
+        {
+          "appearances" : [
+            {
+              "appearance" : "luminosity",
+              "value" : "tinted"
+            }
+          ],
+          "filename" : "\(family.assetName)-1024-Tinted.png",
+          "idiom" : "universal",
+          "platform" : "ios",
+          "size" : "1024x1024"
+        }
+      ],
+      "info" : {
+        "author" : "xcode",
+        "version" : 1
+      }
+    }
+
+    """
+    try? json.write(to: set.appendingPathComponent("Contents.json"), atomically: true, encoding: .utf8)
+}
+
+/// Writes a normal image set of the same artwork, for the picker.
+///
+/// An `.appiconset` cannot be loaded as an `Image` at runtime — it is compiled
+/// into icon slots, not into a named asset — so a picker showing what you are
+/// choosing needs its own copy. Drawn here from the same palette in the same
+/// pass, which is the only way the two cannot drift.
+///
+/// Light appearance only, and small: it is a thumbnail in a settings row, and
+/// the dark/tinted variants are the system's business rather than something to
+/// preview.
+private func writePreview(for family: Palette.Family) {
+    let name = "IconPreview" + family.title
+    let set = iconSet
+        .deletingLastPathComponent()
+        .appendingPathComponent("\(name).imageset")
+    try? FileManager.default.createDirectory(at: set, withIntermediateDirectories: true)
+
+    for scale in [1, 2, 3] {
+        let file = "\(name)@\(scale)x.png"
+        write(render(palette: family.light, side: 120 * scale), to: set.appendingPathComponent(file))
+    }
+
+    let json = """
+    {
+      "images" : [
+        { "filename" : "\(name)@1x.png", "idiom" : "universal", "scale" : "1x" },
+        { "filename" : "\(name)@2x.png", "idiom" : "universal", "scale" : "2x" },
+        { "filename" : "\(name)@3x.png", "idiom" : "universal", "scale" : "3x" }
+      ],
+      "info" : { "author" : "xcode", "version" : 1 }
+    }
+
+    """
+    try? json.write(to: set.appendingPathComponent("Contents.json"), atomically: true, encoding: .utf8)
+    print("wrote \(name).imageset")
+}
+
+// The icons somebody can choose between.
+//
+// The first is the real one — its asset set is `AppIcon`, which is what the app
+// falls back to and what the App Store shows. The rest are alternates, named in
+// project.yml's ASSETCATALOG_COMPILER_ALTERNATE_APPICON_NAMES and selected at
+// runtime with `setAlternateIconName(_:)`.
+//
+// Deliberately few, and all obviously the same mark. An alternate icon is for
+// somebody who wants their home screen to look like theirs, not a theme gallery
+// — and every one added is three more PNGs to keep in step with the drawing.
+private let families: [Palette.Family] = [
+    Palette.Family(
+        assetName: "AppIcon",
+        title: "Orchard",
+        light: .light,
+        dark: .dark,
+        tinted: Palette.Family.sharedTinted
+    ),
+    // A pear left on the windowsill a week longer.
+    Palette.Family.make(
+        assetName: "AppIconAmber",
+        title: "Amber",
+        ground: (top: 0xFF_F6_E4, bottom: 0xF6_E0_B8),
+        seam: 0xFD_F3_E0,
+        lightBack: 0xB0_6E_12, lightBackStem: 0x8E_57_0D,
+        lightFront: 0xE0_9A_25, lightFrontLeaf: 0xF2_BC_57,
+        darkBack: 0xA9_6C_18, darkBackStem: 0x8A_56_12,
+        darkFront: 0xE8_A8_3C, darkFrontLeaf: 0xF7_CB_79
+    ),
+    // The blush on a ripe red pear.
+    Palette.Family.make(
+        assetName: "AppIconBlush",
+        title: "Blush",
+        ground: (top: 0xFF_F1_F0, bottom: 0xF7_D9_D6,),
+        seam: 0xFD_EE_EC,
+        lightBack: 0x9E_2F_36, lightBackStem: 0x7E_25_2B,
+        lightFront: 0xCB_4A_4A, lightFrontLeaf: 0xE3_78_71,
+        darkBack: 0x97_33_38, darkBackStem: 0x79_28_2C,
+        darkFront: 0xD8_5C_58, darkFrontLeaf: 0xEE_8F_88
+    ),
+    // For a home screen that would rather the app did not shout.
+    Palette.Family.make(
+        assetName: "AppIconInk",
+        title: "Ink",
+        ground: (top: 0x2C_2A_27, bottom: 0x1A_18_15),
+        seam: 0x23_21_1E,
+        lightBack: 0x6F_6B_63, lightBackStem: 0x57_54_4D,
+        lightFront: 0xC8_C3_B8, lightFrontLeaf: 0xE6_E1_D6,
+        darkBack: 0x6F_6B_63, darkBackStem: 0x57_54_4D,
+        darkFront: 0xC8_C3_B8, darkFrontLeaf: 0xE6_E1_D6
+    ),
 ]
 
-for variant in variants {
-    let url = iconSet.appendingPathComponent(variant.name)
-    write(render(palette: variant.palette, side: 1024), to: url)
-    print("wrote \(url.lastPathComponent)")
+for family in families {
+    let set = iconSet
+        .deletingLastPathComponent()
+        .appendingPathComponent("\(family.assetName).appiconset")
+    try? FileManager.default.createDirectory(at: set, withIntermediateDirectories: true)
+
+    let appearances: [(suffix: String, palette: Palette)] = [
+        ("", family.light),
+        ("-Dark", family.dark),
+        ("-Tinted", family.tinted),
+    ]
+    for appearance in appearances {
+        let name = "\(family.assetName)-1024\(appearance.suffix).png"
+        write(render(palette: appearance.palette, side: 1024), to: set.appendingPathComponent(name))
+        print("wrote \(family.assetName)/\(name)")
+    }
+    writeContents(for: family, in: set)
+    writePreview(for: family)
 }

@@ -1,6 +1,7 @@
 import Foundation
 import PeardCore
 import SwiftUI
+import UIKit
 
 /// Top-level app state (Requirement 9), session lifecycle (Requirement 8),
 /// deep-link handling (Requirement 19), and sign-out (Requirement 15.4).
@@ -36,6 +37,14 @@ final class AppModel {
     /// every screen that draws one — see `FileTokenStore`.
     let fileTokens: FileTokenStore
     let sharedStore: SharedStore
+
+    /// Which pear is on the home screen.
+    ///
+    /// Read from UIKit rather than stored: `alternateIconName` is the system's
+    /// own record of what is actually set, and keeping a second copy in
+    /// UserDefaults is how the two come to disagree after a restore or a
+    /// reinstall.
+    private(set) var appIcon: AppIconChoice = .init(alternateName: nil)
 
     /// Light, dark, or whatever the phone is doing.
     ///
@@ -113,6 +122,8 @@ final class AppModel {
         self.push = PushCoordinator(api: api, session: sessionStore, store: sharedStore)
         self.sendQueue = sendQueue ?? SendQueue(store: FilePendingSendStore.appGroup())
         self.reachability = reachability
+
+        appIcon = AppIconChoice(alternateName: UIApplication.shared.alternateIconName)
 
         push.onOpenPost = { [weak self] postID in
             self?.openPost(postID)
@@ -850,6 +861,35 @@ extension AppModel {
         case .system: return nil
         case .light: return .light
         case .dark: return .dark
+        }
+    }
+}
+
+extension AppModel {
+    /// Switches the home-screen icon.
+    ///
+    /// iOS shows its own "You have changed the icon" alert and there is no
+    /// supported way to suppress it, so this deliberately shows nothing of its
+    /// own — two confirmations for one tap is worse than the system's one.
+    ///
+    /// A failure is reported rather than swallowed. It means the alternate is
+    /// missing from the build (see ASSETCATALOG_COMPILER_ALTERNATE_APPICON_NAMES
+    /// in project.yml), which is a mistake somebody needs to hear about rather
+    /// than a tap that silently did nothing.
+    func setAppIcon(_ choice: AppIconChoice) async {
+        guard choice != appIcon else { return }
+        guard UIApplication.shared.supportsAlternateIcons else {
+            banner = "This device can't change the app icon."
+            return
+        }
+        do {
+            try await UIApplication.shared.setAlternateIconName(choice.alternateName)
+            appIcon = choice
+        } catch {
+            // Back to whatever is really set, so the picker cannot end up
+            // showing a choice the home screen does not have.
+            appIcon = AppIconChoice(alternateName: UIApplication.shared.alternateIconName)
+            banner = "Couldn't change the icon — still using \(appIcon.title)."
         }
     }
 }
