@@ -38,43 +38,10 @@ struct SelectConnectionIntent: WidgetConfigurationIntent {
     }
 }
 
-/// A connection as the configuration picker sees it.
-struct ConnectionEntity: AppEntity, Identifiable, Hashable {
-    static var typeDisplayRepresentation: TypeDisplayRepresentation = "Connection"
-    static var defaultQuery = ConnectionQuery()
-
-    let id: String
-    let title: String
-    let subtitle: String
-
-    var displayRepresentation: DisplayRepresentation {
-        DisplayRepresentation(title: "\(title)", subtitle: "\(subtitle)")
-    }
-}
-
-/// Supplies the picker's options from the server, using the widget token.
-struct ConnectionQuery: EntityQuery {
-    func entities(for identifiers: [String]) async throws -> [ConnectionEntity] {
-        let all = try await suggestedEntities()
-        // Preserve the order the caller asked in, and silently drop a connection
-        // that has gone — a widget configured for a group the user has left must
-        // fall back to Automatic rather than fail to render.
-        return identifiers.compactMap { id in all.first { $0.id == id } }
-    }
-
-    func suggestedEntities() async throws -> [ConnectionEntity] {
-        let store = SharedStore.shared
-        guard
-            let token = store.widgetToken, !token.isEmpty,
-            let baseURL = store.apiBaseURL
-        else { return [] }
-
-        let connections = try await APIClient(baseURL: baseURL).widgetConnections(token: token)
-        return connections.map {
-            ConnectionEntity(id: $0.id, title: $0.title, subtitle: $0.subtitle)
-        }
-    }
-}
+// ConnectionEntity and ConnectionQuery moved to PeardCore, so the Shortcuts
+// action in the app target offers the same connections this sheet does rather
+// than growing a second, drifting copy. The type name is unchanged, which is
+// what a widget already pinned to a connection resolves through.
 
 // MARK: - Timeline
 //

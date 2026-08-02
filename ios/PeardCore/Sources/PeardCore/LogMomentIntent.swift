@@ -65,11 +65,20 @@ public enum MomentLogging {
 
 /// Logs a moment from a widget button — any kind offered in the connection's
 /// catalogue, built-in or custom.
+///
+/// Plumbing, not an action. Its parameters are the raw strings a widget button
+/// already knows (a kind slug, a pair id, an emoji, a label), none of which a
+/// person could sensibly fill in, and it was sitting in the Shortcuts library as
+/// "Log a moment" one row above `LogPublishedMomentIntent`'s "Log a Moment" —
+/// two entries a case apart, one of them unusable. `isDiscoverable` is right
+/// here and wrong for the spoken intent, because this one has no App Shortcut to
+/// lose.
 public struct LogMomentIntent: AppIntent {
     public static var title: LocalizedStringResource = "Log a moment"
     public static var description = IntentDescription("Logs a moment in a Pear'd connection.")
     /// Keeps the app closed: the point is logging without a launch.
     public static var openAppWhenRun = false
+    public static var isDiscoverable = false
 
     @Parameter(title: "Moment")
     public var kind: String
@@ -100,10 +109,12 @@ public struct LogMomentIntent: AppIntent {
 
 /// The three moments that need no per-connection lookup to offer, so Siri can
 /// speak them directly in a phrase ("Log a beer in Pear'd") instead of
-/// prompting. A connection's own custom moments aren't reachable this way —
-/// they would need a dynamic, per-connection entity query, which needs a
-/// connection chosen first. Logs into whichever connection is liveliest, the
-/// same fallback the widget's own feed uses when it has not been pinned to one.
+/// prompting.
+///
+/// An `AppEnum` rather than an entity on purpose: an App Shortcut phrase needs a
+/// vocabulary Siri can match against before anything is fetched, and a dynamic
+/// query has none. `LogPublishedMomentIntent` covers everything else, and is
+/// where custom moments live.
 public enum BuiltinMomentKind: String, AppEnum {
     case beer, loo, coffee
 
@@ -137,10 +148,19 @@ public enum BuiltinMomentKind: String, AppEnum {
     }
 }
 
-/// Logs one of the three built-in moments, exposed to Siri and the Shortcuts
-/// app via `PeardShortcuts` in the main app target.
+/// Backs the spoken phrase in `PeardShortcuts` — "Log a beer in Pear'd".
+///
+/// Named for exactly what it does rather than something close to
+/// `LogPublishedMomentIntent`'s "Log a Moment". Two entries under nearly the
+/// same name, one of them quietly unable to log half the moments, is a trap;
+/// two entries where one says which three it handles is a choice.
+///
+/// `isDiscoverable = false` looked like the tidier answer and was tried first.
+/// It hides the intent from the Shortcuts app — and takes its App Shortcut, and
+/// therefore its spoken phrases, with it. The Pear'd section of the library came
+/// back with this one missing entirely.
 public struct LogBuiltinMomentIntent: AppIntent {
-    public static var title: LocalizedStringResource = "Log a Moment"
+    public static var title: LocalizedStringResource = "Log a Beer, Loo or Coffee"
     public static var description = IntentDescription("Logs a beer, loo or coffee in your liveliest Pear'd connection.")
     public static var openAppWhenRun = false
 
