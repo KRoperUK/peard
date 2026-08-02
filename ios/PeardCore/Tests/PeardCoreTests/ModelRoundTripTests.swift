@@ -157,10 +157,15 @@ final class ModelRoundTripTests: XCTestCase {
         XCTAssertTrue(String(decoding: json, as: UTF8.self).contains("\"push_token\":\"abc\""))
     }
 
+    /// The message carries the https link, not the server's `deep_link`. The
+    /// server still sends `peard://pair/{code}` and the model still decodes it —
+    /// what changed is which of the two goes into a message somebody else
+    /// receives, because a custom scheme is "Safari cannot open the page" to
+    /// anybody without the app.
     func testPairInviteRoundTripsAndBuildsShareMessage() throws {
         let invite = PairInvite(code: "AB12CD", expires: sampleDate, deepLink: "peard://pair/AB12CD")
         try assertRoundTrips(invite)
-        XCTAssertEqual(invite.shareMessage, "Pear up with me on Pear'd! Code: AB12CD\npeard://pair/AB12CD")
+        XCTAssertEqual(invite.shareMessage, "Pear up with me on Pear'd! Code: AB12CD\nhttps://peard.kroper.uk/c/AB12CD")
     }
 
     func testWidgetFeedRoundTrips() throws {

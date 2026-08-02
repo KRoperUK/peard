@@ -6,6 +6,8 @@ package site
 
 import (
 	"net/http"
+	"regexp"
+	"strings"
 
 	"github.com/pocketbase/pocketbase/core"
 )
@@ -13,6 +15,10 @@ import (
 const (
 	testFlightURL = "https://testflight.apple.com/join/WdB7W3M1"
 	contactEmail  = "kieran@kroper.uk"
+	// Team id and bundle id, as Apple wants them for an associated domain.
+	// Hard-coded rather than configured: it identifies this one app, and a
+	// wrong value here fails silently — iOS just stops opening the links.
+	appID = "72Q6R744M4.com.peard.app"
 )
 
 // Register binds the public site routes.
@@ -20,9 +26,68 @@ func Register(app core.App) {
 	app.OnServe().BindFunc(func(se *core.ServeEvent) error {
 		se.Router.GET("/", homeHandler)
 		se.Router.GET("/privacy", privacyHandler)
+		se.Router.GET("/c/{code}", inviteHandler)
+		se.Router.GET("/.well-known/apple-app-site-association", associationHandler)
 		return se.Next()
 	})
 }
+
+// associationHandler serves the file iOS fetches to decide whether this domain
+// may open the app.
+//
+// Served as application/json with no file extension, which is what Apple
+// requires, and it must be reachable over https with no redirect — a redirect
+// is the usual reason universal links quietly stop working.
+//
+// The only path claimed is /c/*. Claiming the whole domain would take /privacy
+// with it, and a privacy policy that opens the app instead of a web page is
+// both wrong and, for an app-store reviewer, unreadable.
+func associationHandler(e *core.RequestEvent) error {
+	e.Response.Header().Set("Content-Type", "application/json")
+	e.Response.Header().Set("Cache-Control", "public, max-age=3600")
+	return e.String(http.StatusOK, `{
+  "applinks": {
+    "details": [
+      {
+        "appIDs": ["`+appID+`"],
+        "components": [
+          { "/": "/c/*", "comment": "Invite links open the app" }
+        ]
+      }
+    ]
+  }
+}`)
+}
+
+// inviteHandler is what an invite link resolves to for somebody who cannot open
+// it in the app.
+//
+// With the app installed iOS never asks for this page — it hands the URL
+// straight to Pear'd. So everything below is written for the other case: the
+// person has been sent a link by a friend, has no app, and needs to know what
+// this is and what to do next. The code is repeated in full because the
+// TestFlight round trip loses the link, and typing it in afterwards is the only
+// way back.
+func inviteHandler(e *core.RequestEvent) error {
+	code := strings.ToUpper(strings.TrimSpace(e.Request.PathValue("code")))
+	// Codes are short and alphanumeric. Anything else is somebody poking at the
+	// URL, and reflecting it into the page would be an invitation of a
+	// different kind.
+	if !inviteCodePattern.MatchString(code) {
+		return e.HTML(http.StatusNotFound, page(
+			"Invite not found — Pear'd",
+			"That invite link doesn't look right.",
+			invitePage("", false),
+		))
+	}
+	return e.HTML(http.StatusOK, page(
+		"Join on Pear'd 🍐",
+		"Somebody wants to share moments with you on Pear'd.",
+		invitePage(code, true),
+	))
+}
+
+var inviteCodePattern = regexp.MustCompile(`^[A-Z0-9]{4,12}$`)
 
 func homeHandler(e *core.RequestEvent) error {
 	return e.HTML(http.StatusOK, page(
@@ -163,6 +228,42 @@ const sharedCSS = `
   }
   .doc h2 { font-size: 20px; margin-top: 36px; }
   .doc p, .doc li { color: var(--text-secondary); font-size: 16px; }
+  .notice {
+    background: var(--surface);
+    border: 1px solid var(--divider);
+    border-radius: 16px;
+    padding: 20px 24px;
+    margin: 0 0 28px;
+    max-width: 460px;
+    text-align: left;
+  }
+  .notice ol { margin: 10px 0 0; padding-left: 20px; }
+  .notice li {
+    color: var(--text-secondary);
+    font-size: 15px;
+    line-height: 1.5;
+    margin-bottom: 6px;
+  }
+  .keep-code {
+    color: var(--text-secondary);
+    font-size: 15px;
+    margin: 16px 0 8px;
+  }
+  .code {
+    font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+    font-size: 28px;
+    font-weight: 700;
+    letter-spacing: 6px;
+    text-align: center;
+    padding: 12px;
+    border-radius: 12px;
+    background: var(--background);
+    border: 1px solid var(--divider);
+    /* Selectable on purpose: copying beats retyping, and the whole point of
+       this page is that the code has to survive a trip to the App Store. */
+    user-select: all;
+  }
+  .tagline.small { font-size: 15px; margin-top: 24px; }
 `
 
 const homeBody = `
@@ -195,6 +296,45 @@ const homeBody = `
     </div>
   </div>
 `
+
+// invitePage is the landing page for an invite link opened outside the app.
+//
+// It leads with the banner rather than the code, because the order matters:
+// somebody who taps "Try it on TestFlight" first and reads afterwards has lost
+// the link, and the code is the only way back. Saying "you'll need the code
+// again" *before* the button is what makes that recoverable.
+func invitePage(code string, found bool) string {
+	if !found {
+		return `
+  <div class="hero">
+    <div class="pear" aria-hidden="true">🍐</div>
+    <h1>That link didn't work</h1>
+    <p class="tagline">Invite links look like <code>peard.kroper.uk/c/ABC123</code>. Ask whoever sent it to share it again — they expire after 24 hours.</p>
+    <a class="cta" href="/">About Pear'd</a>
+  </div>
+`
+	}
+	return `
+  <div class="hero">
+    <div class="pear" aria-hidden="true">🍐</div>
+    <h1>You've been invited</h1>
+    <p class="tagline">Somebody wants to share moments with you on Pear'd — the beers, the coffees, the dog walks, and the photos in between.</p>
+
+    <div class="notice">
+      <strong>Pear'd is in beta, so there are two steps.</strong>
+      <ol>
+        <li>Install <a href="https://apps.apple.com/app/testflight/id899247664">TestFlight</a> from the App Store, if you haven't got it.</li>
+        <li>Join the Pear'd beta with the button below, then open Pear'd and enter your code.</li>
+      </ol>
+      <p class="keep-code">Keep this code — you'll need to type it in after installing:</p>
+      <div class="code" aria-label="Invite code ` + strings.Join(strings.Split(code, ""), " ") + `">` + code + `</div>
+    </div>
+
+    <a class="cta" href="` + testFlightURL + `">Join the Pear'd beta</a>
+    <p class="tagline small">Already have Pear'd? Open the app and enter <strong>` + code + `</strong> — or tap this link again from your phone.</p>
+  </div>
+`
+}
 
 const privacyBody = `
   <div class="doc">

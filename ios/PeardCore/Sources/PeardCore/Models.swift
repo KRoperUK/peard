@@ -751,10 +751,20 @@ public struct PairInvite: Codable, Hashable, Sendable {
     }
 
     /// Text shared by the invite share action (Requirement 10.2).
+    ///
+    /// The https link rather than the server's `deep_link`, which is
+    /// `peard://pair/{code}`. A custom scheme only works for somebody who
+    /// already has the app: to everybody else it is "Safari cannot open the
+    /// page", which is the worst possible answer to an invitation. The https
+    /// form opens the app when it is installed and a page explaining how to get
+    /// it when it is not — and it is built from the public host rather than the
+    /// configured server, because a dev address is no use to whoever receives
+    /// the message.
     public var shareMessage: String {
-        isGroupInvite
-            ? "Join my group on Pear'd! Code: \(code)\n\(deepLink)"
-            : "Pear up with me on Pear'd! Code: \(code)\n\(deepLink)"
+        let link = DeepLink.inviteLink(code: code).absoluteString
+        return isGroupInvite
+            ? "Join my group on Pear'd! Code: \(code)\n\(link)"
+            : "Pear up with me on Pear'd! Code: \(code)\n\(link)"
     }
 }
 

@@ -11,9 +11,22 @@ public enum DeepLink: Equatable, Sendable {
 
     public static let scheme = "peard"
 
+    /// The host whose `/c/{code}` links open the app directly.
+    ///
+    /// A universal link rather than only `peard://`, because a custom scheme is
+    /// nothing at all to somebody who has not installed the app — iOS shows
+    /// "Safari cannot open the page", which is the worst possible answer to an
+    /// invite. An https link opens the app when it is there and a web page that
+    /// explains how to get it when it is not.
+    public static let webHost = "peard.kroper.uk"
+    /// The path an invite link uses, kept in step with the server's `/c/{code}`
+    /// route and the `applinks` component in its site association file.
+    public static let invitePath = "c"
+
     /// Returns `nil` for any URL that matches no known route
     /// (Requirement 19.5).
     public static func parse(_ url: URL) -> DeepLink? {
+        if let webInvite = parseWebInvite(url) { return webInvite }
         guard url.scheme?.lowercased() == scheme else { return nil }
 
         // peard://pair/ABC123 parses with host "pair" and path "/ABC123".
@@ -33,6 +46,36 @@ public enum DeepLink: Equatable, Sendable {
         default:
             return nil
         }
+    }
+
+    /// `https://peard.kroper.uk/c/ABC123` — the link an invite is shared as.
+    ///
+    /// Only that one path, and only on that host: an associated domain hands
+    /// the app *every* https URL on the domain that matches, and anything this
+    /// does not recognise has to fall through to the browser rather than open
+    /// an app that has nothing to show for it. The privacy policy at `/privacy`
+    /// is on the same host and must keep opening in Safari.
+    private static func parseWebInvite(_ url: URL) -> DeepLink? {
+        guard
+            let scheme = url.scheme?.lowercased(), scheme == "https" || scheme == "http",
+            url.host?.lowercased() == webHost
+        else { return nil }
+
+        let segments = url.pathComponents.filter { $0 != "/" && !$0.isEmpty }
+        guard segments.count == 2, segments[0].lowercased() == invitePath else { return nil }
+
+        let code = segments[1].uppercased()
+        return code.isEmpty ? nil : .pair(code: code)
+    }
+
+    /// The link to put in an invite message.
+    ///
+    /// Built here rather than taken from the server's `deep_link` so the app
+    /// shares the public https form even when it is pointed at a dev server,
+    /// which is what somebody receiving the message needs — a link to
+    /// 192.168.x.y is no use to them at all.
+    public static func inviteLink(code: String) -> URL {
+        URL(string: "https://\(webHost)/\(invitePath)/\(code)")!
     }
 }
 

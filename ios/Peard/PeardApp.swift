@@ -23,6 +23,15 @@ struct PeardApp: App {
                 .onOpenURL { url in
                     model.handle(url: url)
                 }
+                // Universal links arrive as a user activity rather than through
+                // `onOpenURL`: that one is for the `peard://` scheme and for a
+                // tap in another app, and an https link tapped in Safari or
+                // Messages comes down this path instead. Both end in
+                // `handle(url:)`, which knows the two shapes.
+                .onContinueUserActivity(NSUserActivityTypeBrowsingWeb) { activity in
+                    guard let url = activity.webpageURL else { return }
+                    model.handle(url: url)
+                }
         }
         // Every return to the foreground, not just the first launch. `.task`
         // above runs once per window; without this, `applicationDidBecomeActive`
