@@ -361,6 +361,22 @@ public extension APIClient {
         )
     }
 
+    /// Renames a published moment, or gives it a different emoji.
+    ///
+    /// The slug is deliberately not editable. It is what every post already
+    /// logged stores in `event_kind`, so changing it would orphan the history —
+    /// a year of dog walks would stop resolving and start drawing as bare
+    /// slugs. Renaming "Dog walk" to "Walkies" therefore relabels the past too,
+    /// which is what somebody correcting a typo means; it is also why the
+    /// server lets any member do it rather than only the person who added it.
+    @discardableResult
+    func updateMomentKind(id: String, emoji: String, label: String) async throws -> MomentKind {
+        try await update("moment_kinds", id: id, of: MomentKind.self, fields: [
+            "emoji": emoji,
+            "label": label,
+        ])
+    }
+
     /// Publishes a custom moment so every member of the connection can draw it.
     @discardableResult
     func createMomentKind(

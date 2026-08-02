@@ -612,6 +612,48 @@ final class HomeModel {
         tap(moment: stored)
     }
 
+    /// Renames a published moment, or changes its emoji.
+    ///
+    /// The slug never moves. It is what every post already logged stores in
+    /// `event_kind`, so editing it would orphan the history — a year of dog
+    /// walks would stop resolving and start drawing as bare slugs. Which means
+    /// a rename relabels the past as well as the future, and that is the point:
+    /// somebody editing "Dog wlak" wants the typo gone everywhere, not a second
+    /// moment that splits the tallies in two.
+    ///
+    /// Any member may do this, matching the server's UpdateRule. The moment
+    /// belongs to the connection rather than to whoever typed it first —
+    /// unlike removal, which stays with its author.
+    func editCustom(moment: Moment, label: String, emoji: String) async {
+        guard case .custom(let recordID) = moment.origin, let recordID else { return }
+        let trimmedLabel = String(
+            label.trimmingCharacters(in: .whitespacesAndNewlines).prefix(MomentSlug.maxLength)
+        )
+        let chosenEmoji = MomentEmoji.first(in: emoji) ?? moment.emoji
+        guard !trimmedLabel.isEmpty else { return }
+        // Nothing to send, and a no-op write would still bump `updated` and
+        // repaint every member's catalogue.
+        guard trimmedLabel != moment.label || chosenEmoji != moment.emoji else { return }
+
+        busy = .publishingKind
+        defer { busy = nil }
+        do {
+            let updated = try await api.updateMomentKind(id: recordID, emoji: chosenEmoji, label: trimmedLabel)
+            if let index = customKinds.firstIndex(where: { $0.id == recordID }) {
+                customKinds[index] = updated
+            }
+            // Every other surface draws this moment through the catalogue, and
+            // the widget keeps its own copy of the feed.
+            app.widgetSync.reloadTimelines()
+        } catch {
+            if await app.handleIfUnauthorized(error) { return }
+            alert = AlertContent(
+                title: "Couldn't save that",
+                message: "The moment is unchanged. Check your connection and try again."
+            )
+        }
+    }
+
     /// Removes a published moment. Existing posts keep their kind, so past
     /// tallies are unaffected; the moment just stops being offered.
     func removeCustom(moment: Moment) async {

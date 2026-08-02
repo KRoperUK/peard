@@ -159,3 +159,80 @@ final class MomentShortcutTests: XCTestCase {
         XCTAssertEqual(pair.subtitle, "Just the two of you")
     }
 }
+
+/// Renaming a moment the connection already publishes.
+///
+/// The rules that matter are about what must *not* change: the slug, because
+/// every post already logged stores it in `event_kind`.
+final class MomentRenameTests: XCTestCase {
+    private func published(_ slug: String, _ emoji: String, _ label: String) -> Moment {
+        Moment(kind: EventKind(rawValue: slug), emoji: emoji, label: label, origin: .custom(recordID: "rec1"))
+    }
+
+    /// A rename must leave the slug alone. "Dog wlak" corrected to "Dog walk"
+    /// would otherwise slug to `dog_walk` and orphan every `dog_wlak` post
+    /// already logged — the history would stop resolving and start drawing as
+    /// bare slugs.
+    func testRenamingDoesNotRestyleTheSlug() {
+        let moment = published("dog_wlak", "🐕", "Dog wlak")
+
+        // What the editor would produce if it re-derived the slug, which it
+        // deliberately does not.
+        XCTAssertNotEqual(MomentSlug.make(from: "Dog walk"), moment.kind.rawValue)
+        XCTAssertEqual(moment.kind.rawValue, "dog_wlak")
+    }
+
+    /// Only a moment the connection published can be edited. A built-in has no
+    /// row to update, and a preset has not been added yet.
+    func testOnlyAPublishedMomentHasARecordToEdit() {
+        XCTAssertNil(recordID(of: Moment(kind: .beer, emoji: "🍺", label: "Beer", origin: .builtin)))
+        XCTAssertNil(recordID(of: Moment(kind: EventKind(rawValue: "gym"), emoji: "🏋️", label: "Gym", origin: .preset)))
+        XCTAssertEqual(recordID(of: published("dog_walk", "🐕", "Dog walk")), "rec1")
+    }
+
+    private func recordID(of moment: Moment) -> String? {
+        guard case .custom(let id) = moment.origin else { return nil }
+        return id
+    }
+}
+
+/// The timeline is rebuilt from a fingerprint of the moment catalogue, and this
+/// is the property that fingerprint has to have.
+final class CatalogueFingerprintTests: XCTestCase {
+    private func fingerprint(_ kinds: [(String, String, String)]) -> String {
+        kinds.map { "\($0.0):\($0.1):\($0.2)" }.sorted().joined(separator: ",")
+    }
+
+    /// The bug this replaced: the identity was `customKinds.count`, so a rename
+    /// left it unchanged and the timeline kept drawing the old label after the
+    /// moment had been renamed everywhere else.
+    func testARenameChangesTheFingerprint() {
+        let before = fingerprint([("dog_walk", "🐕", "Dog walk")])
+        let after = fingerprint([("dog_walk", "🐕", "Walkies")])
+
+        XCTAssertNotEqual(before, after)
+    }
+
+    func testANewEmojiChangesTheFingerprint() {
+        let before = fingerprint([("dog_walk", "🐕", "Dog walk")])
+        let after = fingerprint([("dog_walk", "🦮", "Dog walk")])
+
+        XCTAssertNotEqual(before, after)
+    }
+
+    /// It must not change on an ordinary refresh, or the timeline throws away
+    /// every loaded page each time the catalogue is re-read.
+    func testTheSameCatalogueInADifferentOrderIsTheSameFingerprint() {
+        let one = fingerprint([("dog_walk", "🐕", "Dog walk"), ("chores", "🧺", "Chores")])
+        let other = fingerprint([("chores", "🧺", "Chores"), ("dog_walk", "🐕", "Dog walk")])
+
+        XCTAssertEqual(one, other)
+    }
+
+    func testAddingAMomentChangesTheFingerprint() {
+        let before = fingerprint([("dog_walk", "🐕", "Dog walk")])
+        let after = fingerprint([("dog_walk", "🐕", "Dog walk"), ("chores", "🧺", "Chores")])
+
+        XCTAssertNotEqual(before, after)
+    }
+}

@@ -13,6 +13,8 @@ struct MomentSheet: View {
 
     @State private var label = ""
     @State private var emoji = "🍐"
+    /// The published moment being renamed, if any.
+    @State private var editing: Moment?
     @FocusState private var labelFocused: Bool
     /// Plain state rather than `@FocusState`: the emoji tile is a UIKit field,
     /// so focus is driven into it rather than shared with SwiftUI's own.
@@ -45,6 +47,11 @@ struct MomentSheet: View {
             .toolbar {
                 ToolbarItem(placement: .cancellationAction) {
                     Button("Done") { dismiss() }
+                }
+            }
+            .sheet(item: $editing) { moment in
+                MomentRenameSheet(moment: moment) { newLabel, newEmoji in
+                    Task { await model.editCustom(moment: moment, label: newLabel, emoji: newEmoji) }
                 }
             }
         }
@@ -211,11 +218,26 @@ struct MomentSheet: View {
             VStack(spacing: 0) {
                 ForEach(publishedMoments) { moment in
                     HStack(spacing: 10) {
-                        Text(moment.emoji)
-                        Text(moment.label)
-                            .font(.subheadline)
-                            .foregroundStyle(PearColor.textPrimary)
-                        Spacer()
+                        // The row is the edit affordance. A separate pencil
+                        // beside the bin would put the safe action and the
+                        // destructive one the same size, side by side, on a row
+                        // this narrow.
+                        Button {
+                            editing = moment
+                        } label: {
+                            HStack(spacing: 10) {
+                                Text(moment.emoji)
+                                Text(moment.label)
+                                    .font(.subheadline)
+                                    .foregroundStyle(PearColor.textPrimary)
+                                Spacer()
+                            }
+                            .contentShape(Rectangle())
+                        }
+                        .buttonStyle(.plain)
+                        .accessibilityLabel("Edit \(moment.label)")
+                        .accessibilityHint("Change its name or emoji")
+
                         Button {
                             Task { await model.removeCustom(moment: moment) }
                         } label: {
@@ -236,7 +258,7 @@ struct MomentSheet: View {
             .padding(.horizontal, 14)
             .background(PearColor.surface, in: RoundedRectangle(cornerRadius: 12))
 
-            Text("Removing a moment stops it being offered. Past tallies keep counting.")
+            Text("Tap one to rename it or change its emoji — everywhere, including moments already logged. Removing one stops it being offered; past tallies keep counting.")
                 .font(.caption)
                 .foregroundStyle(PearColor.textTertiary)
         }

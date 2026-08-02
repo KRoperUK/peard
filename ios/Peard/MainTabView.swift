@@ -94,10 +94,20 @@ private struct TimelineTab: View {
     /// two happened first — an ordering dependency with no visible symptom, and
     /// the divider silently missing on exactly the launch it is for. It changes
     /// at most once per connection per session, so it costs no reloads.
+    ///
+    /// The catalogue is fingerprinted by content rather than counted. It used to
+    /// be `customKinds.count`, which is blind to the one change that does not
+    /// alter it: renaming a moment, or giving it a different emoji. The timeline
+    /// went on drawing "Dog walk" after it had been renamed everywhere else,
+    /// because nothing told this model to rebuild.
     private var historyIdentity: String {
         let members = model.connection?.members.map(\.user).sorted().joined(separator: ",") ?? ""
         let watermark = app.unreadWatermark(forConnection: model.pairID)?.timeIntervalSince1970 ?? 0
-        return "\(model.pairID)|\(members)|\(model.customKinds.count)|\(watermark)"
+        let catalogue = model.customKinds
+            .map { "\($0.slug):\($0.emoji):\($0.label)" }
+            .sorted()
+            .joined(separator: ",")
+        return "\(model.pairID)|\(members)|\(catalogue)|\(watermark)"
     }
 }
 
