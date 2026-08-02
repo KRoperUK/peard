@@ -84,10 +84,13 @@ final class HistoryModel {
             let member = connection?.members.first { $0.user == author }
             parts.append(member.map(memberLabel) ?? PartnerLabel.unknown)
         }
+        // Both, not one or the other: a moment can carry a photo, so "Coffee ·
+        // Photos" is a real narrowing rather than a contradiction.
+        if let kind = filter.kind {
+            parts.append(MomentCatalogue.label(for: kind, customKinds: customKinds))
+        }
         if filter.photosOnly {
             parts.append("Photos")
-        } else if let kind = filter.kind {
-            parts.append(MomentCatalogue.label(for: kind, customKinds: customKinds))
         }
         return parts.joined(separator: " · ")
     }
@@ -627,14 +630,22 @@ struct HistoryView: View {
 
             Section("What") {
                 pick("Anything", isOn: model.filter.kind == nil && !model.filter.photosOnly) {
-                    model.filter.choosing(kind: nil)
+                    // Clears both, which is what "anything" has to mean now
+                    // that they are two dimensions rather than one choice.
+                    model.filter.choosing(kind: nil).choosingPhotos(false)
                 }
-                pick("📷 Photos", isOn: model.filter.photosOnly) {
-                    model.filter.choosingPhotos(true)
+                // A toggle, not a choice: a moment can carry a photo, so
+                // "photos" narrows whatever else is selected rather than
+                // replacing it. "Coffee · Photos" is a real question.
+                pick("📷 Has a photo", isOn: model.filter.photosOnly) {
+                    model.filter.choosingPhotos(!model.filter.photosOnly)
                 }
                 ForEach(model.moments) { moment in
                     pick("\(moment.emoji) \(moment.label)", isOn: model.filter.kind == moment.kind) {
-                        model.filter.choosing(kind: moment.kind)
+                        // Tapping the selected moment clears it, so the only way
+                        // back is not always through "Anything" — which would
+                        // also throw away the photo filter.
+                        model.filter.choosing(kind: model.filter.kind == moment.kind ? nil : moment.kind)
                     }
                 }
             }
@@ -857,7 +868,9 @@ struct HistoryView: View {
 
     @ViewBuilder
     private func thumbnail(for post: Post) -> some View {
-        if post.type == .photo, let path = post.mediaThumbnailPath() {
+        // `hasMedia` rather than `type == .photo`: a moment can carry a photo
+        // now, and keying on the type would draw its emoji and hide the picture.
+        if post.hasMedia, let path = post.mediaThumbnailPath() {
             ProtectedImage(serverURL: serverURL, path: path) {
                 ProgressView()
             } failure: {

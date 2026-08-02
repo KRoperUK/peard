@@ -20,7 +20,10 @@ struct MomentGrid: View {
     let pendingKind: EventKind?
     let isBusy: Bool
     let onTap: (Moment) -> Void
-    let onMore: () -> Void
+    /// Nil where inventing a moment does not belong — the photo sheet asks what
+    /// a picture is *of*, and publishing a new moment mid-send is a different
+    /// errand.
+    let onMore: (() -> Void)?
 
     @ScaledMetric(relativeTo: .caption) private var tileWidth: CGFloat = 80
 
@@ -35,7 +38,9 @@ struct MomentGrid: View {
             ForEach(moments) { moment in
                 tile(for: moment)
             }
-            moreTile
+            if onMore != nil {
+                moreTile
+            }
         }
         .opacity(isBusy ? 0.6 : 1)
     }
@@ -78,8 +83,9 @@ struct MomentGrid: View {
     /// Invent a moment. Last in the grid rather than pinned beside it: the grid
     /// wraps, so it can no longer be pushed off the right-hand edge, which is what
     /// the pinned version existed to prevent.
+    @ViewBuilder
     private var moreTile: some View {
-        Button(action: onMore) {
+        Button { onMore?() } label: {
             VStack(spacing: 4) {
                 Image(systemName: "plus")
                     .font(.title.bold())

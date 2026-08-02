@@ -22,10 +22,14 @@ final class TimelineFilterTests: XCTestCase {
         XCTAssertEqual(filter.clauses, [#"event_kind = "coffee""#])
     }
 
-    func testPhotosBecomeATypeClause() {
+    /// The attachment, not the post type. A moment can carry a photo now, and
+    /// `type = "photo"` would miss every one of them — a coffee with a picture
+    /// of it is a photo by every meaning except the one the schema used to
+    /// have.
+    func testPhotosTestTheAttachment() {
         let filter = TimelineFilter(photosOnly: true)
 
-        XCTAssertEqual(filter.clauses, [#"type = "photo""#])
+        XCTAssertEqual(filter.clauses, [#"media != """#])
     }
 
     /// One person's coffees is a reasonable question, which is why these are
@@ -36,31 +40,45 @@ final class TimelineFilterTests: XCTestCase {
         XCTAssertEqual(filter.clauses, [#"author = "u1""#, #"event_kind = "beer""#])
     }
 
-    /// A photo has no `event_kind`, so asking for both would always match
-    /// nothing — which reads as a broken timeline rather than an impossible
-    /// question. Photos win, being the thing just chosen.
-    func testPhotosAndAKindCannotBothApply() {
+    /// These used to be mutually exclusive, and the reason was sound while a
+    /// photo post had no `event_kind`: both at once matched nothing. Now that a
+    /// moment can carry a photo, "the coffees I photographed" is a question
+    /// somebody can actually ask.
+    func testPhotosAndAKindNowCompose() {
         let filter = TimelineFilter(kind: .coffee, photosOnly: true)
 
-        XCTAssertEqual(filter.clauses, [#"type = "photo""#])
+        XCTAssertEqual(filter.clauses, [#"media != """#, #"event_kind = "coffee""#])
     }
 
     // MARK: Choosing
 
-    func testChoosingAKindTurnsPhotosOff() {
+    /// Each dimension is now set on its own. They used to clear each other
+    /// because together they matched nothing.
+    func testChoosingAKindLeavesPhotosAlone() {
         let filter = TimelineFilter(author: "u1", photosOnly: true).choosing(kind: .loo)
 
         XCTAssertEqual(filter.author, "u1", "the person survives a change of moment")
         XCTAssertEqual(filter.kind, .loo)
-        XCTAssertFalse(filter.photosOnly)
+        XCTAssertTrue(filter.photosOnly)
     }
 
-    func testChoosingPhotosTurnsTheKindOff() {
+    func testChoosingPhotosLeavesTheKindAlone() {
         let filter = TimelineFilter(author: "u1", kind: .beer).choosingPhotos(true)
 
         XCTAssertEqual(filter.author, "u1")
-        XCTAssertNil(filter.kind)
+        XCTAssertEqual(filter.kind, .beer)
         XCTAssertTrue(filter.photosOnly)
+    }
+
+    /// And all three compose, which is what the menu now offers.
+    func testAllThreeDimensionsCompose() {
+        let filter = TimelineFilter(author: "u1", kind: .coffee, photosOnly: true)
+
+        XCTAssertEqual(filter.clauses, [
+            #"author = "u1""#,
+            #"media != """#,
+            #"event_kind = "coffee""#,
+        ])
     }
 
     func testChoosingAPersonLeavesTheMomentAlone() {

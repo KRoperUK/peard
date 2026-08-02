@@ -17,8 +17,11 @@ public struct TimelineFilter: Hashable, Sendable {
     public var kind: EventKind?
     /// Only posts carrying a photo.
     ///
-    /// Its own flag rather than a kind, because a photo has no `event_kind` at
-    /// all — it is a different sort of post, not a different moment.
+    /// Its own flag rather than a kind, because a photo is not a kind of
+    /// moment — it is something a post can have. A moment can now carry one
+    /// too, so this asks "has an image attached" rather than "is a photo
+    /// post", and it combines with a kind: "the coffees I photographed" is a
+    /// question somebody can now ask.
     public var photosOnly: Bool
 
     public static let none = TimelineFilter()
@@ -35,31 +38,34 @@ public struct TimelineFilter: Hashable, Sendable {
 
     /// PocketBase filter clauses, to be joined with the caller's own.
     ///
-    /// A kind and "photos only" are mutually exclusive — a photo has no kind, so
-    /// asking for both would always match nothing. Photos win, because that is
-    /// the one the person just chose in the only UI that can set both.
+    /// The two used to be mutually exclusive, and the reason was sound while it
+    /// lasted: a photo post had no `event_kind`, so asking for both matched
+    /// nothing. Now that a moment can carry a photo they compose, and the
+    /// photo clause tests the attachment rather than the post type — a coffee
+    /// with a picture of it is a photo by every meaning except the old one.
     public var clauses: [String] {
         var clauses: [String] = []
         if let author, !author.isEmpty {
             clauses.append(PeardFilter.equals("author", author))
         }
         if photosOnly {
-            clauses.append(PeardFilter.equals("type", PostType.photo.rawValue))
-        } else if let kind, !kind.rawValue.isEmpty {
+            clauses.append("media != \"\"")
+        }
+        if let kind, !kind.rawValue.isEmpty {
             clauses.append(PeardFilter.equals("event_kind", kind.rawValue))
         }
         return clauses
     }
 
-    /// Cleared of the dimension a caller is about to set, so choosing a kind
-    /// turns off "photos only" and vice versa rather than leaving a filter that
-    /// matches nothing.
+    /// Each dimension is set on its own now. They used to clear each other,
+    /// because together they matched nothing; a moment that carries a photo
+    /// makes the combination meaningful instead.
     public func choosing(kind: EventKind?) -> TimelineFilter {
-        TimelineFilter(author: author, kind: kind, photosOnly: false)
+        TimelineFilter(author: author, kind: kind, photosOnly: photosOnly)
     }
 
     public func choosingPhotos(_ photos: Bool) -> TimelineFilter {
-        TimelineFilter(author: author, kind: photos ? nil : kind, photosOnly: photos)
+        TimelineFilter(author: author, kind: kind, photosOnly: photos)
     }
 
     public func choosing(author: String?) -> TimelineFilter {

@@ -22,6 +22,8 @@ struct HomeView: View {
 
     @State private var model: HomeModel
     @State private var showCamera = false
+    /// The picture just taken, held while its moment is chosen.
+    @State private var capturedPhoto: CapturedPhoto?
     @State private var showMomentSheet = false
     @State private var viewingPhoto: Post?
     @FocusState private var noteFocused: Bool
@@ -94,9 +96,16 @@ struct HomeView: View {
             CameraPicker { image in
                 showCamera = false
                 guard let image else { return }
-                Task { await model.upload(image: image) }
+                // Asked rather than assumed: most photos are of nothing
+                // countable, and the sheet's Skip is one tap away.
+                capturedPhoto = CapturedPhoto(image: image)
             }
             .ignoresSafeArea()
+        }
+        .sheet(item: $capturedPhoto) { photo in
+            PhotoMomentSheet(image: photo.image, moments: model.moments) { moment in
+                Task { await model.upload(image: photo.image, moment: moment) }
+            }
         }
     }
 
@@ -240,7 +249,9 @@ struct HomeView: View {
 
     @ViewBuilder
     private func heroThumbnail(for post: Post) -> some View {
-        if post.type == .photo, let path = post.mediaThumbnailPath() {
+        // `hasMedia` rather than `type == .photo`: a moment can carry a photo
+        // now, and keying on the type would draw its emoji and hide the picture.
+        if post.hasMedia, let path = post.mediaThumbnailPath() {
             ProtectedImage(serverURL: model.serverURL, path: path) {
                 ProgressView()
             } failure: {

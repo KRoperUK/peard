@@ -762,7 +762,17 @@ final class HomeModel {
 
     /// Requirement 13.4 – 13.6, 13.8. A photo post is never created without
     /// image data (clarification Q13).
-    func upload(image: UIImage) async {
+    /// Shares a photo, optionally as part of a moment.
+    ///
+    /// With a moment the post is an `event` that happens to carry an image,
+    /// not a `photo` — which is what makes it count in the tallies, the recap
+    /// and the streak. That is the whole point of attaching one: "coffee, and
+    /// here it is" is one coffee, not a coffee and a separate picture that the
+    /// counters ignore.
+    ///
+    /// Without one it stays a `photo`, exactly as before: a picture with
+    /// nothing to count.
+    func upload(image: UIImage, moment: Moment? = nil) async {
         guard let data = image.jpegData(compressionQuality: 0.6), !data.isEmpty else {
             alert = AlertContent(title: "Upload failed", message: "The photo couldn't be prepared for upload.")
             return
@@ -770,14 +780,20 @@ final class HomeModel {
         busy = .photo
         defer { busy = nil }
 
+        var fields = [
+            "pair": pairID,
+            "author": signedInUserID,
+            "type": PostType.photo.rawValue,
+        ]
+        if let moment {
+            fields["type"] = PostType.event.rawValue
+            fields["event_kind"] = moment.kind.rawValue
+        }
+
         do {
             let _: Post = try await api.createMultipart(
                 "posts",
-                fields: [
-                    "pair": pairID,
-                    "author": signedInUserID,
-                    "type": PostType.photo.rawValue,
-                ],
+                fields: fields,
                 file: MultipartFile(
                     field: "media",
                     filename: "pear.jpg",
