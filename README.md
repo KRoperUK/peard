@@ -30,14 +30,17 @@ lose it.
 peard/
 ├── server/       PocketBase used as a Go framework (extended)
 │   └── Dockerfile         two-stage, CGO-free, non-root alpine image
-├── ios/          Native SwiftUI app + WidgetKit extension
+├── ios/          Native SwiftUI app + WidgetKit and Messages extensions
 │   ├── project.yml        XcodeGen spec — the source of truth for the project
 │   ├── Peard/             app target
-│   ├── PearWidget/        widget extension target
+│   ├── PearWidget/        widget extension target (home screen + Lock Screen)
+│   ├── PearMessages/      iMessage extension target
 │   ├── PeardTests/        app-target XCTest bundle
 │   ├── PeardCore/         shared Swift package (models, API client, App Group)
-│   └── Shared/            colour assets used by both targets
+│   ├── Tools/             icon generators, run by `make icons`
+│   └── Shared/            colour assets used by every target
 ├── fastlane/     build, test and TestFlight lanes
+├── scripts/      helpers the git hooks call
 ├── docs/         wire contract between app and server
 ├── docker-compose.yml      the server stack (HTTP, proxy in front)
 ├── docker-compose.tls.yml  override: PocketBase owns 80/443 and its own cert
@@ -565,6 +568,45 @@ liveliest.
   published, and carries a client id so a lost response cannot double-log.
 - Timelines refresh every ~15 min, on every new post, and after every button tap
   (best-effort, subject to the system's reload budget).
+
+## Siri and Shortcuts
+
+Two App Intents, for two different jobs.
+
+| Intent | Shows as | Reaches |
+|---|---|---|
+| `LogBuiltinMomentIntent` | "Log a Beer, Loo or Coffee" | The three built-ins, by voice |
+| `LogPublishedMomentIntent` | "Log a Moment" | Everything, including a connection's own moments |
+
+The spoken phrases ("Log a beer in Pear'd") sit on the first, because a phrase
+that interpolates a parameter needs a vocabulary Siri can match *before* anything
+is fetched — an `AppEnum` has one, a per-connection query does not. The second is
+the action to drag into a shortcut or an automation.
+
+Its Moment picker is flat: every moment at once, the built-ins first and then
+each connection's own labelled with the connection it belongs to. That is not
+cosmetic. `isKnownKind` rejects a custom kind in a connection that has not
+published it, and the logging path has nowhere to report a failure, so an option
+naming only the kind could be chosen in a way that could never succeed. Built-ins
+are listed once and unbound — they work anywhere — and take their connection from
+the action's optional Connection parameter, or the liveliest one if it is empty.
+
+Three traps, all found by running it:
+
+- **`isDiscoverable = false` removes an intent's App Shortcut too**, phrases and
+  all. Using it to keep one entry in the Shortcuts library deleted the spoken
+  shortcut. The two intents are told apart by name instead. It is still right for
+  `LogMomentIntent`, the widget's button plumbing, which has no App Shortcut and
+  was otherwise listed as "Log a moment" one row above "Log a Moment".
+- **An intent in PeardCore is declared by every target that links it** — app,
+  widget and Messages extension — and the system may pick an extension to run it.
+  This one failed with "an internal error occurred" from `PearWidgetExtension`
+  until it moved to the app target. `ConnectionEntity` stays in PeardCore because
+  the widget's configuration sheet needs it too.
+- **A stored `AppEntity` parameter did not round-trip.** `suggestedEntities()`
+  ran when the picker opened, `entities(for:)` was never called, and the action
+  ran with the moment nil. The parameter is a `String` behind a
+  `DynamicOptionsProvider` now, which has no identity to restore.
 
 ## Push notifications (APNs)
 
