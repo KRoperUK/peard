@@ -93,18 +93,23 @@ struct HomeView: View {
             MomentSheet(model: model)
         }
         .fullScreenCover(isPresented: $showCamera) {
-            CameraPicker { image in
+            // Asked rather than assumed: most photos are of nothing countable,
+            // and the sheet's Skip is one tap away.
+            let picked: (UIImage?) -> Void = { image in
                 showCamera = false
                 guard let image else { return }
-                // Asked rather than assumed: most photos are of nothing
-                // countable, and the sheet's Skip is one tap away.
                 capturedPhoto = CapturedPhoto(image: image)
             }
-            .ignoresSafeArea()
+            if CameraPicker.canUseCamera {
+                CameraPicker(completion: picked).ignoresSafeArea()
+            } else {
+                // No camera: the simulator, and iPads without one.
+                LibraryPicker(completion: picked).ignoresSafeArea()
+            }
         }
         .sheet(item: $capturedPhoto) { photo in
-            PhotoMomentSheet(image: photo.image, moments: model.moments) { moment in
-                Task { await model.upload(image: photo.image, moment: moment) }
+            PhotoMomentSheet(image: photo.image, moments: model.moments) { square, moment, caption in
+                Task { await model.upload(image: square, moment: moment, caption: caption) }
             }
         }
     }

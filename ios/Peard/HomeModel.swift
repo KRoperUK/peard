@@ -797,7 +797,11 @@ final class HomeModel {
     ///
     /// Without one it stays a `photo`, exactly as before: a picture with
     /// nothing to count.
-    func upload(image: UIImage, moment: Moment? = nil) async {
+    ///
+    /// The caption is the same `note` a moment carries — a photo's note has
+    /// always been displayed and editable as a caption, so this only adds the
+    /// point at which it can first be written.
+    func upload(image: UIImage, moment: Moment? = nil, caption: String = "") async {
         guard let data = image.jpegData(compressionQuality: 0.6), !data.isEmpty else {
             alert = AlertContent(title: "Upload failed", message: "The photo couldn't be prepared for upload.")
             return
@@ -813,6 +817,12 @@ final class HomeModel {
         if let moment {
             fields["type"] = PostType.event.rawValue
             fields["event_kind"] = moment.kind.rawValue
+        }
+        // The sheet normalises this already; doing it again here means no other
+        // caller can hand the server something it will reject with a 400.
+        let note = PostNote.normalised(caption)
+        if !note.isEmpty {
+            fields["note"] = note
         }
 
         do {

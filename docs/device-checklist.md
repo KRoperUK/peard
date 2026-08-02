@@ -11,7 +11,12 @@ device** means no simulator could have answered it.
 
 ## Part 1 — Unverified UI (about five minutes)
 
-Six things shipped that nobody has seen. Each is a glance.
+Seven things shipped that nobody has seen on a device. Each is a glance.
+
+Number 7 has been seen in the simulator — the framing, the letterbox and the
+rotation all render correctly there. What the simulator could not do is *take a
+photo*: its camera shows a grey frame and its shutter does nothing, so the whole
+capture-to-send path has only ever run from the photo library.
 
 | # | Where | What to look for |
 |---|---|---|
@@ -21,6 +26,7 @@ Six things shipped that nobody has seen. Each is a glance.
 | 4 | Lock Screen → customise → add a widget | Pear'd offers rectangular, circular and inline. All three render, and the emoji is legible desaturated |
 | 5 | Home screen, **small** widget with a recent photo | The photo fills the tile and the caption bar over it is readable |
 | 6 | Share a photo | The "What is it?" sheet appears. Pick Coffee → it lands as a coffee **and** shows the picture. Skip → a plain photo, as before |
+| 7 | On that sheet, after taking a picture | Square preview, Fill/Fit, a rotate button and a caption box. Drag to reframe, pinch to zoom. Send → what you framed is what arrives, caption and all |
 
 If any of these is wrong, it is almost certainly a layout or a name, not a
 design — tell me which number and I can fix it without a round trip.

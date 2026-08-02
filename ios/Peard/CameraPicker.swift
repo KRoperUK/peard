@@ -1,4 +1,5 @@
 import AVFoundation
+import PhotosUI
 import SwiftUI
 import UIKit
 
@@ -18,20 +19,26 @@ enum CameraAuthorization {
     }
 }
 
-/// Camera capture with the square crop step (Requirement 13.3).
+/// Camera capture. The square crop step (Requirement 13.3) comes after, in
+/// `SquarePhotoEditor`, which does what `allowsEditing` did and then some —
+/// so asking for it here as well would mean cropping the same photo twice.
 struct CameraPicker: UIViewControllerRepresentable {
     /// Called with the confirmed image, or `nil` when the user cancels
     /// (Requirement 13.7).
     let completion: (UIImage?) -> Void
 
+    /// Whether this device can take a picture at all. False on the simulator
+    /// and on iPads without a camera, which is why the library route exists.
+    static var canUseCamera: Bool {
+        UIImagePickerController.isSourceTypeAvailable(.camera)
+    }
+
     func makeCoordinator() -> Coordinator { Coordinator(completion: completion) }
 
     func makeUIViewController(context: Context) -> UIImagePickerController {
         let picker = UIImagePickerController()
-        picker.sourceType = UIImagePickerController.isSourceTypeAvailable(.camera) ? .camera : .photoLibrary
+        picker.sourceType = .camera
         picker.cameraCaptureMode = .photo
-        // `allowsEditing` presents the square crop step.
-        picker.allowsEditing = true
         picker.delegate = context.coordinator
         return picker
     }
@@ -60,6 +67,60 @@ struct CameraPicker: UIViewControllerRepresentable {
             guard !didFinish else { return }
             didFinish = true
             completion(nil)
+        }
+    }
+}
+
+/// The library, for devices with no camera.
+///
+/// `UIImagePickerController`'s own `.photoLibrary` used to serve this and now
+/// aborts the process on iOS 26 — a crash that never fired on a phone, because
+/// a phone always has a camera, and so sat in the one branch nobody reaches.
+/// `PHPickerViewController` is the replacement Apple points at: it runs out of
+/// process, which is why it needs no library permission and no usage
+/// description to show somebody their own photos.
+struct LibraryPicker: UIViewControllerRepresentable {
+    let completion: (UIImage?) -> Void
+
+    func makeCoordinator() -> Coordinator { Coordinator(completion: completion) }
+
+    func makeUIViewController(context: Context) -> PHPickerViewController {
+        var configuration = PHPickerConfiguration()
+        configuration.filter = .images
+        configuration.selectionLimit = 1
+        let picker = PHPickerViewController(configuration: configuration)
+        picker.delegate = context.coordinator
+        return picker
+    }
+
+    func updateUIViewController(_ controller: PHPickerViewController, context: Context) {}
+
+    final class Coordinator: NSObject, PHPickerViewControllerDelegate {
+        private let completion: (UIImage?) -> Void
+        private var didFinish = false
+
+        init(completion: @escaping (UIImage?) -> Void) {
+            self.completion = completion
+        }
+
+        func picker(_ picker: PHPickerViewController, didFinishPicking results: [PHPickerResult]) {
+            guard !didFinish else { return }
+            didFinish = true
+
+            guard
+                let provider = results.first?.itemProvider,
+                provider.canLoadObject(ofClass: UIImage.self)
+            else {
+                completion(nil)
+                return
+            }
+
+            provider.loadObject(ofClass: UIImage.self) { object, _ in
+                // Loading happens off the main thread, and everything the
+                // completion touches is `@MainActor`.
+                let image = object as? UIImage
+                Task { @MainActor in self.completion(image) }
+            }
         }
     }
 }

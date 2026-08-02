@@ -135,16 +135,16 @@ struct MomentEditSheet: View {
             .lineLimit(1...5)
             .foregroundStyle(PearColor.textPrimary)
             .onChange(of: note) { _, newValue in
-                // The server's `note` field stops at 280, and being told after
-                // the fact that it was too long is a worse way to find out.
-                if newValue.count > 280 { note = String(newValue.prefix(280)) }
+                // Being told after the fact that it was too long is a worse way
+                // to find out.
+                note = PostNote.capped(newValue)
             }
             .accessibilityLabel(post.type == .photo ? "Caption" : "Note")
         } header: {
             Text(post.type == .photo ? "Caption" : "Note")
         } footer: {
             if note.count > 200 {
-                Text("\(280 - note.count) characters left")
+                Text("\(PostNote.limit - note.count) characters left")
             } else {
                 Text("Leave it empty to take the note back.")
             }

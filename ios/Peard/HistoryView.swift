@@ -425,7 +425,7 @@ final class HistoryModel {
     /// Returns whether it worked, so the sheet knows whether to close.
     @discardableResult
     func edit(_ post: Post, note: String, kind: EventKind?) async -> Bool {
-        let trimmedNote = note.trimmingCharacters(in: .whitespacesAndNewlines)
+        let trimmedNote = PostNote.normalised(note)
         let newKind = kind ?? post.eventKind
         // Only send what changed. A no-op edit would still move `updated` and
         // put an "edited" label on a moment nobody edited.
