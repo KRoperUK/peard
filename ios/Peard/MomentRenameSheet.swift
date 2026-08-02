@@ -121,7 +121,7 @@ struct MomentRenameSheet: View {
         } label: {
             Text("Save")
                 .font(.body.bold())
-                .foregroundStyle(.white)
+                .foregroundStyle(PearColor.onAccent)
                 .frame(maxWidth: .infinity, minHeight: 24)
                 .padding(.vertical, 14)
                 .background(PearColor.accent, in: RoundedRectangle(cornerRadius: 12))

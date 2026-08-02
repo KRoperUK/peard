@@ -99,7 +99,7 @@ struct ConnectionRail: View {
     private func unreadBadge(count: Int) -> some View {
         Text(count > 9 ? "9+" : "\(count)")
             .font(.system(size: 10, weight: .bold))
-            .foregroundStyle(.white)
+            .foregroundStyle(PearColor.onAccent)
             .monospacedDigit()
             .padding(.horizontal, 4)
             .frame(minWidth: 16, minHeight: 16)

@@ -170,7 +170,7 @@ struct PairView: View {
             } else {
                 Text(title)
                     .font(.body.bold())
-                    .foregroundStyle(.white)
+                    .foregroundStyle(PearColor.onAccent)
             }
         }
         .frame(maxWidth: .infinity, minHeight: 24)

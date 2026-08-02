@@ -425,7 +425,7 @@ struct HomeView: View {
                     Task { await model.sendNow() }
                 }
                 .font(.subheadline.bold())
-                .foregroundStyle(.white)
+                .foregroundStyle(PearColor.onAccent)
                 .padding(.horizontal, 20)
                 .padding(.vertical, 12)
                 .background(PearColor.accent, in: RoundedRectangle(cornerRadius: 12))
@@ -457,7 +457,7 @@ struct HomeView: View {
                 } else {
                     Label("Share a photo", systemImage: "camera.fill")
                         .font(.body.bold())
-                        .foregroundStyle(.white)
+                        .foregroundStyle(PearColor.onAccent)
                 }
             }
             .frame(maxWidth: .infinity, minHeight: 24)

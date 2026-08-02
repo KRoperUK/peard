@@ -57,7 +57,7 @@ struct InviteSheet: View {
                             } else {
                                 Text("Create invite code")
                                     .font(.body.bold())
-                                    .foregroundStyle(.white)
+                                    .foregroundStyle(PearColor.onAccent)
                             }
                         }
                         .frame(maxWidth: .infinity, minHeight: 24)

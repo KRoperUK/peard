@@ -137,7 +137,7 @@ struct ConnectionsView: View {
                             Text("\(connection.unreadCount)")
                                 .font(.caption.bold())
                                 .monospacedDigit()
-                                .foregroundStyle(.white)
+                                .foregroundStyle(PearColor.onAccent)
                                 .padding(.horizontal, 6)
                                 .frame(minHeight: 18)
                                 .background(PearColor.accent, in: Capsule())

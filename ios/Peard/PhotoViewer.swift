@@ -15,6 +15,7 @@ import SwiftUI
 struct PhotoViewer: View {
     @Environment(\.dismiss) private var dismiss
     @Environment(AppModel.self) private var app
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
 
     let post: Post
     let serverURL: URL
@@ -156,13 +157,18 @@ struct PhotoViewer: View {
                 } else if value.translation.height > 120 {
                     dismiss()
                 } else {
-                    withAnimation(.easeOut(duration: 0.2)) { resetPan() }
+                    withAnimation(reduceMotion ? nil : .easeOut(duration: 0.2)) { resetPan() }
                 }
             }
     }
 
+    /// Double-tap zoom.
+    ///
+    /// Gated on Reduce Motion because this one animates a *scale* — the trigger
+    /// Apple names first, and the only real one in the app. The zoom still
+    /// happens; it just arrives rather than travels.
     private func toggleZoom() {
-        withAnimation(.easeOut(duration: 0.2)) {
+        withAnimation(reduceMotion ? nil : .easeOut(duration: 0.2)) {
             if isZoomedIn {
                 zoom = 1
                 committedZoom = 1

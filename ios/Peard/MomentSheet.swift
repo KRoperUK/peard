@@ -126,7 +126,7 @@ struct MomentSheet: View {
                     } else {
                         Text("Add and send")
                             .font(.body.bold())
-                            .foregroundStyle(.white)
+                            .foregroundStyle(PearColor.onAccent)
                     }
                 }
                 .frame(maxWidth: .infinity, minHeight: 24)

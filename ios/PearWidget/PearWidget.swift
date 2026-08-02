@@ -207,7 +207,7 @@ struct PearWidgetEntryView: View {
     private var unreadBadge: some View {
         Text(entry.unreadCount > 9 ? "9+" : "\(entry.unreadCount)")
             .font(.system(size: 10, weight: .bold))
-            .foregroundStyle(.white)
+            .foregroundStyle(PearColor.onAccent)
             .monospacedDigit()
             .padding(.horizontal, 4)
             .frame(minWidth: 16, minHeight: 16)
