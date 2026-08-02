@@ -22,6 +22,8 @@ struct AvatarView: View {
     /// Drawn around the avatar when it is the selected one.
     var ringColor: Color?
 
+    @Environment(AppModel.self) private var app
+
     @State private var image: UIImage?
     @State private var isLoading = false
 
@@ -99,8 +101,15 @@ struct AvatarView: View {
         isLoading = true
         defer { isLoading = false }
 
+        // `users.avatar` and `pairs.avatar` are protected file fields now, so
+        // the bytes need a file token. It is appended here rather than folded
+        // into `url` on purpose: that URL is both the cache key and the
+        // `task(id:)` identity, and a token in it would expire the cache and
+        // re-run every loader every time the token rotated.
         guard
-            let data = try? await APIClient.data(from: url),
+            let token = await app.fileTokens.current(),
+            let fetchURL = URL(string: FileTokenStore.decorate(url.absoluteString, token: token)),
+            let data = try? await APIClient.data(from: fetchURL),
             let decoded = UIImage(data: data)
         else { return }
         AvatarImageCache.shared.store(decoded, for: url)

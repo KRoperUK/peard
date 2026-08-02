@@ -203,7 +203,7 @@ func decodeAvatar(t *testing.T, body string) string {
 	return payload.Avatar
 }
 
-func TestProfileAvatarUploadIsServableWithoutAuth(t *testing.T) {
+func TestProfileAvatarNeedsAFileTokenToRead(t *testing.T) {
 	h := newHarness(t)
 
 	contentType, body := avatarUpload(t, nil, "avatar")
@@ -219,17 +219,43 @@ func TestProfileAvatarUploadIsServableWithoutAuth(t *testing.T) {
 		t.Errorf("avatar filename = %q, want a .png", filename)
 	}
 
-	// The claim the migration rests on: an avatar has to be readable by the other
-	// members of a connection, and `users.ViewRule` is `id = @request.auth.id`. If
-	// the field were protected this would be 403 and every rail would be blank.
+	// This test used to assert the opposite — that the file was servable with
+	// no auth at all — because `users.avatar` was an unprotected field and the
+	// avatar migration reasoned that protecting it would hide it from the
+	// people who need it. It did hide the *record*; 1786233600 separates the
+	// two, so the record stays private and the file opens to connection
+	// members.
 	path := "/api/files/users/" + h.member.Id + "/" + filename
-	if status, response := h.do(t, http.MethodGet, path, "", "", nil); status != http.StatusOK {
-		t.Errorf("unauthenticated file fetch = %d, want 200; body %s", status, response)
+	if status, response := h.do(t, http.MethodGet, path, "", "", nil); status != http.StatusNotFound {
+		t.Errorf("unauthenticated file fetch = %d, want 404; body %s", status, response)
 	}
-	// And the declared thumb has to resolve, or the rail pulls originals.
-	if status, response := h.do(t, http.MethodGet, path+"?thumb=128x128", "", "", nil); status != http.StatusOK {
-		t.Errorf("thumb fetch = %d, want 200; body %s", status, response)
+
+	// The owner, with a token, still gets it — and so does the thumb, or the
+	// rail pulls full-size photos.
+	token := fileToken(t, h, h.memberToken)
+	if status, response := h.do(t, http.MethodGet, path+"?token="+token, "", "", nil); status != http.StatusOK {
+		t.Errorf("file fetch with a token = %d, want 200; body %s", status, response)
 	}
+	if status, response := h.do(t, http.MethodGet, path+"?thumb=128x128&token="+token, "", "", nil); status != http.StatusOK {
+		t.Errorf("thumb fetch with a token = %d, want 200; body %s", status, response)
+	}
+}
+
+// fileToken mints a short-lived token for the given session, which is what a
+// protected file is served against.
+func fileToken(t *testing.T, h *harness, authToken string) string {
+	t.Helper()
+	status, response := h.do(t, http.MethodPost, "/api/files/token", authToken, "application/json", []byte("{}"))
+	if status != http.StatusOK {
+		t.Fatalf("file token status = %d; body %s", status, response)
+	}
+	var payload struct {
+		Token string `json:"token"`
+	}
+	if err := json.Unmarshal([]byte(response), &payload); err != nil {
+		t.Fatalf("decode file token %q: %v", response, err)
+	}
+	return payload.Token
 }
 
 func TestProfileAvatarDeleteClearsTheField(t *testing.T) {
@@ -290,8 +316,14 @@ func TestConnectionAvatarAcceptsAnyMember(t *testing.T) {
 		t.Fatalf("response carried no avatar filename: %s", response)
 	}
 
+	// `pairs.avatar` is protected too, and `pairs.ViewRule` already said the
+	// right thing — a member may read it, nobody else may.
 	path := "/api/files/pairs/" + h.pair.Id + "/" + filename
-	if status, response := h.do(t, http.MethodGet, path+"?thumb=128x128", "", "", nil); status != http.StatusOK {
+	if status, response := h.do(t, http.MethodGet, path+"?thumb=128x128", "", "", nil); status != http.StatusNotFound {
+		t.Errorf("group thumb without a token = %d, want 404; body %s", status, response)
+	}
+	token := fileToken(t, h, h.memberToken)
+	if status, response := h.do(t, http.MethodGet, path+"?thumb=128x128&token="+token, "", "", nil); status != http.StatusOK {
 		t.Errorf("group thumb fetch = %d, want 200; body %s", status, response)
 	}
 
