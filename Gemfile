@@ -7,4 +7,4 @@
 # Update deliberately with `bundle update fastlane` and commit Gemfile.lock.
 source "https://rubygems.org"
 
-gem "fastlane", "2.236.1"
+gem "fastlane", "2.240.1"
