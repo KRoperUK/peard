@@ -105,6 +105,11 @@ func privacyHandler(e *core.RequestEvent) error {
 	))
 }
 
+// repoURL is where the footer sends anybody curious how it works. The repo is
+// public, and the privacy policy's promises are easier to believe when the code
+// that keeps them is a click away.
+const repoURL = "https://github.com/KRoperUK/peard"
+
 // page wraps a page's body with the shared document head, styling and footer.
 func page(title, description, body string) string {
 	return `<!doctype html>
@@ -120,7 +125,16 @@ func page(title, description, body string) string {
 <body>
 ` + body + `
   <footer class="site-footer">
-    <a href="/">Pear'd</a> · <a href="/privacy">Privacy Policy</a>
+    <div class="footer-rule" aria-hidden="true"><span>🍐</span></div>
+    <nav class="footer-links" aria-label="Footer">
+      <a href="/">Pear'd</a>
+      <a href="/privacy">Privacy Policy</a>
+      <a href="` + repoURL + `" rel="noopener">
+        <svg viewBox="0 0 16 16" width="16" height="16" aria-hidden="true" focusable="false"><path fill="currentColor" d="M8 0C3.58 0 0 3.58 0 8c0 3.54 2.29 6.53 5.47 7.59.4.07.55-.17.55-.38 0-.19-.01-.82-.01-1.49-2.01.37-2.53-.49-2.69-.94-.09-.23-.48-.94-.82-1.13-.28-.15-.68-.52-.01-.53.63-.01 1.08.58 1.23.82.72 1.21 1.87.87 2.33.66.07-.52.28-.87.51-1.07-1.78-.2-3.64-.89-3.64-3.95 0-.87.31-1.59.82-2.15-.08-.2-.36-1.02.08-2.12 0 0 .67-.21 2.2.82.64-.18 1.32-.27 2-.27.68 0 1.36.09 2 .27 1.53-1.04 2.2-.82 2.2-.82.44 1.1.16 1.92.08 2.12.51.56.82 1.27.82 2.15 0 3.07-1.87 3.75-3.65 3.95.29.25.54.73.54 1.48 0 1.07-.01 1.93-.01 2.2 0 .21.15.46.55.38A8.013 8.013 0 0016 8c0-4.42-3.58-8-8-8z"/></svg>
+        Source on GitHub
+      </a>
+    </nav>
+    <p class="footer-note">Open source, made for pubs, trains and loo queues.</p>
   </footer>
 </body>
 </html>
@@ -209,11 +223,57 @@ const sharedCSS = `
   }
   .site-footer {
     text-align: center;
-    padding: 32px;
+    padding: 24px 24px 40px;
     font-size: 14px;
     color: var(--text-secondary);
   }
-  .site-footer a { text-decoration: none; }
+  .footer-rule {
+    display: flex;
+    align-items: center;
+    gap: 14px;
+    max-width: 420px;
+    margin: 0 auto 20px;
+    font-size: 18px;
+  }
+  .footer-rule::before, .footer-rule::after {
+    content: "";
+    flex: 1;
+    height: 1px;
+    background: linear-gradient(90deg, transparent, var(--divider));
+  }
+  .footer-rule::after { background: linear-gradient(90deg, var(--divider), transparent); }
+  .footer-rule span { display: inline-block; transition: transform 0.4s ease; }
+  .site-footer:hover .footer-rule span { transform: rotate(-14deg) scale(1.15); }
+  .footer-links {
+    display: flex;
+    flex-wrap: wrap;
+    justify-content: center;
+    gap: 10px;
+  }
+  .footer-links a {
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    padding: 8px 14px;
+    border-radius: 999px;
+    border: 1px solid var(--divider);
+    background: var(--surface);
+    color: var(--text-primary);
+    font-weight: 500;
+    text-decoration: none;
+    transition: transform 0.15s ease, border-color 0.15s ease, color 0.15s ease;
+  }
+  .footer-links a:hover, .footer-links a:focus-visible {
+    border-color: var(--accent);
+    color: var(--accent);
+    transform: translateY(-1px);
+  }
+  .footer-links a:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+  .footer-note { margin: 18px 0 0; font-size: 13px; }
+  @media (prefers-reduced-motion: reduce) {
+    .footer-rule span, .footer-links a { transition: none; }
+    .site-footer:hover .footer-rule span, .footer-links a:hover { transform: none; }
+  }
   .doc {
     max-width: 640px;
     margin: 0 auto;
