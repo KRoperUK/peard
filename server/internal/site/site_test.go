@@ -186,3 +186,16 @@ func TestTheMarketingPagesStillServe(t *testing.T) {
 		}
 	}
 }
+
+// Every page, invite pages included, points at the source. The footer is shared,
+// so this is really checking nothing renders a page without it.
+func TestEveryPageLinksTheSource(t *testing.T) {
+	mux := newSiteMux(t)
+
+	for _, path := range []string{"/", "/privacy", "/c/ABC123"} {
+		body := get(t, mux, path).Body.String()
+		if !strings.Contains(body, `href="https://github.com/KRoperUK/peard"`) {
+			t.Errorf("%s: no link to the repo in the footer", path)
+		}
+	}
+}
