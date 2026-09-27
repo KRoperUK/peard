@@ -93,6 +93,7 @@ targets:
       - package: PeardCore
       - target: PearWidgetExtension
       - target: PearMessagesExtension
+      - target: PearNotificationServiceExtension
     settings:
       base:
         ASSETCATALOG_COMPILER_APPICON_NAME: AppIcon
@@ -219,6 +220,36 @@ targets:
           - "@executable_path/Frameworks"
           - "@executable_path/../../Frameworks"
 
+  # Attaches the photo to a photo moment's notification. No PeardCore: a
+  # notification service extension runs in about 24 MB, and all it does is one
+  # download. See PearNotificationService/NotificationService.swift.
+  PearNotificationServiceExtension:
+    type: app-extension
+    platform: iOS
+    sources:
+      - path: PearNotificationService
+        excludes:
+          - Info.plist
+      - path: PearNotificationService/Info.plist
+        buildPhase: none
+    settings:
+      base:
+        CODE_SIGN_STYLE: Automatic
+        CURRENT_PROJECT_VERSION: 1
+        DEVELOPMENT_TEAM: 72Q6R744M4
+        GENERATE_INFOPLIST_FILE: NO
+        INFOPLIST_FILE: PearNotificationService/Info.plist
+        # Must equal the app's MARKETING_VERSION, like every other appex.
+        MARKETING_VERSION: "1.0"
+        PRODUCT_BUNDLE_IDENTIFIER: com.peard.app.PearNotificationService
+        PRODUCT_NAME: $(TARGET_NAME)
+        SKIP_INSTALL: YES
+        TARGETED_DEVICE_FAMILY: "1,2"
+        LD_RUNPATH_SEARCH_PATHS:
+          - $(inherited)
+          - "@executable_path/Frameworks"
+          - "@executable_path/../../Frameworks"
+
   # Logic that needs UIKit/SwiftUI or the app's own types, so it cannot live in
   # PeardCore's `swift test` suite: the quick-send countdown, the hold-on-note
   # rule, and the phase routing.
@@ -234,6 +265,10 @@ targets:
       # Deliberately only the model: it imports PeardCore and nothing from the
       # Messages framework, which is what makes this possible at all.
       - path: PearMessages/MomentTrayModel.swift
+      # Same reason: the notification service extension cannot host tests, and
+      # the simulator's `simctl push` never runs a service extension at all, so
+      # this is the only place its download-and-attach is exercised.
+      - path: PearNotificationService/NotificationService.swift
     dependencies:
       - target: Peard
       - package: PeardCore
