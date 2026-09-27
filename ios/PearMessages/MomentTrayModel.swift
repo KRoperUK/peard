@@ -194,7 +194,7 @@ final class MomentTrayModel {
                 // The server resolves this to a display name, not an id.
                 author: post.author.flatMap { $0.isEmpty ? nil : $0 } ?? feed.partnerName,
                 note: post.displayNote,
-                at: post.created
+                at: post.happenedOrCreated
             )
         }
 

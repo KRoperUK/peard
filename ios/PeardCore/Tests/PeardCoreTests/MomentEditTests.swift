@@ -133,6 +133,36 @@ final class MomentEditTests: XCTestCase {
         Post(id: "p1", pair: "pair1", author: "u1", type: .event, eventKind: .beer, created: created, updated: updated)
     }
 
+    func testRewindingSendsOnlyTheTime() async throws {
+        StubURLProtocol.respond(json: #"{"ok":true}"#)
+        let at = Date(timeIntervalSince1970: 1_790_000_000)
+
+        try await client.editMoment(postID: "p1", happenedAt: .some(at))
+
+        let body = try lastBody()
+        XCTAssertEqual(body["happened_at"] as? String, Rewind.wireString(at))
+        XCTAssertNil(body["note"])
+        XCTAssertNil(body["event_kind"])
+    }
+
+    /// `.some(nil)` puts the moment back to when it was logged, which the server
+    /// reads as an empty string.
+    func testARewindCanBeUndone() async throws {
+        StubURLProtocol.respond(json: #"{"ok":true}"#)
+
+        try await client.editMoment(postID: "p1", happenedAt: .some(nil))
+
+        XCTAssertEqual(try lastBody()["happened_at"] as? String, "")
+    }
+
+    func testAnEditThatLeavesTheTimeAloneDoesNotSendIt() async throws {
+        StubURLProtocol.respond(json: #"{"ok":true}"#)
+
+        try await client.editMoment(postID: "p1", note: "x")
+
+        XCTAssertNil(try lastBody()["happened_at"])
+    }
+
     private func lastBody() throws -> [String: Any] {
         let data = try XCTUnwrap(StubURLProtocol.lastBody)
         return try XCTUnwrap(JSONSerialization.jsonObject(with: data) as? [String: Any])

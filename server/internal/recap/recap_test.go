@@ -16,6 +16,7 @@ import (
 	"github.com/pocketbase/pocketbase/core"
 	"github.com/pocketbase/pocketbase/tests"
 
+	"peard/internal/posts"
 	"peard/internal/recap"
 
 	_ "peard/migrations"
@@ -298,6 +299,7 @@ func newWorld(t *testing.T) *world {
 		os.RemoveAll(dir)
 	})
 
+	posts.Register(app)
 	recap.Register(app)
 
 	w := &world{app: app}
@@ -383,7 +385,7 @@ func (w *world) write(t *testing.T, author *core.Record, postType, kind string, 
 	}
 }
 
-// backdate moves a post's `created` into the past, at midday UTC so a test can
+// backdate moves a post's `created` and `happened_at` into the past, at midday UTC so a test can
 // never land either side of a boundary by accident.
 //
 // Raw SQL rather than record.Set: `created` is an AutodateField and ignores
@@ -396,7 +398,7 @@ func (w *world) backdate(t *testing.T, record *core.Record, daysAgo int) {
 		Format("2006-01-02 15:04:05.000Z")
 
 	if _, err := w.app.DB().
-		NewQuery("UPDATE {{posts}} SET [[created]] = {:t} WHERE [[id]] = {:id}").
+		NewQuery("UPDATE {{posts}} SET [[created]] = {:t}, [[happened_at]] = {:t} WHERE [[id]] = {:id}").
 		Bind(map[string]any{"t": want, "id": record.Id}).
 		Execute(); err != nil {
 		t.Fatalf("backdate: %v", err)
@@ -408,8 +410,10 @@ func (w *world) backdate(t *testing.T, record *core.Record, daysAgo int) {
 	if err != nil {
 		t.Fatalf("re-read post: %v", err)
 	}
-	if got := fresh.GetDateTime("created"); got.String() != want {
-		t.Fatalf("backdate did not stick: created is %s, want %s", got, want)
+	for _, field := range []string{"created", "happened_at"} {
+		if got := fresh.GetDateTime(field); got.String() != want {
+			t.Fatalf("backdate did not stick: %s is %s, want %s", field, got, want)
+		}
 	}
 }
 
@@ -458,5 +462,24 @@ func (w *world) addMember(t *testing.T, user *core.Record) {
 	r.Set("role", "member")
 	if err := w.app.Save(r); err != nil {
 		t.Fatalf("save membership: %v", err)
+	}
+}
+
+// The window is about when moments happened. One logged today but set back
+// before the window is outside it, whatever `created` says.
+func TestTheWindowCountsWhenAMomentHappened(t *testing.T) {
+	w := newWorld(t)
+	w.post(t, w.alice, "coffee", 0)
+
+	earlier := time.Now().UTC().AddDate(0, 0, -10).Format("2006-01-02 15:04:05.000Z")
+	if _, err := w.app.DB().
+		NewQuery("UPDATE {{posts}} SET [[happened_at]] = {:t}").
+		Bind(map[string]any{"t": earlier}).
+		Execute(); err != nil {
+		t.Fatalf("move happened_at: %v", err)
+	}
+
+	if got := w.recap(t, w.aliceTok); got.Total != 0 {
+		t.Errorf("total=%d, want 0 — it happened before the window", got.Total)
 	}
 }

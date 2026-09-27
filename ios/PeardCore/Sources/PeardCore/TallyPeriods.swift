@@ -43,11 +43,11 @@ public struct TallyPeriods: Codable, Hashable, Sendable {
 
         var periods = TallyPeriods.zero
         for post in posts {
-            let created = post.created
+            let happened = post.happenedAt
             periods.all += 1
-            if created >= dayStart { periods.day += 1 }
-            if created >= weekStart { periods.week += 1 }
-            if created >= monthStart { periods.month += 1 }
+            if happened >= dayStart { periods.day += 1 }
+            if happened >= weekStart { periods.week += 1 }
+            if happened >= monthStart { periods.month += 1 }
         }
         return periods
     }

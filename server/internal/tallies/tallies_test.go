@@ -72,7 +72,7 @@ func TestBoundaryFallsBackWhenMissingOrUnparseable(t *testing.T) {
 }
 
 // The format has to be the one PocketBase stores, because the comparison in the
-// query is a string comparison against the `created` column.
+// query is a string comparison against the `happened_at` column.
 func TestBoundaryUsesPocketBaseLayout(t *testing.T) {
 	got := boundary("2026-07-29T12:34:56Z", time.Now())
 	if want := "2026-07-29 12:34:56.000Z"; got != want {

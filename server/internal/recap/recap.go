@@ -34,7 +34,7 @@ import (
 )
 
 // How PocketBase stores timestamps, and therefore how a boundary has to be
-// written for a string comparison against `created` to work.
+// written for a string comparison against `happened_at` to work.
 const pocketBaseLayout = "2006-01-02 15:04:05.000Z"
 
 // How far back a streak is looked for.
@@ -53,14 +53,14 @@ const recapDays = 7
 // newest first.
 //
 // The shift is applied in SQL rather than in Go so only one row per day comes
-// back rather than every post. `replace(created,'Z',”)` is load-bearing:
+// back rather than every post. `replace(happened_at,'Z',”)` is load-bearing:
 // PocketBase stores `2026-08-01 21:41:47.123Z`, and SQLite's date functions
 // return null for the trailing Z rather than erroring — which would have made
 // every streak silently zero.
 const dayQuery = `
-SELECT DISTINCT substr(datetime(replace(created, 'Z', ''), {:shift}), 1, 10) AS day
+SELECT DISTINCT substr(datetime(replace(happened_at, 'Z', ''), {:shift}), 1, 10) AS day
 FROM posts
-WHERE pair = {:pair} AND created >= {:since}
+WHERE pair = {:pair} AND happened_at >= {:since}
 ORDER BY day DESC`
 
 // windowQuery counts the recap window in one pass, split by authorship.
@@ -70,16 +70,16 @@ SELECT
     CASE WHEN author = {:user} THEN 1 ELSE 0 END AS mine,
     COUNT(*)                                     AS total
 FROM posts
-WHERE pair = {:pair} AND type = 'event' AND created >= {:from}
+WHERE pair = {:pair} AND type = 'event' AND happened_at >= {:from}
 GROUP BY event_kind, mine`
 
 // busiestQuery finds the local day in the window with the most moments.
 const busiestQuery = `
 SELECT
-    substr(datetime(replace(created, 'Z', ''), {:shift}), 1, 10) AS day,
+    substr(datetime(replace(happened_at, 'Z', ''), {:shift}), 1, 10) AS day,
     COUNT(*)                                                     AS total
 FROM posts
-WHERE pair = {:pair} AND created >= {:from}
+WHERE pair = {:pair} AND happened_at >= {:from}
 GROUP BY day
 ORDER BY total DESC, day DESC
 LIMIT 1`

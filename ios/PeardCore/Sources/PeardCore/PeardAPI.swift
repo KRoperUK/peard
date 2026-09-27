@@ -148,15 +148,23 @@ public extension APIClient {
     /// A route rather than a record update because a PocketBase rule cannot say
     /// *which* fields may change: an UpdateRule on `posts` would also let an
     /// author move a moment into another connection or hand it to somebody who
-    /// never logged it. The server writes the note and the kind, and nothing
-    /// else.
+    /// never logged it. The server writes the note, the kind and when it
+    /// happened, and nothing else.
     ///
     /// `nil` means "leave it alone", which is why the note is doubly optional:
     /// `.some("")` clears it, and clearing a note is a real thing to want.
-    func editMoment(postID: String, note: String?? = nil, kind: EventKind? = nil) async throws {
+    /// `happenedAt` is the same: `.some(nil)` puts the moment back to when it
+    /// was logged.
+    func editMoment(
+        postID: String,
+        note: String?? = nil,
+        kind: EventKind? = nil,
+        happenedAt: Date?? = nil
+    ) async throws {
         var fields: [String: JSONField] = ["post": .string(postID)]
         if let note { fields["note"] = .string(note ?? "") }
         if let kind { fields["event_kind"] = .string(kind.rawValue) }
+        if let happenedAt { fields["happened_at"] = .string(happenedAt.map(Rewind.wireString) ?? "") }
         try await postIgnoringResponse(path: "/api/peard/posts/edit", typedFields: fields)
     }
 
@@ -437,7 +445,7 @@ public extension APIClient {
             "posts",
             of: Post.self,
             filter: PeardFilter.equals("pair", pairID),
-            sort: "-created",
+            sort: "-happened_at",
             perPage: limit
         )
     }
@@ -465,7 +473,7 @@ public extension APIClient {
             path: "/api/collections/posts/records",
             query: [
                 "filter": PeardFilter.and([PeardFilter.equals("pair", pairID)] + filter.clauses),
-                "sort": "-created",
+                "sort": "-happened_at",
                 "page": String(max(1, page)),
                 "perPage": String(perPage),
             ]
@@ -492,7 +500,7 @@ public extension APIClient {
                 PeardFilter.equals("pair", pairID),
                 PeardFilter.equals("type", PostType.event.rawValue)
             ),
-            sort: "-created",
+            sort: "-happened_at",
             perPage: 500
         )
     }

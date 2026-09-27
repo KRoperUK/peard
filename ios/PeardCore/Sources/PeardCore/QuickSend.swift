@@ -15,11 +15,27 @@ public struct QuickSend: Hashable, Sendable {
     /// Set once the note field has content: the countdown stops and the send
     /// waits for an explicit tap.
     public var isHeld: Bool
+    /// An earlier time somebody picked for the moment, or `nil` for now.
+    public private(set) var happenedAt: Date?
 
-    public init(moment: Moment, startedAt: Date = Date(), isHeld: Bool = false) {
+    public init(moment: Moment, startedAt: Date = Date(), isHeld: Bool = false, happenedAt: Date? = nil) {
         self.moment = moment
         self.startedAt = startedAt
         self.isHeld = isHeld
+        self.happenedAt = happenedAt
+    }
+
+    /// Sets when the moment happened, or clears it with `nil`. Holds the send
+    /// either way, like typing a note: somebody picking a time has not finished
+    /// saying what they meant. A time too close to now to count as a rewind is
+    /// dropped rather than kept, so the send stays an ordinary live one.
+    public mutating func rewind(to date: Date?, now: Date = Date()) {
+        isHeld = true
+        guard let date, Rewind.isRewound(date, loggedAt: now) else {
+            happenedAt = nil
+            return
+        }
+        happenedAt = max(date, now.addingTimeInterval(-Rewind.window))
     }
 
     /// Whole seconds left, rounded up, so a fresh countdown reads "3".

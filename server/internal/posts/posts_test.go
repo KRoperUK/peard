@@ -37,7 +37,9 @@ type world struct {
 	alicePhoto       *core.Record
 }
 
-func newWorld(t *testing.T) *world {
+// register binds any other packages a test needs routes from, before the mux
+// is built.
+func newWorld(t *testing.T, register ...func(core.App)) *world {
 	t.Helper()
 
 	dir, err := os.MkdirTemp("", "peard-posts-test-*")
@@ -55,6 +57,9 @@ func newWorld(t *testing.T) *world {
 	})
 
 	posts.Register(app)
+	for _, r := range register {
+		r(app)
+	}
 
 	w := &world{app: app}
 	w.alice, w.aliceTok = w.newUser(t, "alice@example.com")

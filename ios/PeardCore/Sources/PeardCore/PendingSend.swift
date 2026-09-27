@@ -25,6 +25,9 @@ public struct PendingSend: Codable, Hashable, Sendable, Identifiable {
     public let label: String
     public let note: String
     public let queuedAt: Date
+    /// When the moment happened, if somebody rewound it. `nil` means it
+    /// happened when it was tapped, and the server stamps it on arrival.
+    public let happenedAt: Date?
     /// How many times a flush has tried and failed. Drives the retry backoff.
     public var attempts: Int
     /// When the last attempt failed, for the backoff calculation.
@@ -37,6 +40,7 @@ public struct PendingSend: Codable, Hashable, Sendable, Identifiable {
         case pairID = "pair"
         case authorID = "author"
         case queuedAt = "queued_at"
+        case happenedAt = "happened_at"
         case lastAttemptAt = "last_attempt_at"
         case lastError = "last_error"
     }
@@ -50,6 +54,7 @@ public struct PendingSend: Codable, Hashable, Sendable, Identifiable {
         label: String,
         note: String = "",
         queuedAt: Date = Date(),
+        happenedAt: Date? = nil,
         attempts: Int = 0,
         lastAttemptAt: Date? = nil,
         lastError: String? = nil
@@ -62,6 +67,7 @@ public struct PendingSend: Codable, Hashable, Sendable, Identifiable {
         self.label = label
         self.note = note
         self.queuedAt = queuedAt
+        self.happenedAt = happenedAt
         self.attempts = attempts
         self.lastAttemptAt = lastAttemptAt
         self.lastError = lastError
@@ -69,7 +75,7 @@ public struct PendingSend: Codable, Hashable, Sendable, Identifiable {
 
     /// Fields for the `posts` record this send becomes.
     public var postFields: [String: String] {
-        [
+        var fields = [
             "pair": pairID,
             "author": authorID,
             "type": PostType.event.rawValue,
@@ -79,7 +85,13 @@ public struct PendingSend: Codable, Hashable, Sendable, Identifiable {
             // the row it already created instead of making a second one.
             "client_id": id,
         ]
+        if let happenedAt { fields["happened_at"] = Rewind.wireString(happenedAt) }
+        return fields
     }
+
+    /// When the moment happened, for drawing and counting it before the server
+    /// has.
+    public var happenedOrQueuedAt: Date { happenedAt ?? queuedAt }
 
     /// Beyond this many failed attempts the send stops being retried
     /// automatically and is surfaced for the user to retry or discard. Chosen so
@@ -134,7 +146,8 @@ public struct PendingSend: Codable, Hashable, Sendable, Identifiable {
             type: .event,
             eventKind: kind,
             note: note.isEmpty ? nil : note,
-            created: queuedAt
+            created: queuedAt,
+            happenedAt: happenedOrQueuedAt
         )
     }
 }

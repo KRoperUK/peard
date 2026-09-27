@@ -300,7 +300,7 @@ func feedHandler(app core.App) func(e *core.RequestEvent) error {
 		if requested != "" && isMemberOf(memberships, requested) {
 			chosenPair = requested
 			posts, _ := app.FindRecordsByFilter("posts",
-				"pair = {:pair} && author != {:user}", "-created", 1, 0,
+				"pair = {:pair} && author != {:user}", "-happened_at", 1, 0,
 				dbx.Params{"pair": chosenPair, "user": userID})
 			if len(posts) > 0 {
 				latest = posts[0]
@@ -312,12 +312,12 @@ func feedHandler(app core.App) func(e *core.RequestEvent) error {
 				pairID := mem.GetString("pair")
 				posts, _ := app.FindRecordsByFilter("posts",
 					"pair = {:pair} && author != {:user}",
-					"-created", 1, 0,
+					"-happened_at", 1, 0,
 					dbx.Params{"pair": pairID, "user": userID})
 				if len(posts) == 0 {
 					continue
 				}
-				if latest == nil || posts[0].GetDateTime("created").Time().After(latest.GetDateTime("created").Time()) {
+				if latest == nil || posts[0].GetDateTime("happened_at").Time().After(latest.GetDateTime("happened_at").Time()) {
 					latest = posts[0]
 					chosenPair = pairID
 				}
@@ -393,15 +393,16 @@ func feedHandler(app core.App) func(e *core.RequestEvent) error {
 		kind := latest.GetString("event_kind")
 		descriptor := moments.Resolve(app, chosenPair, kind)
 		res["post"] = map[string]any{
-			"id":         latest.Id,
-			"type":       latest.GetString("type"),
-			"event_kind": kind,
-			"emoji":      descriptor.Emoji,
-			"label":      descriptor.Label,
-			"note":       latest.GetString("note"),
-			"created":    latest.GetString("created"),
-			"media_url":  mediaURL,
-			"author":     partnerName,
+			"id":          latest.Id,
+			"type":        latest.GetString("type"),
+			"event_kind":  kind,
+			"emoji":       descriptor.Emoji,
+			"label":       descriptor.Label,
+			"note":        latest.GetString("note"),
+			"created":     latest.GetString("created"),
+			"happened_at": latest.GetString("happened_at"),
+			"media_url":   mediaURL,
+			"author":      partnerName,
 		}
 		return e.JSON(http.StatusOK, res)
 	}
@@ -431,12 +432,12 @@ func liveliestPair(app core.App, userID string) string {
 	for _, mem := range memberships {
 		pairID := mem.GetString("pair")
 		posts, _ := app.FindRecordsByFilter("posts",
-			"pair = {:pair} && author != {:user}", "-created", 1, 0,
+			"pair = {:pair} && author != {:user}", "-happened_at", 1, 0,
 			dbx.Params{"pair": pairID, "user": userID})
 		if len(posts) == 0 {
 			continue
 		}
-		at := posts[0].GetDateTime("created").Time()
+		at := posts[0].GetDateTime("happened_at").Time()
 		if best == "" || at.After(bestAt) {
 			best = pairID
 			bestAt = at
@@ -546,7 +547,7 @@ func todayCounts(app core.App, pairID, userID string) map[string]int {
 // most frequent first.
 func todayTallies(app core.App, pairID, userID string) []map[string]any {
 	posts, err := app.FindRecordsByFilter("posts",
-		"pair = {:pair} && author != {:user} && type = 'event' && created >= {:today}",
+		"pair = {:pair} && author != {:user} && type = 'event' && happened_at >= {:today}",
 		"", 500, 0,
 		dbx.Params{"pair": pairID, "user": userID, "today": startOfToday()})
 	if err != nil {
@@ -584,7 +585,7 @@ func todayTallies(app core.App, pairID, userID string) []map[string]any {
 
 func todayPosts(app core.App, pairID, userID, kind string) []*core.Record {
 	recs, _ := app.FindRecordsByFilter("posts",
-		"pair = {:pair} && author != {:user} && type = 'event' && event_kind = {:kind} && created >= {:today}",
+		"pair = {:pair} && author != {:user} && type = 'event' && event_kind = {:kind} && happened_at >= {:today}",
 		"", 500, 0,
 		dbx.Params{
 			"pair":  pairID,

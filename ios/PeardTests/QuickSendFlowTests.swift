@@ -256,6 +256,45 @@ final class QuickSendFlowTests: XCTestCase {
         XCTAssertEqual(model.caption(for: post), "Sauna")
     }
 
+    // MARK: Rewinding
+
+    /// Opening the picker stops the clock, before anything is chosen: the send
+    /// must not go out while somebody is still scrolling the wheel.
+    func testOpeningTheRewindPickerHoldsTheSend() {
+        model.tap(moment: beer)
+        model.holdQuickSend()
+
+        XCTAssertEqual(model.quickSend?.isHeld, true)
+        XCTAssertNil(model.quickSend?.happenedAt)
+        XCTAssertFalse(model.quickSend!.shouldSend(now: Date().addingTimeInterval(60)))
+    }
+
+    func testARewoundMomentIsQueuedWithItsTime() async {
+        let earlier = Date().addingTimeInterval(-2 * 3600)
+        model.tap(moment: beer)
+        model.rewindQuickSend(to: earlier)
+
+        XCTAssertEqual(model.quickSend?.isHeld, true)
+
+        await model.sendNow()
+
+        let queued = await queue.pending
+        XCTAssertEqual(queued.count, 1)
+        XCTAssertEqual(queued.first?.happenedAt?.timeIntervalSince1970 ?? 0, earlier.timeIntervalSince1970, accuracy: 0.001)
+        XCTAssertEqual(model.timeline.first?.rewound, true, "the queued row shows the chip straight away")
+    }
+
+    func testChoosingJustNowSendsItLive() async {
+        model.tap(moment: beer)
+        model.rewindQuickSend(to: Date().addingTimeInterval(-3600))
+        model.rewindQuickSend(to: nil)
+
+        await model.sendNow()
+
+        let queued = await queue.pending
+        XCTAssertNil(queued.first?.happenedAt)
+    }
+
     // MARK: Helpers
 
     /// Lets the detached commit tasks that `tap` spawns finish before asserting.

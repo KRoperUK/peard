@@ -26,6 +26,7 @@ struct HomeView: View {
     @State private var capturedPhoto: CapturedPhoto?
     @State private var showMomentSheet = false
     @State private var viewingPhoto: Post?
+    @State private var showRewind = false
     @FocusState private var noteFocused: Bool
 
     /// Switches to the tallies tab. The breakdown strip is a summary, and its whole
@@ -84,13 +85,18 @@ struct HomeView: View {
                 post: post,
                 serverURL: model.serverURL,
                 authorLabel: model.authorLabel(for: post),
-                timestamp: ElapsedTime.label(for: post.created)
+                timestamp: ElapsedTime.label(for: post.happenedAt)
             )
         }
         .pearAnimation(value: model.toast ?? "")
         .alert(item: $model.alert)
         .sheet(isPresented: $showMomentSheet) {
             MomentSheet(model: model)
+        }
+        .sheet(isPresented: $showRewind) {
+            RewindSheet(initial: model.quickSend?.happenedAt) { date in
+                model.rewindQuickSend(to: date)
+            }
         }
         .fullScreenCover(isPresented: $showCamera) {
             // Asked rather than assumed: most photos are of nothing countable,
@@ -215,9 +221,12 @@ struct HomeView: View {
                     }
 
                     HStack(spacing: 6) {
-                        Text(ElapsedTime.label(for: post.created))
+                        Text(ElapsedTime.label(for: post.happenedAt))
                             .font(.caption)
                             .foregroundStyle(PearColor.textTertiary)
+                        if post.rewound {
+                            RewoundChip(loggedAt: post.created)
+                        }
                         // A moment that has not reached the server says so, rather
                         // than looking identical to one that has.
                         if model.displayedPostIsPending {
@@ -425,6 +434,15 @@ struct HomeView: View {
                         .font(.footnote.bold())
                         .foregroundStyle(PearColor.textSecondary)
                         .accessibilityLabel("\(send.moment.label): \(model.quickSendCaption)")
+
+                    if let happenedAt = send.happenedAt {
+                        Label(
+                            "Rewound to \(happenedAt.formatted(date: .omitted, time: .shortened))",
+                            systemImage: "backward.fill"
+                        )
+                        .font(.caption2.bold())
+                        .foregroundStyle(PearColor.textSecondary)
+                    }
                 }
                 Spacer(minLength: 0)
             }
@@ -437,6 +455,18 @@ struct HomeView: View {
                     .padding(12)
                     .background(PearColor.surface, in: RoundedRectangle(cornerRadius: 12))
                     .accessibilityLabel("Moment note")
+
+                Button {
+                    model.holdQuickSend()
+                    showRewind = true
+                } label: {
+                    Image(systemName: "backward.fill")
+                        .foregroundStyle(model.quickSend?.happenedAt == nil ? PearColor.textTertiary : PearColor.accent)
+                        .padding(8)
+                }
+                .buttonStyle(.plain)
+                .accessibilityLabel("Rewind")
+                .accessibilityHint("Log this moment at an earlier time, up to 24 hours ago")
 
                 Button("Send") {
                     Task { await model.sendNow() }
