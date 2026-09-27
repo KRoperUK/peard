@@ -40,6 +40,48 @@ final class ElapsedTimeTests: XCTestCase {
     func testFutureDatesClampToNow() {
         XCTAssertEqual(ElapsedTime.label(for: now.addingTimeInterval(500), now: now), "now")
     }
+
+    // MARK: Spoken age
+
+    private func spoken(hoursAgo: Double) -> String? {
+        ElapsedTime.spokenAge(for: now.addingTimeInterval(-hoursAgo * 3600), now: now)
+    }
+
+    /// "now ago" was what VoiceOver used to say.
+    func testSpokenAgeWithinTheHourIsAPhraseNotNow() {
+        XCTAssertEqual(spoken(hoursAgo: 0), "in the last hour")
+        XCTAssertEqual(spoken(hoursAgo: 0.9), "in the last hour")
+    }
+
+    func testSpokenAgeSaysItsUnitsInFullAndPluralises() {
+        XCTAssertEqual(spoken(hoursAgo: 1), "1 hour ago")
+        XCTAssertEqual(spoken(hoursAgo: 3), "3 hours ago")
+        XCTAssertEqual(spoken(hoursAgo: 24), "1 day ago")
+        XCTAssertEqual(spoken(hoursAgo: 24 * 14), "2 weeks ago")
+        XCTAssertEqual(spoken(hoursAgo: 24 * 120), "4 months ago")
+        XCTAssertEqual(spoken(hoursAgo: 24 * 400), "1 year ago")
+    }
+
+    /// Heard and seen agree: every threshold the tile uses, the voice uses.
+    func testSpokenAgeChangesUnitWhereTheTileDoes() {
+        let day: Double = 24
+        let samples: [Double] = [0.5, 1, 23, day, day * 6.9, day * 7, day * 59, day * 60, day * 364, day * 366]
+        let words: [String: String] = [
+            "now": "in the last hour", "h": "hour", "d": "day", "w": "week", "mo": "month", "y": "year",
+        ]
+        for hours in samples {
+            let date = now.addingTimeInterval(-hours * 3600)
+            let tile = ElapsedTime.age(for: date, now: now)!
+            let voice = ElapsedTime.spokenAge(for: date, now: now)!
+            let tileUnit = tile.drop(while: { $0.isNumber })
+            let expected = words[String(tileUnit)]!
+            XCTAssertTrue(voice.contains(expected), "\(hours)h: tile \(tile), voice \(voice)")
+        }
+    }
+
+    func testNoDateSaysNothing() {
+        XCTAssertNil(ElapsedTime.spokenAge(for: nil, now: now))
+    }
 }
 
 /// Requirement 11.7, 11.8 — partner label derivation and truncation.

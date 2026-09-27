@@ -95,7 +95,8 @@ struct MomentGrid: View {
         // The age is drawn as a bare "3w" under the label, which means nothing
         // read aloud on its own.
         .accessibilityLabel(
-            age(for: moment).map { "Log \(moment.label). Last one \($0) ago" }
+            ElapsedTime.spokenAge(for: lastAt[moment.kind.rawValue])
+                .map { "Log \(moment.label). Last one \($0)" }
                 ?? "Log \(moment.label)"
         )
         // Requirement 12.10.
