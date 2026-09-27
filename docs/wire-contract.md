@@ -360,16 +360,16 @@ empty upload would silently erase a photo.
 Accepts JPEG, PNG, WebP and HEIC up to 8 MB; the client downscales to 512 points
 and re-encodes as JPEG first, so the limit is not normally reachable.
 
-The two avatar file fields are deliberately **unprotected**, as `posts.media`
-already is. PocketBase only enforces a collection's view rule on files when the
-field is protected, and `users.ViewRule` is `id = @request.auth.id` — so a
-protected avatar would be invisible to exactly the people who need to see it,
-everybody else in the connection. Unprotected means the URL is the capability,
-which is defensible only because PocketBase appends a ten-character random suffix
-to every stored filename: the path cannot be derived from a record id. There is a
-test asserting that, since the whole argument rests on it. The consequence to be
-aware of is that somebody who leaves a connection keeps any avatar URL they
-already had.
+Both avatar file fields are **protected**, as `posts.media` is, so fetching one
+needs a file token (`POST /api/files/token`, appended as `?token=`). PocketBase
+evaluates the collection's view rule with `@request.context = "protectedFile"`
+before serving a protected file, and `users.ViewRule` has a branch for exactly
+that context which opens a user's avatar to the people who share a connection
+with them — without opening the rest of the user record, which stays
+`id = @request.auth.id` for ordinary reads. `pairs.avatar` needs no special case:
+`pairs.ViewRule` is already membership-scoped. Somebody who leaves a connection
+stops being able to fetch its members' faces as soon as their file token expires.
+See `migrations/1786233600_peard_protect_avatars.go`.
 
 `POST /api/peard/connections/mute` with `{ "pair": "<id>", "muted": true }` →
 `{ "ok": true, "muted": true }`. Per membership rather than per user: with 20

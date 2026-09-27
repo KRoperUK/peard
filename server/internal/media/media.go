@@ -32,9 +32,10 @@ const noStore = "private, no-store, no-cache, max-age=0, must-revalidate"
 // Register makes every protected file uncacheable by shared caches.
 func Register(app core.App) {
 	app.OnFileDownloadRequest().BindFunc(func(e *core.FileDownloadRequestEvent) error {
-		// Only protected files. A public one — an avatar today — is served to
-		// anybody by design, and taking the CDN away from it would cost the
-		// connection rail a round trip per face for no gain.
+		// Only protected files, which today is every file field Pear'd has:
+		// moment photos and both avatars. An unprotected field added later is
+		// public by design, and taking the CDN away from it would cost a round
+		// trip per request for no gain.
 		if e.FileField != nil && e.FileField.Protected {
 			e.Response.Header().Set("Cache-Control", noStore)
 			// Belt and braces for caches that key on Expires, and for the
