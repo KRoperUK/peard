@@ -453,6 +453,66 @@ Debug builds only (compiled out of Release entirely):
 - The reachability of `GET /api/health` is logged at launch under the
   `com.peard.app` subsystem.
 
+### Checking a change on a simulator
+
+Tests prove the logic; some things — a chip that lays out wrong inside a
+`List` row, a tap target that is too small — only show up on screen. To get a
+Debug build to a signed-in home screen against a local server:
+
+```bash
+cd server
+go run . superuser upsert admin@peard.app 'Password123!'   # the Debug build's superuser (Config.example.xcconfig)
+PEARD_RATE_LIMITS=off go run . serve --http=127.0.0.1:8090
+```
+
+Then create the account **Login Test User** signs into — it only signs in, and
+fails on a server that has never seen it — either in the Admin UI or with:
+
+```bash
+T=$(curl -s -X POST http://127.0.0.1:8090/api/collections/_superusers/auth-with-password \
+  -H 'Content-Type: application/json' \
+  -d '{"identity":"admin@peard.app","password":"Password123!"}' | jq -r .token)
+curl -s -X POST http://127.0.0.1:8090/api/collections/users/records -H "Authorization: $T" \
+  -H 'Content-Type: application/json' \
+  -d '{"email":"test@peard.local","password":"test1234","passwordConfirm":"test1234","display_name":"Tess","verified":true}'
+```
+
+`make run` builds, installs and launches the app; agree to the privacy screen,
+tap **🔧 Login Test User**, then use an invite code of `AAAAAA` or `BBBBBB`
+(above) to land in a connection with moments in it. Pass `--dir` to both
+`go run` commands to keep this away from your usual `server/pb_data`.
+
+#### With a coding agent
+
+Two MCP servers are worth having, both configured per machine rather than in
+this repo:
+
+- **Xcode's own** (Xcode 27+, `xcrun mcpbridge`). Enable *Settings → Intelligence
+  → Allow External Agents to Use Xcode Tools*; the first time an agent opens the
+  project, Xcode asks you to approve it. Its device-interaction tools are the
+  ones that reliably tap, swipe and type in the simulator, and it has Apple's
+  documentation search.
+- **[XcodeBuildMCP](https://github.com/getsentry/XcodeBuildMCP)** for building,
+  installing, launching and screenshots. Only its simulator tools are on by
+  default; UI automation needs `XCODEBUILDMCP_ENABLED_WORKFLOWS` to include
+  `ui-automation`.
+
+Three things that cost time finding out:
+
+- **`build_run_sim` can pick the wrong product.** With three targets it has
+  been seen installing `PearMessagesExtension.appex` as though it were the app,
+  after which the next install fails with *"App Extension with identifier
+  com.peard.app.PearMessages is already installed"*. Build, then install
+  `Peard.app` from the build products explicitly, and `xcrun simctl uninstall
+  <udid> com.peard.app.PearMessages` to clear the bad install.
+- **XcodeBuildMCP's taps did not reach the app on Xcode 27.** They report
+  success and nothing happens — by element reference and by coordinate alike.
+  Xcode's device-interaction tools worked on the same simulator.
+- **The 3-second send window is shorter than one agent round trip.** Tapping a
+  moment and then the ⏪ button as two separate steps sends the moment before
+  the second tap lands, and the tiles move up under the next one. Issue both
+  taps in a single interaction command.
+
 ## Wire contract
 
 `docs/wire-contract.md` is the canonical description of the JSON exchanged
@@ -650,6 +710,9 @@ receive live pushes.
 | POST | `/api/peard/pairs/leave` | user | Leave a connection; optional `{"pair":"X"}`, required when you're in more than one, plus optional `{"delete_moments":true}` to take your own moments out of it on the way |
 | POST | `/api/peard/pairs/remove` | owner | Remove somebody else from a connection |
 | POST | `/api/peard/contacts/match` | user | Which of the supplied contact hashes belong to discoverable accounts |
+| POST | `/api/peard/contacts/settings` | user | Set your discoverability, phone number and the email address to be matched on |
+| GET  | `/api/peard/recap?pair=` | member | The week's moments, the busiest day and the current and best streak |
+| GET  | `/api/peard/status` | none | Build commit and time, which the deploy job watches |
 | GET  | `/api/peard/export` | user | JSON snapshot of your profile, connections and moments |
 | DELETE | `/api/peard/account` | user | Delete your account and everything that cascades from it |
 | GET  | `/api/peard/widget/feed?token=` | widget | Latest moment + today's tallies; optional `&pair=` pins a connection |
@@ -659,6 +722,10 @@ receive live pushes.
 
 Custom moments are plain collection access rather than a custom route: the app
 lists and creates `moment_kinds` rows scoped to a connection.
+
+The server also serves a small website: `/` and `/privacy`, `/c/{code}` (the
+page an invite link opens when the app is not installed), and
+`/.well-known/apple-app-site-association`, which claims only `/c/*` for the app.
 
 `GET /api/peard/tallies` replaced counting on the device, which fetched up to 500
 event posts per tap and silently undercounted beyond that. The window boundaries
