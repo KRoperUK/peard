@@ -443,7 +443,8 @@ rather than tidy — Apple's JWKS, APNs and Let's Encrypt are all outbound TLS.
 
 Debug builds only (compiled out of Release entirely):
 
-- **🔧 Login Test User** — password sign-in as `test@peard.local`.
+- **🔧 Login Test User** — password sign-in as `test@peard.local`, creating the
+  account first (through the Debug superuser) if the server has never seen it.
 - **Type `AAAAAA`** on the invite-code screen (Connections → "Use an invite
   code") — creates a pair with a seeded test
   partner and two seeded tally posts, so one device is enough.
@@ -465,22 +466,12 @@ go run . superuser upsert admin@peard.app 'Password123!'   # the Debug build's s
 PEARD_RATE_LIMITS=off go run . serve --http=127.0.0.1:8090
 ```
 
-Then create the account **Login Test User** signs into — it only signs in, and
-fails on a server that has never seen it — either in the Admin UI or with:
-
-```bash
-T=$(curl -s -X POST http://127.0.0.1:8090/api/collections/_superusers/auth-with-password \
-  -H 'Content-Type: application/json' \
-  -d '{"identity":"admin@peard.app","password":"Password123!"}' | jq -r .token)
-curl -s -X POST http://127.0.0.1:8090/api/collections/users/records -H "Authorization: $T" \
-  -H 'Content-Type: application/json' \
-  -d '{"email":"test@peard.local","password":"test1234","passwordConfirm":"test1234","display_name":"Tess","verified":true}'
-```
-
-`make run` builds, installs and launches the app; agree to the privacy screen,
-tap **🔧 Login Test User**, then use an invite code of `AAAAAA` or `BBBBBB`
-(above) to land in a connection with moments in it. Pass `--dir` to both
-`go run` commands to keep this away from your usual `server/pb_data`.
+`make run` builds, installs and launches the app. Agree to the privacy screen
+and tap **🔧 Login Test User**, which creates `test@peard.local` through that
+superuser on a server that has never seen it, then use an invite code of
+`AAAAAA` or `BBBBBB` (above) to land in a connection with moments in it. Pass
+`--dir` to both `go run` commands to keep this away from your usual
+`server/pb_data`.
 
 #### With a coding agent
 
