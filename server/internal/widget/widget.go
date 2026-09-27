@@ -401,7 +401,6 @@ func feedHandler(app core.App) func(e *core.RequestEvent) error {
 			"note":        latest.GetString("note"),
 			"created":     latest.GetString("created"),
 			"happened_at": latest.GetString("happened_at"),
-			"rewound":     latest.GetBool("rewound"),
 			"media_url":   mediaURL,
 			"author":      partnerName,
 		}

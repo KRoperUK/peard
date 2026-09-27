@@ -364,7 +364,7 @@ func TestARewoundMomentIsStillUnread(t *testing.T) {
 	post := w.newPost(t, w.flatmates, w.bob, "coffee", "earlier, honestly")
 	earlier := time.Now().Add(-3 * time.Hour).UTC().Format("2006-01-02 15:04:05.000Z")
 	if _, err := w.app.DB().
-		NewQuery("UPDATE {{posts}} SET [[happened_at]] = {:t}, [[rewound]] = TRUE WHERE [[id]] = {:id}").
+		NewQuery("UPDATE {{posts}} SET [[happened_at]] = {:t} WHERE [[id]] = {:id}").
 		Bind(map[string]any{"t": earlier, "id": post.Id}).
 		Execute(); err != nil {
 		t.Fatalf("rewind: %v", err)

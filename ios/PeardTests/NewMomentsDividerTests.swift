@@ -112,8 +112,7 @@ final class NewMomentsDividerTests: XCTestCase {
             type: .event,
             eventKind: .beer,
             created: watermark.addingTimeInterval(loggedOffset),
-            happenedAt: watermark.addingTimeInterval(happenedOffset),
-            rewound: true
+            happenedAt: watermark.addingTimeInterval(happenedOffset)
         )
     }
 

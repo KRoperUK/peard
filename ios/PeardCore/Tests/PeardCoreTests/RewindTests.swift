@@ -23,11 +23,19 @@ final class RewindTests: XCTestCase {
         let post = try decoder.decode(Post.self, from: Data("""
         {"id":"p1","pair":"x","author":"a","type":"event","event_kind":"beer",
          "created":"2026-09-27 12:00:00.000Z",
-         "happened_at":"2026-09-27 09:30:00.000Z","rewound":true}
+         "happened_at":"2026-09-27 09:30:00.000Z"}
         """.utf8))
 
         XCTAssertEqual(post.created.timeIntervalSince(post.happenedAt), 2.5 * 3600, accuracy: 0.001)
         XCTAssertTrue(post.rewound)
+    }
+
+    /// Within a minute of arriving is still live: a request in flight, or a
+    /// clock a few seconds out, is not a rewind.
+    func testAPostHappenedMomentsBeforeArrivingIsNotRewound() {
+        let post = Post(id: "p", pair: "x", author: "a", type: .event,
+                        created: logged, happenedAt: logged.addingTimeInterval(-45))
+        XCTAssertFalse(post.rewound)
     }
 
     func testAWidgetPostFallsBackToWhenItWasLogged() throws {
@@ -93,7 +101,6 @@ final class RewindTests: XCTestCase {
     func testALiveSendLeavesTheTimeToTheServer() {
         let send = PendingSend(pairID: "x", authorID: "a", kind: .beer, emoji: "🍺", label: "Beer")
         XCTAssertNil(send.postFields["happened_at"])
-        XCTAssertNil(send.postFields["rewound"], "the chip is the server's call")
     }
 
     func testARewoundSendSurvivesARelaunch() throws {
@@ -133,7 +140,7 @@ final class RewindTests: XCTestCase {
         calendar.timeZone = TimeZone(identifier: "UTC")!
         let now = calendar.date(from: DateComponents(year: 2026, month: 9, day: 27, hour: 1))!
         let post = Post(id: "p", pair: "x", author: "a", type: .event, eventKind: .beer,
-                        created: now, happenedAt: now.addingTimeInterval(-3 * 3600), rewound: true)
+                        created: now, happenedAt: now.addingTimeInterval(-3 * 3600))
 
         let periods = TallyPeriods.compute(posts: [post], now: now, calendar: calendar)
         XCTAssertEqual(periods.day, 0)

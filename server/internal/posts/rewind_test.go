@@ -21,7 +21,7 @@ func TestAMomentLoggedLiveHappenedNow(t *testing.T) {
 	post := w.create(t, w.aliceTok, "")
 
 	assertNear(t, post.GetDateTime("happened_at"), time.Now())
-	if post.GetBool("rewound") {
+	if rewound(post) {
 		t.Error("rewound = true on a moment nobody rewound")
 	}
 }
@@ -33,24 +33,23 @@ func TestAMomentCanBeRewoundAFewHours(t *testing.T) {
 	post := w.create(t, w.aliceTok, `,"happened_at":"`+iso(at)+`"`)
 
 	assertNear(t, post.GetDateTime("happened_at"), at)
-	if !post.GetBool("rewound") {
+	if !rewound(post) {
 		t.Error("rewound = false on a moment set three hours back")
 	}
 }
 
-// The chip is the server's verdict. A client claiming it rewound a live
-// moment — or scrubbing the chip off a rewound one — is ignored.
-func TestTheClientCannotSayWhetherAMomentWasRewound(t *testing.T) {
+// A phone clock running a little fast is not refused, and is not stored ahead
+// of when the moment arrived either.
+func TestAClockSlightlyAheadIsPulledBackToArrival(t *testing.T) {
 	w := newWorld(t)
 
-	live := w.create(t, w.aliceTok, `,"rewound":true`)
-	if live.GetBool("rewound") {
-		t.Error("a live moment took rewound=true from the request")
-	}
+	post := w.create(t, w.aliceTok, `,"happened_at":"`+iso(time.Now().Add(20*time.Second))+`"`)
 
-	back := w.create(t, w.aliceTok, `,"rewound":false,"happened_at":"`+iso(time.Now().Add(-2*time.Hour))+`"`)
-	if !back.GetBool("rewound") {
-		t.Error("a rewound moment took rewound=false from the request")
+	if post.GetDateTime("happened_at").Time().After(post.GetDateTime("created").Time()) {
+		t.Errorf("happened_at %s is after created %s", post.GetString("happened_at"), post.GetString("created"))
+	}
+	if rewound(post) {
+		t.Error("a moment from a fast clock reads as rewound")
 	}
 }
 
@@ -59,7 +58,7 @@ func TestAFewSecondsBackIsStillLive(t *testing.T) {
 	w := newWorld(t)
 
 	post := w.create(t, w.aliceTok, `,"happened_at":"`+iso(time.Now().Add(-20*time.Second))+`"`)
-	if post.GetBool("rewound") {
+	if rewound(post) {
 		t.Error("rewound = true for a moment 20 seconds back")
 	}
 }
@@ -89,7 +88,7 @@ func TestAMomentSavedOutsideARequestStillGetsATime(t *testing.T) {
 
 	post := w.reload(t, w.bobPost.Id)
 	assertNear(t, post.GetDateTime("happened_at"), time.Now())
-	if post.GetBool("rewound") {
+	if rewound(post) {
 		t.Error("rewound = true on a fixture nobody rewound")
 	}
 }
@@ -106,7 +105,7 @@ func TestAnAuthorCanRewindTheirMomentAfterwards(t *testing.T) {
 	}
 	got := w.reload(t, w.alicePost.Id)
 	assertNear(t, got.GetDateTime("happened_at"), at)
-	if !got.GetBool("rewound") {
+	if !rewound(got) {
 		t.Error("rewound = false after rewinding two hours")
 	}
 	if got.GetString("note") != "at the pub" {
@@ -148,7 +147,7 @@ func TestARewindCanBeUndone(t *testing.T) {
 		t.Fatalf("undo: %d %s", status, body)
 	}
 	got := w.reload(t, w.alicePost.Id)
-	if got.GetBool("rewound") {
+	if rewound(got) {
 		t.Error("rewound = true after putting it back")
 	}
 	if got.GetString("happened_at") != got.GetString("created") {
@@ -163,7 +162,7 @@ func TestSomebodyElsesMomentCannotBeRewound(t *testing.T) {
 	if status != http.StatusForbidden {
 		t.Fatalf("status = %d, want 403", status)
 	}
-	if w.reload(t, w.alicePost.Id).GetBool("rewound") {
+	if rewound(w.reload(t, w.alicePost.Id)) {
 		t.Error("bob rewound alice's moment")
 	}
 }
@@ -230,6 +229,11 @@ func (w *world) createRaw(t *testing.T, token, extra string) (int, string) {
 	t.Helper()
 	body := `{"pair":"` + w.pair.Id + `","author":"` + w.alice.Id + `","type":"event","event_kind":"beer"` + extra + `}`
 	return w.do(t, http.MethodPost, "/api/collections/posts/records", token, body)
+}
+
+// rewound is the rule clients apply to draw the chip.
+func rewound(post *core.Record) bool {
+	return post.GetDateTime("created").Time().Sub(post.GetDateTime("happened_at").Time()) > time.Minute
 }
 
 func iso(t time.Time) string { return t.UTC().Format(time.RFC3339) }

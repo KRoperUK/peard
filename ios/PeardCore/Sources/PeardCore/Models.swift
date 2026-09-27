@@ -173,12 +173,9 @@ public struct Post: Codable, Hashable, Sendable, Identifiable {
     /// `Rewind`. Unread still reads `created`, because a moment logged late is
     /// still news.
     public let happenedAt: Date
-    /// Set by the server, never the client, when `happenedAt` was put back more
-    /// than `Rewind.threshold` before the moment was logged. Drives the chip.
-    public let rewound: Bool
 
     enum CodingKeys: String, CodingKey {
-        case id, pair, author, type, note, media, created, updated, rewound
+        case id, pair, author, type, note, media, created, updated
         case eventKind = "event_kind"
         case happenedAt = "happened_at"
     }
@@ -193,8 +190,7 @@ public struct Post: Codable, Hashable, Sendable, Identifiable {
         media: String? = nil,
         created: Date,
         updated: Date? = nil,
-        happenedAt: Date? = nil,
-        rewound: Bool = false
+        happenedAt: Date? = nil
     ) {
         self.id = id
         self.pair = pair
@@ -208,7 +204,6 @@ public struct Post: Codable, Hashable, Sendable, Identifiable {
         // not mention `updated` is describing a moment nobody has edited.
         self.updated = updated ?? created
         self.happenedAt = happenedAt ?? created
-        self.rewound = rewound
     }
 
     /// Records created before the server gained its `created` autodate field
@@ -233,11 +228,16 @@ public struct Post: Codable, Hashable, Sendable, Identifiable {
         // Absent on a server predating rewinding: every moment then happened
         // when it was logged.
         happenedAt = (try? container.decode(Date.self, forKey: .happenedAt)) ?? created
-        rewound = (try? container.decodeIfPresent(Bool.self, forKey: .rewound)) ?? false
     }
 
     /// True when this post carries a real server timestamp.
     public var hasTimestamp: Bool { created != .distantPast }
+
+    /// Logged after it happened, which is what the "Rewound" chip says. Read off
+    /// the two times rather than stored, so the chip cannot disagree with them.
+    public var rewound: Bool {
+        hasTimestamp && Rewind.isRewound(happenedAt, loggedAt: created)
+    }
 
     /// Whether this moment has been changed since it was logged.
     ///
@@ -876,12 +876,11 @@ public struct WidgetFeed: Codable, Hashable, Sendable {
         public let created: Date?
         /// When the moment happened. Absent from a server predating rewinding.
         public let happenedAt: Date?
-        public let rewound: Bool
         public let mediaURL: String?
         public let author: String?
 
         enum CodingKeys: String, CodingKey {
-            case id, type, note, created, author, emoji, label, rewound
+            case id, type, note, created, author, emoji, label
             case eventKind = "event_kind"
             case mediaURL = "media_url"
             case happenedAt = "happened_at"
@@ -896,7 +895,6 @@ public struct WidgetFeed: Codable, Hashable, Sendable {
             note: String? = nil,
             created: Date? = nil,
             happenedAt: Date? = nil,
-            rewound: Bool = false,
             mediaURL: String? = nil,
             author: String? = nil
         ) {
@@ -908,7 +906,6 @@ public struct WidgetFeed: Codable, Hashable, Sendable {
             self.note = note
             self.created = created
             self.happenedAt = happenedAt
-            self.rewound = rewound
             self.mediaURL = mediaURL
             self.author = author
         }
@@ -923,13 +920,18 @@ public struct WidgetFeed: Codable, Hashable, Sendable {
             note = try container.decodeIfPresent(String.self, forKey: .note)
             created = try? container.decode(Date.self, forKey: .created)
             happenedAt = try? container.decode(Date.self, forKey: .happenedAt)
-            rewound = (try? container.decodeIfPresent(Bool.self, forKey: .rewound)) ?? false
             mediaURL = try container.decodeIfPresent(String.self, forKey: .mediaURL)
             author = try container.decodeIfPresent(String.self, forKey: .author)
         }
 
         /// When the moment happened, falling back to when it was logged.
         public var happenedOrCreated: Date? { happenedAt ?? created }
+
+        /// Logged after it happened; see `Post.rewound`.
+        public var rewound: Bool {
+            guard let happenedAt, let created else { return false }
+            return Rewind.isRewound(happenedAt, loggedAt: created)
+        }
 
         public var hasMedia: Bool {
             guard let mediaURL else { return false }

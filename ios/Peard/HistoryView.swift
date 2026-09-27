@@ -497,8 +497,7 @@ final class HistoryModel {
                 // now rather than on the next load. The server has written its
                 // own stamp; this only has to agree about *whether* it moved.
                 updated: Date(),
-                happenedAt: newHappenedAt,
-                rewound: newRewound
+                happenedAt: newHappenedAt
             )
         }
         if timeChanged {

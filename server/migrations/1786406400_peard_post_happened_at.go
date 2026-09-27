@@ -15,9 +15,9 @@ import (
 // moment is *about* — what the timeline sorts by and what tallies, recap and
 // "last happened" count — and somebody can set it up to 24 hours back.
 //
-// `rewound` is written by the server, never taken from the request, so the chip
-// the app shows on a backdated moment cannot be faked or scrubbed. The rules for
-// both live in internal/posts.
+// Whether a moment was rewound is not stored: it is `created` minus
+// `happened_at`, past a minute's tolerance, so the chip and the times can never
+// disagree. The rules for the field live in internal/posts.
 //
 // Every existing row happened when it was logged, so the backfill is `created`.
 func init() {
@@ -28,9 +28,6 @@ func init() {
 		}
 		if posts.Fields.GetByName("happened_at") == nil {
 			posts.Fields.Add(&core.DateField{Name: "happened_at"})
-		}
-		if posts.Fields.GetByName("rewound") == nil {
-			posts.Fields.Add(&core.BoolField{Name: "rewound"})
 		}
 		if !hasIndex(posts, "idx_posts_pair_happened_at") {
 			posts.AddIndex("idx_posts_pair_happened_at", false, "pair, happened_at", "")
@@ -53,7 +50,6 @@ func init() {
 		}
 		posts.RemoveIndex("idx_posts_pair_happened_at")
 		posts.Fields.RemoveByName("happened_at")
-		posts.Fields.RemoveByName("rewound")
 		return app.Save(posts)
 	})
 }

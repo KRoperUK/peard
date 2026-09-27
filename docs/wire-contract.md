@@ -87,7 +87,6 @@ names and avatars while never getting an email address.
 | `created` | date | when the server heard about it; unread and the badge compare against this |
 | `updated` | date | |
 | `happened_at` | date | when it happened. The timeline sorts by this, and tallies, recap, streaks and "last happened" count by it. Defaults to now; a create may set it up to 24 hours back — see [Rewinding a moment](#rewinding-a-moment) |
-| `rewound` | bool | written by the server, ignored on create: true when `happened_at` is more than a minute before the moment was logged |
 
 Thumbnail URL: `GET /api/files/posts/{id}/{media}?thumb=512x512`.
 
@@ -99,14 +98,20 @@ that time instead of when it arrived. The server:
 
 - refuses a time more than a minute in the future, or more than 24 hours before
   now, with `400` and a sentence;
-- sets `rewound` itself — `true` when `happened_at` is more than a minute back —
-  so a client can neither fake the chip nor scrub it;
+- never stores `happened_at` later than `created`, so a phone clock a few
+  seconds fast lands on the arrival time;
 - leaves unread alone: a rewound moment is still news to the people who have not
   seen it, so `created` stays the arrival time and `last_seen_at` compares
   against that. It is pushed like any other moment.
 
 Omitting `happened_at` means "now", which is what every client that predates
-this sends. Clients draw a "⏪ Rewound" chip on any post with `rewound: true`.
+this sends.
+
+Nothing records *whether* a moment was rewound. It is rewound when `created −
+happened_at > 60s` — the minute absorbs a request in flight and a clock slightly
+out — and clients draw a "⏪ Rewound" chip on exactly those posts. Deriving it
+means the chip can never disagree with the times, and there is no flag for a
+client to fake or scrub.
 The widget and Shortcuts log live only.
 
 `client_id` exists because the app queues moments on the device before sending
@@ -608,7 +613,7 @@ and the `posts` list rule never sees it: `403` for a connection you are not in.
   "happened_at": "2026-09-27T18:40:00.000Z" }
 ```
 
-→ `{ "ok": true, "note": "…", "event_kind": "…", "happened_at": "…", "rewound": true, "updated": "…" }`.
+→ `{ "ok": true, "note": "…", "event_kind": "…", "happened_at": "…", "updated": "…" }`.
 
 Only the author may, and only these three fields change: `note` (≤ 280, empty
 clears it), `event_kind` (≤ 40, `event` posts only — a photo has no kind, and
@@ -619,8 +624,8 @@ answers `403`.
 
 `happened_at` may be anything from 24 hours before the moment was *logged* up to
 when it was logged — measured from `created`, not from now, so the window does
-not shrink the longer somebody waits to fix it. `""` puts it back to `created`
-and clears `rewound`. The server recomputes `rewound` either way.
+not shrink the longer somebody waits to fix it. `""` puts it back to `created`,
+which takes the chip off.
 
 This is a route rather than an `UpdateRule` on `posts` because a collection rule
 cannot say *which* fields may change — the author would otherwise also be able
@@ -671,7 +676,6 @@ column keeps milliseconds, so a strict `>` labels moments nobody touched.
     "note": "cheers",
     "created": "2026-07-28 21:30:15.250Z",
     "happened_at": "2026-07-28 21:30:15.250Z",
-    "rewound": false,
     "media_url": "http://host/api/files/posts/<id>/<file>?thumb=512x512",
     "author": "Ada"
   }

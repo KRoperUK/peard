@@ -147,8 +147,7 @@ public struct PendingSend: Codable, Hashable, Sendable, Identifiable {
             eventKind: kind,
             note: note.isEmpty ? nil : note,
             created: queuedAt,
-            happenedAt: happenedOrQueuedAt,
-            rewound: happenedAt.map { Rewind.isRewound($0, loggedAt: queuedAt) } ?? false
+            happenedAt: happenedOrQueuedAt
         )
     }
 }
