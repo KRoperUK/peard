@@ -430,18 +430,23 @@ struct HomeView: View {
                     .animation(.linear(duration: 0.1), value: model.quickSendProgress)
                     .accessibilityHidden(true)
 
-                    Text(model.quickSendCaption)
-                        .font(.footnote.bold())
-                        .foregroundStyle(PearColor.textSecondary)
-                        .accessibilityLabel("\(send.moment.label): \(model.quickSendCaption)")
+                    // Stacked rather than side by side: the caption and the
+                    // rewind line together overran the row at larger text sizes.
+                    VStack(alignment: .leading, spacing: 2) {
+                        Text(model.quickSendCaption)
+                            .font(.footnote.bold())
+                            .foregroundStyle(PearColor.textSecondary)
+                            .accessibilityLabel("\(send.moment.label): \(model.quickSendCaption)")
 
-                    if let happenedAt = send.happenedAt {
-                        Label(
-                            "Rewound to \(happenedAt.formatted(date: .omitted, time: .shortened))",
-                            systemImage: "backward.fill"
-                        )
-                        .font(.caption2.bold())
-                        .foregroundStyle(PearColor.textSecondary)
+                        if let happenedAt = send.happenedAt {
+                            HStack(spacing: 3) {
+                                Image(systemName: "backward.fill").imageScale(.small)
+                                Text("Rewound to \(happenedAt.formatted(date: .omitted, time: .shortened))")
+                            }
+                            .font(.caption2.bold())
+                            .foregroundStyle(PearColor.textSecondary)
+                            .accessibilityElement(children: .combine)
+                        }
                     }
                 }
                 Spacer(minLength: 0)
@@ -487,6 +492,8 @@ struct HomeView: View {
                 } label: {
                     Image(systemName: "xmark")
                         .foregroundStyle(PearColor.textTertiary)
+                        .frame(minWidth: 44, minHeight: 44)
+                        .contentShape(Rectangle())
                 }
                 .buttonStyle(.plain)
                 .accessibilityLabel("Cancel this moment")
