@@ -39,6 +39,29 @@ public enum ElapsedTime {
         if months < 12 { return "\(months)mo" }
         return "\(days / 365)y"
     }
+
+    /// `age` as words, for VoiceOver.
+    ///
+    /// The tile's "3w" reads aloud as letters, and gluing "ago" onto it gave
+    /// "Last one now ago". Same thresholds as `age`, so what is heard is what is
+    /// drawn: "in the last hour", "3 hours ago", "2 weeks ago".
+    public static func spokenAge(for date: Date?, now: Date = Date()) -> String? {
+        guard let date else { return nil }
+        let minutes = Int(max(0, now.timeIntervalSince(date)) / 60)
+        if minutes < 60 { return "in the last hour" }
+        let hours = minutes / 60
+        if hours < 24 { return ago(hours, "hour") }
+        let days = hours / 24
+        if days < 7 { return ago(days, "day") }
+        if days < 60 { return ago(days / 7, "week") }
+        let months = days / 30
+        if months < 12 { return ago(months, "month") }
+        return ago(days / 365, "year")
+    }
+
+    private static func ago(_ count: Int, _ unit: String) -> String {
+        "\(count) \(unit)\(count == 1 ? "" : "s") ago"
+    }
 }
 
 /// Partner display-name rules (Requirement 11.7, 11.8).
