@@ -20,6 +20,12 @@ import PeardCore
 /// `isDiscoverable = false` was tried and takes its App Shortcut with it — the
 /// Pear'd section of the library came back with only one entry and no phrase to
 /// say.
+///
+/// Phrases are a contract once shipped: add, never rename. Siri matches loosely,
+/// so near-duplicate wordings are left out — Apple's guidance is that they make
+/// matching worse, not wider. "on" earns its place because it is how people
+/// actually say it. How the *app name* is heard ("paired", "Peard") is handled
+/// by `INAlternativeAppNames` in Info.plist, not by more phrases.
 struct PeardShortcuts: AppShortcutsProvider {
     static var appShortcuts: [AppShortcut] {
         AppShortcut(
@@ -27,6 +33,7 @@ struct PeardShortcuts: AppShortcutsProvider {
             phrases: [
                 "Log a \(\.$kind) in \(.applicationName)",
                 "Log \(\.$kind) in \(.applicationName)",
+                "Log a \(\.$kind) on \(.applicationName)",
             ],
             shortTitle: "Log a Moment",
             systemImageName: "cup.and.saucer"
@@ -40,6 +47,7 @@ struct PeardShortcuts: AppShortcutsProvider {
             phrases: [
                 "Log a moment in \(.applicationName)",
                 "Log something in \(.applicationName)",
+                "Log a moment on \(.applicationName)",
             ],
             shortTitle: "Log Any Moment",
             systemImageName: "list.bullet"

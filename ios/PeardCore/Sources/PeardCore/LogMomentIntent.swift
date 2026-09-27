@@ -125,10 +125,14 @@ public enum BuiltinMomentKind: String, AppEnum {
     // computed value here (e.g. looking the emoji up in MomentCatalogue)
     // fails the build with "invalid segment" rather than a runtime error.
     // Keep in step with MomentCatalogue.builtin by hand.
+    //
+    // Synonyms are what Siri also accepts for each case: the other words
+    // people use, and what speech-to-text makes of "loo" — "Lou" more often
+    // than not. Adding one is safe; the raw values are the stored contract.
     public static var caseDisplayRepresentations: [BuiltinMomentKind: DisplayRepresentation] = [
-        .beer: DisplayRepresentation(title: "Beer", subtitle: "🍺"),
-        .loo: DisplayRepresentation(title: "Loo", subtitle: "💩"),
-        .coffee: DisplayRepresentation(title: "Coffee", subtitle: "☕"),
+        .beer: DisplayRepresentation(title: "Beer", subtitle: "🍺", synonyms: ["Beers", "Pint", "Pints"]),
+        .loo: DisplayRepresentation(title: "Loo", subtitle: "💩", synonyms: ["Toilet", "Bathroom", "Lou"]),
+        .coffee: DisplayRepresentation(title: "Coffee", subtitle: "☕", synonyms: ["Coffees"]),
     ]
 
     var eventKind: EventKind {

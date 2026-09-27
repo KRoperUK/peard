@@ -6,6 +6,29 @@
 	<string>$(DEVELOPMENT_LANGUAGE)</string>
 	<key>CFBundleDisplayName</key>
 	<string>Pear'd</string>
+	<key>CFBundleSpokenName</key>
+	<string>Paired</string>
+	<key>INAlternativeAppNames</key>
+	<array>
+		<dict>
+			<key>INAlternativeAppName</key>
+			<string>Paired</string>
+			<key>INAlternativeAppNamePronunciationHint</key>
+			<string>paired</string>
+		</dict>
+		<dict>
+			<key>INAlternativeAppName</key>
+			<string>Peard</string>
+			<key>INAlternativeAppNamePronunciationHint</key>
+			<string>paired</string>
+		</dict>
+		<dict>
+			<key>INAlternativeAppName</key>
+			<string>Pared</string>
+			<key>INAlternativeAppNamePronunciationHint</key>
+			<string>paired</string>
+		</dict>
+	</array>
 	<key>CFBundleExecutable</key>
 	<string>$(EXECUTABLE_NAME)</string>
 	<key>CFBundleIdentifier</key>
