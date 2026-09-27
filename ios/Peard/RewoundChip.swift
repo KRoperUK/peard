@@ -12,16 +12,24 @@ struct RewoundChip: View {
     let loggedAt: Date
 
     var body: some View {
-        Label("Rewound", systemImage: "backward.fill")
-            .font(.caption2.bold())
-            .foregroundStyle(PearColor.textSecondary)
-            .padding(.horizontal, 6)
-            .padding(.vertical, 2)
-            .background(PearColor.surface, in: Capsule())
-            .overlay(Capsule().strokeBorder(PearColor.divider))
-            .fixedSize()
-            .accessibilityElement(children: .ignore)
-            .accessibilityLabel(Self.accessibilityLabel(loggedAt: loggedAt))
+        // Laid out by hand rather than as a `Label`: inside a List row the
+        // system label style stacks the icon over a title it then squeezes to
+        // nothing, which drew a tall empty pill.
+        HStack(spacing: 3) {
+            Image(systemName: "backward.fill")
+                .imageScale(.small)
+            Text("Rewound")
+                .lineLimit(1)
+        }
+        .font(.caption2.bold())
+        .foregroundStyle(PearColor.textSecondary)
+        .padding(.horizontal, 6)
+        .padding(.vertical, 2)
+        .background(PearColor.surface, in: Capsule())
+        .overlay(Capsule().strokeBorder(PearColor.divider))
+        .fixedSize()
+        .accessibilityElement(children: .ignore)
+        .accessibilityLabel(Self.accessibilityLabel(loggedAt: loggedAt))
     }
 
     static func accessibilityLabel(loggedAt: Date) -> String {

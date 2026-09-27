@@ -462,10 +462,14 @@ struct HomeView: View {
                 } label: {
                     Image(systemName: "backward.fill")
                         .foregroundStyle(model.quickSend?.happenedAt == nil ? PearColor.textTertiary : PearColor.accent)
-                        .padding(8)
+                        .frame(minWidth: 44, minHeight: 44)
+                        .contentShape(Rectangle())
                 }
                 .buttonStyle(.plain)
                 .accessibilityLabel("Rewind")
+                .accessibilityValue(model.quickSend?.happenedAt.map {
+                    "Set to \($0.formatted(date: .omitted, time: .shortened))"
+                } ?? "")
                 .accessibilityHint("Log this moment at an earlier time, up to 24 hours ago")
 
                 Button("Send") {
