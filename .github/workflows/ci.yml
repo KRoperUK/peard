@@ -145,29 +145,21 @@ jobs:
         id: sim
         # Chosen from what the image actually has rather than named outright, for
         # the same reason as the Xcode version above.
+        # scripts/pick-simulator is what the Makefile uses too.
         run: |
-          name=$(xcrun simctl list devices available --json \
-            | python3 -c "import json,sys;
-          data=json.load(sys.stdin)['devices']
-          for runtime, devices in sorted(data.items(), reverse=True):
-              if 'iOS' not in runtime: continue
-              for device in devices:
-                  if device.get('isAvailable') and device['name'].startswith('iPhone'):
-                      print(device['name']); raise SystemExit
-          ")
-          if [ -z "$name" ]; then
+          if ! id=$(scripts/pick-simulator); then
             echo "No iPhone simulator available on this runner:"
             xcrun simctl list devices available
             exit 1
           fi
-          echo "Using $name"
-          echo "name=$name" >> "$GITHUB_OUTPUT"
+          echo "Using $id"
+          echo "id=$id" >> "$GITHUB_OUTPUT"
 
       - name: App-target tests
         run: |
           xcodebuild -project ios/Peard.xcodeproj -scheme Peard \
             -configuration Debug \
-            -destination "platform=iOS Simulator,name=${{ steps.sim.outputs.name }},OS=latest" \
+            -destination "platform=iOS Simulator,id=${{ steps.sim.outputs.id }}" \
             -derivedDataPath ios/build \
             -resultBundlePath ios/build/PeardTests.xcresult \
             test
