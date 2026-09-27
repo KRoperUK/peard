@@ -3,12 +3,14 @@
 // Route (requires auth):
 //
 //	POST /api/peard/posts/edit  { post, note?, event_kind?, happened_at? }
-//	                            -> { ok, note, event_kind, happened_at, updated }
+//	                            -> { ok, note, event_kind, happened_at, rewound, updated }
 //
-// It also owns `happened_at` on every create, whichever door the moment came
-// through: it defaults to now and may be set up to 24 hours back. Nothing
-// records whether it was — a moment is rewound when `happened_at` is more than
-// a minute before `created`, and clients read it off the two times.
+// It also owns `happened_at` and `rewound` on every create, whichever door the
+// moment came through. `happened_at` defaults to now and may be set up to 24
+// hours back — by a person picking a time, or by the offline queue sending a
+// moment late with the time it was tapped. `rewound` tells those apart: it is
+// what the client says (true only for a picked time), and only stands when
+// there is a time more than a minute back for it to describe.
 //
 // Deletion is deliberately *not* here. `posts.DeleteRule` is already
 // `author = @request.auth.id`, so the ordinary collection endpoint does it, and
@@ -47,6 +49,10 @@ const maxRewind = 24 * time.Hour
 // Slack for a phone's clock running a little ahead of or behind the server's,
 // so "now" on the device is not refused as the future.
 const clockSkew = time.Minute
+
+// A picked time less than this far back is not worth a chip: the picker opens
+// on now, and a few seconds' fiddling with it is not a rewind.
+const rewoundAfter = time.Minute
 
 func Register(app core.App) {
 	app.OnRecordCreateRequest("posts").BindFunc(func(e *core.RecordRequestEvent) error {
@@ -133,6 +139,7 @@ func editHandler(app core.App) func(e *core.RequestEvent) error {
 			if raw == "" {
 				// Empty puts it back to when it was logged.
 				post.Set("happened_at", logged)
+				post.Set("rewound", false)
 			} else {
 				at, err := types.ParseDateTime(raw)
 				if err != nil || at.IsZero() {
@@ -141,7 +148,9 @@ func editHandler(app core.App) func(e *core.RequestEvent) error {
 				if msg := checkHappenedAt(at, logged); msg != "" {
 					return e.BadRequestError(msg, nil)
 				}
-				setHappenedAt(post, at.Time(), logged)
+				// Editing the time is choosing it, so an edit far enough back is
+				// a rewind whatever the moment was before.
+				setHappenedAt(post, at.Time(), logged, true)
 			}
 		}
 
@@ -157,6 +166,7 @@ func editHandler(app core.App) func(e *core.RequestEvent) error {
 			"note":        post.GetString("note"),
 			"event_kind":  post.GetString("event_kind"),
 			"happened_at": post.GetString("happened_at"),
+			"rewound":     post.GetBool("rewound"),
 			"updated":     post.GetString("updated"),
 		})
 	}
@@ -177,21 +187,26 @@ func checkHappenedAt(at types.DateTime, logged time.Time) string {
 	return ""
 }
 
-// stampHappenedAt fills in a new moment's time: now, unless it was rewound.
+// stampHappenedAt fills in a new moment's time — now, unless the request gave
+// one — and settles `rewound` against it.
 func stampHappenedAt(post *core.Record, now time.Time) {
+	claimed := post.GetBool("rewound")
 	at := post.GetDateTime("happened_at")
 	if at.IsZero() {
-		setHappenedAt(post, now, now)
+		setHappenedAt(post, now, now, false)
 		return
 	}
-	setHappenedAt(post, at.Time(), now)
+	setHappenedAt(post, at.Time(), now, claimed)
 }
 
 // setHappenedAt never lets a moment happen after it was logged: a phone clock a
 // few seconds fast is pulled back to the arrival time rather than stored ahead.
-func setHappenedAt(post *core.Record, at, logged time.Time) {
+// `picked` is whether a person chose the time; it becomes the chip only when
+// the time is far enough back to be worth saying so.
+func setHappenedAt(post *core.Record, at, logged time.Time, picked bool) {
 	if at.After(logged) {
 		at = logged
 	}
 	post.Set("happened_at", at)
+	post.Set("rewound", picked && logged.Sub(at) > rewoundAfter)
 }

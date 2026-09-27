@@ -87,6 +87,7 @@ names and avatars while never getting an email address.
 | `created` | date | when the server heard about it; unread and the badge compare against this |
 | `updated` | date | |
 | `happened_at` | date | when it happened. The timeline sorts by this, and tallies, recap, streaks and "last happened" count by it. Defaults to now; a create may set it up to 24 hours back — see [Rewinding a moment](#rewinding-a-moment) |
+| `rewound` | bool | somebody picked `happened_at`, as opposed to the moment arriving late from the offline queue. Drives the "⏪ Rewound" chip |
 
 Thumbnail URL: `GET /api/files/posts/{id}/{media}?thumb=512x512`.
 
@@ -107,11 +108,23 @@ that time instead of when it arrived. The server:
 Omitting `happened_at` means "now", which is what every client that predates
 this sends.
 
-Nothing records *whether* a moment was rewound. It is rewound when `created −
-happened_at > 60s` — the minute absorbs a request in flight and a clock slightly
-out — and clients draw a "⏪ Rewound" chip on exactly those posts. Deriving it
-means the chip can never disagree with the times, and there is no flag for a
-client to fake or scrub.
+Two different things send a `happened_at` in the past, and only one earns the
+chip:
+
+- **A picked time.** The person chose when it happened; the app sends
+  `"rewound": true` with it.
+- **A late send.** A moment tapped with no signal waits in the offline queue and
+  goes when the signal comes back, carrying the time it was tapped so it lands
+  where it happened. No `rewound`: nobody filled anything in after the fact. A
+  send still queued after 23h50m goes without a time and lands on arrival
+  instead, so it is not refused and lost.
+
+The server stores `rewound` only when it was claimed *and* `happened_at` is more
+than a minute before `created`; a claim with no time, or a picked time within a
+minute of now, is not a rewind. Editing the time through `posts/edit` is always
+picking it. Rows from before the field existed were backfilled from the gap,
+because until then every gap was a picked time.
+
 The widget and Shortcuts log live only.
 
 `client_id` exists because the app queues moments on the device before sending
@@ -613,7 +626,7 @@ and the `posts` list rule never sees it: `403` for a connection you are not in.
   "happened_at": "2026-09-27T18:40:00.000Z" }
 ```
 
-→ `{ "ok": true, "note": "…", "event_kind": "…", "happened_at": "…", "updated": "…" }`.
+→ `{ "ok": true, "note": "…", "event_kind": "…", "happened_at": "…", "rewound": true, "updated": "…" }`.
 
 Only the author may, and only these three fields change: `note` (≤ 280, empty
 clears it), `event_kind` (≤ 40, `event` posts only — a photo has no kind, and
@@ -676,6 +689,7 @@ column keeps milliseconds, so a strict `>` labels moments nobody touched.
     "note": "cheers",
     "created": "2026-07-28 21:30:15.250Z",
     "happened_at": "2026-07-28 21:30:15.250Z",
+    "rewound": false,
     "media_url": "http://host/api/files/posts/<id>/<file>?thumb=512x512",
     "author": "Ada"
   }

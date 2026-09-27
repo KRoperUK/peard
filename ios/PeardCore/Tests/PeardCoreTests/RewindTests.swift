@@ -103,6 +103,57 @@ final class RewindTests: XCTestCase {
         XCTAssertNil(send.postFields["happened_at"])
     }
 
+    func testAPickedTimeGoesAsARewind() {
+        let send = PendingSend(pairID: "x", authorID: "a", kind: .beer, emoji: "🍺", label: "Beer",
+                               queuedAt: logged, happenedAt: logged.addingTimeInterval(-3600))
+        XCTAssertEqual(send.postFields(now: logged)["rewound"], "true")
+    }
+
+    /// Queued in a basement, sent two hours later: it lands when it was tapped,
+    /// and without the chip.
+    func testALateSendCarriesTheTimeItWasTapped() throws {
+        let send = PendingSend(pairID: "x", authorID: "a", kind: .beer, emoji: "🍺", label: "Beer", queuedAt: logged)
+        let fields = send.postFields(now: logged.addingTimeInterval(2 * 3600))
+
+        let wire = try XCTUnwrap(fields["happened_at"])
+        let parsed = try XCTUnwrap(ISO8601DateFormatter.withFractionalSeconds.date(from: wire))
+        XCTAssertEqual(parsed.timeIntervalSince(logged), 0, accuracy: 0.001)
+        XCTAssertNil(fields["rewound"], "waiting in the queue is not rewinding")
+    }
+
+    /// Sent straight away, the server's own clock is the better stamp.
+    func testAPromptSendLeavesTheTimeToTheServer() {
+        let send = PendingSend(pairID: "x", authorID: "a", kind: .beer, emoji: "🍺", label: "Beer", queuedAt: logged)
+        XCTAssertNil(send.postFields(now: logged.addingTimeInterval(5))["happened_at"])
+    }
+
+    /// Older than the server accepts a time for: sent without one, so it lands on
+    /// arrival instead of being refused and lost.
+    func testASendOlderThanTheWindowLandsOnArrival() {
+        let send = PendingSend(pairID: "x", authorID: "a", kind: .beer, emoji: "🍺", label: "Beer", queuedAt: logged)
+        XCTAssertNil(send.postFields(now: logged.addingTimeInterval(25 * 3600))["happened_at"])
+    }
+
+    func testAPostThatArrivedLateIsNotRewound() throws {
+        let post = try decoder.decode(Post.self, from: Data("""
+        {"id":"p1","pair":"x","author":"a","type":"event","event_kind":"beer",
+         "created":"2026-09-27 12:00:00.000Z",
+         "happened_at":"2026-09-27 10:00:00.000Z","rewound":false}
+        """.utf8))
+        XCTAssertFalse(post.rewound)
+        XCTAssertEqual(post.created.timeIntervalSince(post.happenedAt), 2 * 3600, accuracy: 0.001)
+    }
+
+    /// A server from before the field had only the gap, and then every gap was
+    /// a picked time.
+    func testWithoutTheFieldTheGapStillMeansRewound() throws {
+        let post = try decoder.decode(Post.self, from: Data("""
+        {"id":"p1","pair":"x","author":"a","type":"event","event_kind":"beer",
+         "created":"2026-09-27 12:00:00.000Z","happened_at":"2026-09-27 10:00:00.000Z"}
+        """.utf8))
+        XCTAssertTrue(post.rewound)
+    }
+
     func testARewoundSendSurvivesARelaunch() throws {
         let at = logged.addingTimeInterval(-2 * 3600)
         let send = PendingSend(pairID: "x", authorID: "a", kind: .beer, emoji: "🍺", label: "Beer",

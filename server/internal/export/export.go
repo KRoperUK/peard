@@ -93,6 +93,7 @@ func exportHandler(app core.App) func(e *core.RequestEvent) error {
 				"note":        post.GetString("note"),
 				"created":     post.GetString("created"),
 				"happened_at": post.GetString("happened_at"),
+				"rewound":     post.GetBool("rewound"),
 			}
 			if media := post.GetString("media"); media != "" {
 				mediaURL := fmt.Sprintf("%s/api/files/%s/%s/%s",
