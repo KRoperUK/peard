@@ -1,5 +1,9 @@
-SIMULATOR ?= iPhone 17 Pro
-DESTINATION ?= platform=iOS Simulator,name=$(SIMULATOR)
+# Any available iPhone on the newest iOS unless SIMULATOR names a model. Resolved
+# to a UDID, lazily, so targets that never touch a simulator never run simctl —
+# see scripts/pick-simulator for why a bare name is not enough.
+SIMULATOR ?=
+SIMULATOR_ID = $(shell scripts/pick-simulator $(if $(SIMULATOR),"$(SIMULATOR)"))
+DESTINATION ?= platform=iOS Simulator,id=$(SIMULATOR_ID)
 PROJECT = ios/Peard.xcodeproj
 XCODEBUILD = xcodebuild -project $(PROJECT) -scheme Peard
 BUILT_APP = ios/build/Build/Products/Debug-iphonesimulator/Peard.app
@@ -81,13 +85,17 @@ app-release: $(PROJECT)
 		-derivedDataPath ios/build build
 
 # Boots the simulator, installs and launches the app.
+#
+# Opening Simulator.app is best-effort: some Xcode installs do not ship it as a
+# standalone app, and the simulator runs headless without it.
 run: $(PROJECT)
-	xcrun simctl boot "$(SIMULATOR)" 2>/dev/null || true
-	open -a Simulator
-	$(XCODEBUILD) -configuration Debug -destination '$(DESTINATION)' \
+	$(eval SIM := $(SIMULATOR_ID))
+	xcrun simctl boot "$(SIM)" 2>/dev/null || true
+	open -a Simulator 2>/dev/null || true
+	$(XCODEBUILD) -configuration Debug -destination 'platform=iOS Simulator,id=$(SIM)' \
 		-derivedDataPath ios/build build
-	xcrun simctl install "$(SIMULATOR)" $(BUILT_APP)
-	xcrun simctl launch "$(SIMULATOR)" com.peard.app
+	xcrun simctl install "$(SIM)" $(BUILT_APP)
+	xcrun simctl launch "$(SIM)" com.peard.app
 
 # --- assets ---
 
