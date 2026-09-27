@@ -173,9 +173,12 @@ public struct Post: Codable, Hashable, Sendable, Identifiable {
     /// `Rewind`. Unread still reads `created`, because a moment logged late is
     /// still news.
     public let happenedAt: Date
+    /// Somebody picked this moment's time, rather than it arriving late from the
+    /// offline queue. Drives the "Rewound" chip; see `Rewind`.
+    public let rewound: Bool
 
     enum CodingKeys: String, CodingKey {
-        case id, pair, author, type, note, media, created, updated
+        case id, pair, author, type, note, media, created, updated, rewound
         case eventKind = "event_kind"
         case happenedAt = "happened_at"
     }
@@ -190,7 +193,8 @@ public struct Post: Codable, Hashable, Sendable, Identifiable {
         media: String? = nil,
         created: Date,
         updated: Date? = nil,
-        happenedAt: Date? = nil
+        happenedAt: Date? = nil,
+        rewound: Bool? = nil
     ) {
         self.id = id
         self.pair = pair
@@ -204,6 +208,7 @@ public struct Post: Codable, Hashable, Sendable, Identifiable {
         // not mention `updated` is describing a moment nobody has edited.
         self.updated = updated ?? created
         self.happenedAt = happenedAt ?? created
+        self.rewound = rewound ?? Rewind.isRewound(self.happenedAt, loggedAt: created)
     }
 
     /// Records created before the server gained its `created` autodate field
@@ -227,17 +232,17 @@ public struct Post: Codable, Hashable, Sendable, Identifiable {
         updated = (try? container.decode(Date.self, forKey: .updated)) ?? created
         // Absent on a server predating rewinding: every moment then happened
         // when it was logged.
-        happenedAt = (try? container.decode(Date.self, forKey: .happenedAt)) ?? created
+        let happenedAt = (try? container.decode(Date.self, forKey: .happenedAt)) ?? created
+        self.happenedAt = happenedAt
+        // A server from before the field existed had only the gap to go on,
+        // and back then every gap was a picked time.
+        rewound = (try? container.decodeIfPresent(Bool.self, forKey: .rewound))
+            ?? (created != .distantPast && Rewind.isRewound(happenedAt, loggedAt: created))
     }
 
     /// True when this post carries a real server timestamp.
     public var hasTimestamp: Bool { created != .distantPast }
 
-    /// Logged after it happened, which is what the "Rewound" chip says. Read off
-    /// the two times rather than stored, so the chip cannot disagree with them.
-    public var rewound: Bool {
-        hasTimestamp && Rewind.isRewound(happenedAt, loggedAt: created)
-    }
 
     /// Whether this moment has been changed since it was logged.
     ///
@@ -876,11 +881,13 @@ public struct WidgetFeed: Codable, Hashable, Sendable {
         public let created: Date?
         /// When the moment happened. Absent from a server predating rewinding.
         public let happenedAt: Date?
+        /// Somebody picked this moment's time; see `Post.rewound`.
+        public let rewound: Bool
         public let mediaURL: String?
         public let author: String?
 
         enum CodingKeys: String, CodingKey {
-            case id, type, note, created, author, emoji, label
+            case id, type, note, created, author, emoji, label, rewound
             case eventKind = "event_kind"
             case mediaURL = "media_url"
             case happenedAt = "happened_at"
@@ -895,6 +902,7 @@ public struct WidgetFeed: Codable, Hashable, Sendable {
             note: String? = nil,
             created: Date? = nil,
             happenedAt: Date? = nil,
+            rewound: Bool = false,
             mediaURL: String? = nil,
             author: String? = nil
         ) {
@@ -906,6 +914,7 @@ public struct WidgetFeed: Codable, Hashable, Sendable {
             self.note = note
             self.created = created
             self.happenedAt = happenedAt
+            self.rewound = rewound
             self.mediaURL = mediaURL
             self.author = author
         }
@@ -919,7 +928,11 @@ public struct WidgetFeed: Codable, Hashable, Sendable {
             label = try container.decodeIfPresent(String.self, forKey: .label)
             note = try container.decodeIfPresent(String.self, forKey: .note)
             created = try? container.decode(Date.self, forKey: .created)
-            happenedAt = try? container.decode(Date.self, forKey: .happenedAt)
+            let happenedAt = try? container.decode(Date.self, forKey: .happenedAt)
+            self.happenedAt = happenedAt
+            var derived = false
+            if let happenedAt, let created { derived = Rewind.isRewound(happenedAt, loggedAt: created) }
+            rewound = (try? container.decodeIfPresent(Bool.self, forKey: .rewound)) ?? derived
             mediaURL = try container.decodeIfPresent(String.self, forKey: .mediaURL)
             author = try container.decodeIfPresent(String.self, forKey: .author)
         }
@@ -927,11 +940,6 @@ public struct WidgetFeed: Codable, Hashable, Sendable {
         /// When the moment happened, falling back to when it was logged.
         public var happenedOrCreated: Date? { happenedAt ?? created }
 
-        /// Logged after it happened; see `Post.rewound`.
-        public var rewound: Bool {
-            guard let happenedAt, let created else { return false }
-            return Rewind.isRewound(happenedAt, loggedAt: created)
-        }
 
         public var hasMedia: Bool {
             guard let mediaURL else { return false }

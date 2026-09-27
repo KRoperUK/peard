@@ -30,11 +30,36 @@ func TestAMomentCanBeRewoundAFewHours(t *testing.T) {
 	w := newWorld(t)
 	at := time.Now().Add(-3 * time.Hour)
 
-	post := w.create(t, w.aliceTok, `,"happened_at":"`+iso(at)+`"`)
+	post := w.create(t, w.aliceTok, `,"rewound":true,"happened_at":"`+iso(at)+`"`)
 
 	assertNear(t, post.GetDateTime("happened_at"), at)
 	if !rewound(post) {
 		t.Error("rewound = false on a moment set three hours back")
+	}
+}
+
+// The offline queue sends a moment late with the time it was tapped. It lands
+// at that time, and it was not filled in after the fact, so no chip.
+func TestALateSendKeepsItsTimeWithoutTheChip(t *testing.T) {
+	w := newWorld(t)
+	tapped := time.Now().Add(-2 * time.Hour)
+
+	post := w.create(t, w.aliceTok, `,"happened_at":"`+iso(tapped)+`"`)
+
+	assertNear(t, post.GetDateTime("happened_at"), tapped)
+	if rewound(post) {
+		t.Error("a late send came out rewound")
+	}
+}
+
+// Claiming a rewind with no time to describe is meaningless.
+func TestARewindClaimWithoutATimeIsIgnored(t *testing.T) {
+	w := newWorld(t)
+
+	post := w.create(t, w.aliceTok, `,"rewound":true`)
+
+	if rewound(post) {
+		t.Error("rewound = true with no happened_at")
 	}
 }
 
@@ -57,7 +82,7 @@ func TestAClockSlightlyAheadIsPulledBackToArrival(t *testing.T) {
 func TestAFewSecondsBackIsStillLive(t *testing.T) {
 	w := newWorld(t)
 
-	post := w.create(t, w.aliceTok, `,"happened_at":"`+iso(time.Now().Add(-20*time.Second))+`"`)
+	post := w.create(t, w.aliceTok, `,"rewound":true,"happened_at":"`+iso(time.Now().Add(-20*time.Second))+`"`)
 	if rewound(post) {
 		t.Error("rewound = true for a moment 20 seconds back")
 	}
@@ -231,9 +256,8 @@ func (w *world) createRaw(t *testing.T, token, extra string) (int, string) {
 	return w.do(t, http.MethodPost, "/api/collections/posts/records", token, body)
 }
 
-// rewound is the rule clients apply to draw the chip.
 func rewound(post *core.Record) bool {
-	return post.GetDateTime("created").Time().Sub(post.GetDateTime("happened_at").Time()) > time.Minute
+	return post.GetBool("rewound")
 }
 
 func iso(t time.Time) string { return t.UTC().Format(time.RFC3339) }

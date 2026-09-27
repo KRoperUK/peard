@@ -74,7 +74,17 @@ public struct PendingSend: Codable, Hashable, Sendable, Identifiable {
     }
 
     /// Fields for the `posts` record this send becomes.
-    public var postFields: [String: String] {
+    public var postFields: [String: String] { postFields(now: Date()) }
+
+    /// Fields for the record, as sent at `now`.
+    ///
+    /// A picked time goes as a rewind. A moment that simply waited in the queue
+    /// goes with the time it was tapped, so a beer logged in a basement lands
+    /// when it was drunk rather than when the signal came back — and without the
+    /// chip, because nobody filled it in after the fact. One that has waited
+    /// longer than the server accepts a time for is sent without one and lands
+    /// on arrival, as it always did, rather than being refused and lost.
+    public func postFields(now: Date) -> [String: String] {
         var fields = [
             "pair": pairID,
             "author": authorID,
@@ -85,7 +95,15 @@ public struct PendingSend: Codable, Hashable, Sendable, Identifiable {
             // the row it already created instead of making a second one.
             "client_id": id,
         ]
-        if let happenedAt { fields["happened_at"] = Rewind.wireString(happenedAt) }
+        if let happenedAt {
+            fields["happened_at"] = Rewind.wireString(happenedAt)
+            fields["rewound"] = "true"
+        } else {
+            let waited = now.timeIntervalSince(queuedAt)
+            if waited > Rewind.threshold, waited < Rewind.lateSendWindow {
+                fields["happened_at"] = Rewind.wireString(queuedAt)
+            }
+        }
         return fields
     }
 
@@ -147,7 +165,8 @@ public struct PendingSend: Codable, Hashable, Sendable, Identifiable {
             eventKind: kind,
             note: note.isEmpty ? nil : note,
             created: queuedAt,
-            happenedAt: happenedOrQueuedAt
+            happenedAt: happenedOrQueuedAt,
+            rewound: happenedAt.map { Rewind.isRewound($0, loggedAt: queuedAt) } ?? false
         )
     }
 }
