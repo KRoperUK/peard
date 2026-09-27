@@ -165,8 +165,8 @@ final class HomeModel {
         }
         for send in pendingSends {
             let slug = send.kind.rawValue
-            if result[slug].map({ send.queuedAt > $0 }) ?? true {
-                result[slug] = send.queuedAt
+            if result[slug].map({ send.happenedOrQueuedAt > $0 }) ?? true {
+                result[slug] = send.happenedOrQueuedAt
             }
         }
         return result
@@ -182,7 +182,7 @@ final class HomeModel {
     /// something offline would look like it did nothing at all.
     var timeline: [Post] {
         pendingSends
-            .sorted { $0.queuedAt > $1.queuedAt }
+            .sorted { $0.happenedOrQueuedAt > $1.happenedOrQueuedAt }
             .map(\.optimisticPost) + posts
     }
 
@@ -490,6 +490,30 @@ final class HomeModel {
         countdownTask = nil
     }
 
+    /// Stops the countdown without choosing anything yet, so the send cannot go
+    /// out from under somebody who has opened the rewind picker.
+    func holdQuickSend() {
+        guard var send = quickSend, !send.isHeld else { return }
+        send.isHeld = true
+        quickSend = send
+        quickSendCaption = send.caption()
+        quickSendProgress = 1
+        countdownTask?.cancel()
+        countdownTask = nil
+    }
+
+    /// Sets when the pending moment happened, or `nil` for now. The send stays
+    /// held until it is tapped.
+    func rewindQuickSend(to date: Date?) {
+        guard var send = quickSend else { return }
+        send.rewind(to: date)
+        quickSend = send
+        quickSendCaption = send.caption()
+        quickSendProgress = 1
+        countdownTask?.cancel()
+        countdownTask = nil
+    }
+
     /// Requirement 12.6 — dismissing discards the text and creates nothing.
     func cancelQuickSend() {
         countdownTask?.cancel()
@@ -534,7 +558,8 @@ final class HomeModel {
             kind: moment.kind,
             emoji: moment.emoji,
             label: moment.label,
-            note: note
+            note: note,
+            happenedAt: send.happenedAt
         ))
 
         // The moment is recorded on the device now, so the confirmation is honest

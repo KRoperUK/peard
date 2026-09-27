@@ -87,4 +87,72 @@ final class NewMomentsDividerTests: XCTestCase {
         XCTAssertEqual(connection.unreadCount, 3, "the count still decodes")
         XCTAssertFalse(model(watermark: connection.lastSeenAt).isNew(post(author: "ari", offset: 60)))
     }
+    // MARK: Rewound moments
+
+    private func loaded(_ posts: [Post]) async -> HistoryModel {
+        TimelineStubProtocol.reset()
+        TimelineStubProtocol.route(posts: posts, reactions: [])
+        let subject = HistoryModel(
+            api: APIClient(baseURL: serverURL, tokenProvider: nil, session: TimelineStubProtocol.makeSession()),
+            pairID: "pair1",
+            signedInUserID: "me",
+            customKinds: [],
+            connection: nil,
+            unreadWatermark: watermark
+        )
+        await subject.loadFirstPage()
+        return subject
+    }
+
+    private func rewound(id: String, author: String, loggedOffset: TimeInterval, happenedOffset: TimeInterval) -> Post {
+        Post(
+            id: id,
+            pair: "pair1",
+            author: author,
+            type: .event,
+            eventKind: .beer,
+            created: watermark.addingTimeInterval(loggedOffset),
+            happenedAt: watermark.addingTimeInterval(happenedOffset),
+            rewound: true
+        )
+    }
+
+    /// Logged after you last looked, but set back to before moments you have
+    /// already seen. The line stays under the run at the top, and the stray one
+    /// gets its own mark rather than dragging the line down past seen moments.
+    func testARewoundMomentBelowSeenOnesDoesNotMoveTheLine() async {
+        let subject = await loaded([
+            post(id: "fresh", author: "ari", offset: 120),
+            post(id: "seen", author: "ari", offset: -60),
+            rewound(id: "late", author: "ari", loggedOffset: 60, happenedOffset: -3600),
+        ])
+
+        XCTAssertEqual(subject.firstNewPostID, "fresh")
+        XCTAssertEqual(subject.strayNewPostIDs, ["late"])
+        XCTAssertTrue(subject.isNew(subject.posts[2]), "unread goes by when it was logged")
+    }
+
+    func testWithNothingNewAtTheTopOnlyTheStrayIsMarked() async {
+        let subject = await loaded([
+            post(id: "seen", author: "ari", offset: -60),
+            rewound(id: "late", author: "ari", loggedOffset: 60, happenedOffset: -3600),
+        ])
+
+        XCTAssertNil(subject.firstNewPostID)
+        XCTAssertEqual(subject.strayNewPostIDs, ["late"])
+    }
+
+    /// Your own moments were never unread, so one in the middle of the new run
+    /// does not end it.
+    func testYourOwnMomentDoesNotBreakTheRun() async {
+        let subject = await loaded([
+            post(id: "a", author: "ari", offset: 120),
+            post(id: "mine", author: "me", offset: 90),
+            post(id: "b", author: "ari", offset: 60),
+            post(id: "seen", author: "ari", offset: -60),
+        ])
+
+        XCTAssertEqual(subject.firstNewPostID, "b")
+        XCTAssertTrue(subject.strayNewPostIDs.isEmpty)
+    }
 }

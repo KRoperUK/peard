@@ -347,3 +347,30 @@ func TestUnreadSinceFallsBackToTheJoinDate(t *testing.T) {
 		t.Fatalf("seen: got %s, want %s", got, stamp)
 	}
 }
+
+// A rewound moment is still news. Unread counts by when the server heard about
+// it, so setting it back to before the stamp does not mark it read.
+func TestARewoundMomentIsStillUnread(t *testing.T) {
+	w := newLifeWorld(t)
+	w.addMember(t, w.flatmates, w.bob, "member")
+
+	code, _ := w.do(t, "POST", "/api/peard/connections/seen", w.aliceTok,
+		`{"pair":"`+w.flatmates.Id+`"}`)
+	if code != 200 {
+		t.Fatalf("seen: got %d", code)
+	}
+
+	time.Sleep(5 * time.Millisecond)
+	post := w.newPost(t, w.flatmates, w.bob, "coffee", "earlier, honestly")
+	earlier := time.Now().Add(-3 * time.Hour).UTC().Format("2006-01-02 15:04:05.000Z")
+	if _, err := w.app.DB().
+		NewQuery("UPDATE {{posts}} SET [[happened_at]] = {:t}, [[rewound]] = TRUE WHERE [[id]] = {:id}").
+		Bind(map[string]any{"t": earlier, "id": post.Id}).
+		Execute(); err != nil {
+		t.Fatalf("rewind: %v", err)
+	}
+
+	if got := unreadFor(t, w, w.aliceTok, w.flatmates.Id); got != 1 {
+		t.Fatalf("rewound post: got %d unread, want 1", got)
+	}
+}

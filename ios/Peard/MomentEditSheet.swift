@@ -20,6 +20,7 @@ struct MomentEditSheet: View {
 
     @State private var note: String
     @State private var kind: EventKind?
+    @State private var happenedAt: Date
     @State private var isSaving = false
     @State private var showDeleteConfirmation = false
     @FocusState private var noteFocused: Bool
@@ -30,6 +31,7 @@ struct MomentEditSheet: View {
         self.model = model
         _note = State(initialValue: post.note ?? "")
         _kind = State(initialValue: post.eventKind)
+        _happenedAt = State(initialValue: post.happenedAt)
     }
 
     /// A photo has no moment kind, so there is nothing to pick between — its
@@ -39,7 +41,10 @@ struct MomentEditSheet: View {
     private var hasChanges: Bool {
         note.trimmingCharacters(in: .whitespacesAndNewlines) != (post.note ?? "")
             || kind != post.eventKind
+            || abs(happenedAt.timeIntervalSince(post.happenedAt)) >= 1
     }
+
+    private var isRewound: Bool { Rewind.isRewound(happenedAt, loggedAt: post.created) }
 
     var body: some View {
         NavigationStack {
@@ -48,6 +53,9 @@ struct MomentEditSheet: View {
                     kindSection
                 }
                 noteSection
+                if post.hasTimestamp {
+                    whenSection
+                }
                 deleteSection
             }
             .scrollContentBackground(.hidden)
@@ -151,6 +159,28 @@ struct MomentEditSheet: View {
         }
     }
 
+    private var whenSection: some View {
+        Section {
+            DatePicker(
+                "Happened",
+                selection: $happenedAt,
+                in: Rewind.range(loggedAt: post.created),
+                displayedComponents: [.date, .hourAndMinute]
+            )
+            if isRewound {
+                Button("Back to when it was logged") {
+                    happenedAt = post.created
+                }
+            }
+        } header: {
+            Text("When")
+        } footer: {
+            // Measured from when it was logged, not from now, so the answer does
+            // not shrink the longer somebody waits to fix it.
+            Text("Logged at \(post.created.formatted(date: .omitted, time: .shortened)). It can go back up to 24 hours before that, and shows as Rewound.")
+        }
+    }
+
     private var deleteSection: some View {
         Section {
             Button(role: .destructive) {
@@ -167,7 +197,7 @@ struct MomentEditSheet: View {
     private func save() {
         isSaving = true
         Task {
-            let saved = await model.edit(post, note: note, kind: kind)
+            let saved = await model.edit(post, note: note, kind: kind, happenedAt: happenedAt)
             isSaving = false
             // Left open on failure, with the error on the timeline behind it, so
             // nothing typed is lost to a dismissed sheet.

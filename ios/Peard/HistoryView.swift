@@ -292,8 +292,32 @@ final class HistoryModel {
     /// Identified rather than drawn per-row so the timeline gets one divider
     /// instead of a marker on every new moment: the question is "where did I get
     /// to", and the answer is a single place.
+    ///
+    /// The end of the unbroken run of new moments at the top, rather than the
+    /// oldest new moment anywhere. The timeline sorts by when moments happened,
+    /// and a moment rewound to yesterday can arrive unread below ones already
+    /// seen; putting the line under it would mark everything above as new.
+    /// Your own moments do not break the run — they were never unread.
     var firstNewPostID: String? {
-        posts.last(where: isNew)?.id
+        var oldestInRun: String?
+        for post in posts {
+            if isNew(post) {
+                oldestInRun = post.id
+            } else if post.author != signedInUserID {
+                break
+            }
+        }
+        return oldestInRun
+    }
+
+    /// New moments that sit below the line because they were rewound, which
+    /// get a dot of their own instead.
+    var strayNewPostIDs: Set<String> {
+        guard let firstNewPostID,
+              let index = posts.firstIndex(where: { $0.id == firstNewPostID }) else {
+            return Set(posts.filter(isNew).map(\.id))
+        }
+        return Set(posts[(index + 1)...].filter(isNew).map(\.id))
     }
 
     /// Moments grouped by day, newest day first.
@@ -305,7 +329,7 @@ final class HistoryModel {
         var order: [Date] = []
         var grouped: [Date: [Post]] = [:]
         for post in posts {
-            let key = post.hasTimestamp ? calendar.startOfDay(for: post.created) : Date.distantPast
+            let key = post.hasTimestamp ? calendar.startOfDay(for: post.happenedAt) : Date.distantPast
             if grouped[key] == nil { order.append(key) }
             grouped[key, default: []].append(post)
         }
@@ -371,7 +395,7 @@ final class HistoryModel {
         formatter.calendar = calendar
         formatter.locale = .current
         formatter.setLocalizedDateFormatFromTemplate("HH:mm")
-        return formatter.string(from: post.created)
+        return formatter.string(from: post.happenedAt)
     }
 
     // MARK: Loading
@@ -424,20 +448,27 @@ final class HistoryModel {
     ///
     /// Returns whether it worked, so the sheet knows whether to close.
     @discardableResult
-    func edit(_ post: Post, note: String, kind: EventKind?) async -> Bool {
+    func edit(_ post: Post, note: String, kind: EventKind?, happenedAt: Date? = nil) async -> Bool {
         let trimmedNote = PostNote.normalised(note)
         let newKind = kind ?? post.eventKind
+        // A time too close to when it was logged is not a rewind; it goes back
+        // to exactly then, which is what the server would make of it too.
+        let requested = happenedAt ?? post.happenedAt
+        let newRewound = Rewind.isRewound(requested, loggedAt: post.created)
+        let newHappenedAt = newRewound ? requested : post.created
         // Only send what changed. A no-op edit would still move `updated` and
         // put an "edited" label on a moment nobody edited.
         let noteChanged = trimmedNote != (post.note ?? "")
         let kindChanged = newKind != post.eventKind
-        guard noteChanged || kindChanged else { return true }
+        let timeChanged = abs(newHappenedAt.timeIntervalSince(post.happenedAt)) >= 1
+        guard noteChanged || kindChanged || timeChanged else { return true }
 
         do {
             try await api.editMoment(
                 postID: post.id,
                 note: noteChanged ? .some(trimmedNote) : nil,
-                kind: kindChanged ? newKind : nil
+                kind: kindChanged ? newKind : nil,
+                happenedAt: timeChanged ? .some(newRewound ? newHappenedAt : nil) : nil
             )
         } catch let error as APIError where error.status == 404 {
             // The route is missing, which means this app is talking to a server
@@ -465,8 +496,14 @@ final class HistoryModel {
                 // Enough to cross `isEdited`'s tolerance, so the label appears
                 // now rather than on the next load. The server has written its
                 // own stamp; this only has to agree about *whether* it moved.
-                updated: Date()
+                updated: Date(),
+                happenedAt: newHappenedAt,
+                rewound: newRewound
             )
+        }
+        if timeChanged {
+            // Moved to where it now belongs among what is loaded.
+            posts.sort { $0.happenedAt > $1.happenedAt }
         }
         error = nil
         return true
@@ -817,6 +854,9 @@ struct HistoryView: View {
                             .font(.caption2)
                             .foregroundStyle(PearColor.textTertiary)
                     }
+                    if post.rewound {
+                        RewoundChip(loggedAt: post.created)
+                    }
                 }
 
                 let kinds = model.reactionKinds(for: post)
@@ -832,10 +872,17 @@ struct HistoryView: View {
 
             Spacer(minLength: 4)
 
-            Text(model.time(for: post))
-                .font(.caption2)
-                .foregroundStyle(PearColor.textTertiary)
-                .monospacedDigit()
+            HStack(spacing: 4) {
+                if model.strayNewPostIDs.contains(post.id) {
+                    Circle()
+                        .fill(PearColor.accent)
+                        .frame(width: 6, height: 6)
+                }
+                Text(model.time(for: post))
+                    .font(.caption2)
+                    .foregroundStyle(PearColor.textTertiary)
+                    .monospacedDigit()
+            }
         }
         .padding(.vertical, 4)
         .listRowBackground(PearColor.background)
@@ -861,6 +908,8 @@ struct HistoryView: View {
         var parts = [model.authorLabel(for: post), model.detail(for: post)]
         if post.hasMedia { parts.append("photo") }
         if post.isEdited { parts.append("edited") }
+        if model.strayNewPostIDs.contains(post.id) { parts.append("new") }
+        if post.rewound { parts.append(RewoundChip.accessibilityLabel(loggedAt: post.created)) }
         let time = model.time(for: post)
         if !time.isEmpty { parts.append(time) }
         return parts.joined(separator: ", ")

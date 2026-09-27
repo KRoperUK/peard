@@ -86,12 +86,14 @@ func exportHandler(app core.App) func(e *core.RequestEvent) error {
 		moments := make([]map[string]any, 0, len(posts))
 		for _, post := range posts {
 			moment := map[string]any{
-				"id":         post.Id,
-				"pair":       post.GetString("pair"),
-				"type":       post.GetString("type"),
-				"event_kind": post.GetString("event_kind"),
-				"note":       post.GetString("note"),
-				"created":    post.GetString("created"),
+				"id":          post.Id,
+				"pair":        post.GetString("pair"),
+				"type":        post.GetString("type"),
+				"event_kind":  post.GetString("event_kind"),
+				"note":        post.GetString("note"),
+				"created":     post.GetString("created"),
+				"happened_at": post.GetString("happened_at"),
+				"rewound":     post.GetBool("rewound"),
 			}
 			if media := post.GetString("media"); media != "" {
 				mediaURL := fmt.Sprintf("%s/api/files/%s/%s/%s",

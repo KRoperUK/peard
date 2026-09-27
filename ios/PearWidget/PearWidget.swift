@@ -135,7 +135,7 @@ struct PearTimelineProvider: AppIntentTimelineProvider {
                 note: feed.post?.displayNote ?? "",
                 emoji: feed.post?.displayEmoji ?? MomentCatalogue.fallbackEmoji,
                 momentLabel: feed.post?.displayLabel ?? "",
-                created: feed.post?.created ?? nil,
+                created: feed.post?.happenedOrCreated,
                 tallies: feed.displayTallies,
                 image: await image(for: feed),
                 pairID: resolvedPairID,

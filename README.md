@@ -20,7 +20,10 @@ That is enforced by collection rules on the server, not by the app, and
 built in, and any connection can invent its own — pick from a recommended list or
 type a label and choose an emoji. Tapping a moment sends it on its own after
 **three seconds**; the window is there only so you can add a note, and typing one
-holds the send until you tap it yourself. A moment logged with no signal is kept
+holds the send until you tap it yourself. The ⏪ button beside the note rewinds it to any time in the
+last 24 hours, for the round you forgot to log: it sits in the timeline and the
+tallies where it happened, with a **Rewound** chip so nobody mistakes it for
+something said in the moment. A moment logged with no signal is kept
 on the device and sent when there is one, so a pub basement is not a reason to
 lose it.
 
@@ -635,6 +638,7 @@ receive live pushes.
 | POST | `/api/peard/connections/mute` | user | Silence one connection's notifications |
 | POST | `/api/peard/connections/seen` | member | Mark one connection read up to now |
 | GET  | `/api/peard/tallies?pair=` | user | Per-member moment counts for day/week/month/all time |
+| POST | `/api/peard/posts/edit` | author | Change a moment's note, kind or `happened_at` (rewind it up to 24h before it was logged) |
 | GET  | `/api/peard/profile` | user | Your own record |
 | POST | `/api/peard/profile` | user | Set the name other members see |
 | POST | `/api/peard/profile/avatar` | user | Set your profile photo (multipart) |

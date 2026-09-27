@@ -2,7 +2,13 @@
 //
 // Route (requires auth):
 //
-//	POST /api/peard/posts/edit  { post, note?, event_kind? } -> { ok, note, event_kind }
+//	POST /api/peard/posts/edit  { post, note?, event_kind?, happened_at? }
+//	                            -> { ok, note, event_kind, happened_at, rewound, updated }
+//
+// It also owns `happened_at` and `rewound` on every create, whichever door the
+// moment came through. `happened_at` defaults to now and may be set up to 24
+// hours back; `rewound` is the server's verdict on whether it was, so the chip
+// the app draws for it cannot be set or cleared by the client.
 //
 // Deletion is deliberately *not* here. `posts.DeleteRule` is already
 // `author = @request.auth.id`, so the ordinary collection endpoint does it, and
@@ -21,9 +27,11 @@ package posts
 import (
 	"net/http"
 	"strings"
+	"time"
 
 	"github.com/pocketbase/pocketbase/apis"
 	"github.com/pocketbase/pocketbase/core"
+	"github.com/pocketbase/pocketbase/tools/types"
 )
 
 // Matches the `note` field's Max, so an over-long note is refused with a
@@ -33,7 +41,30 @@ const maxNoteLength = 280
 // Matches the `event_kind` field's Max.
 const maxKindLength = 40
 
+// How far back a moment can be rewound, measured from when it was logged.
+const maxRewind = 24 * time.Hour
+
+// Slack for a phone's clock running a little ahead of or behind the server's,
+// so "now" on the device is not refused as the future.
+const clockSkew = time.Minute
+
+// A moment set less than this far back was, for anybody reading the timeline,
+// logged in the moment. The picker opens on "now", and a few seconds' fiddling
+// with it is not a rewind.
+const rewoundAfter = time.Minute
+
 func Register(app core.App) {
+	app.OnRecordCreateRequest("posts").BindFunc(func(e *core.RecordRequestEvent) error {
+		if msg := checkHappenedAt(e.Record.GetDateTime("happened_at"), time.Now()); msg != "" {
+			return e.BadRequestError(msg, nil)
+		}
+		return e.Next()
+	})
+	app.OnRecordCreate("posts").BindFunc(func(e *core.RecordEvent) error {
+		stampHappenedAt(e.Record, time.Now())
+		return e.Next()
+	})
+
 	app.OnServe().BindFunc(func(se *core.ServeEvent) error {
 		se.Router.POST("/api/peard/posts/edit", editHandler(app)).Bind(apis.RequireAuth())
 		return se.Next()
@@ -46,9 +77,10 @@ func editHandler(app core.App) func(e *core.RequestEvent) error {
 		// a note is a real edit — somebody took the words back — and it has to be
 		// possible to say that without it looking like "leave the note alone".
 		var body struct {
-			Post      string  `json:"post" form:"post"`
-			Note      *string `json:"note" form:"note"`
-			EventKind *string `json:"event_kind" form:"event_kind"`
+			Post       string  `json:"post" form:"post"`
+			Note       *string `json:"note" form:"note"`
+			EventKind  *string `json:"event_kind" form:"event_kind"`
+			HappenedAt *string `json:"happened_at" form:"happened_at"`
 		}
 		if err := e.BindBody(&body); err != nil {
 			return e.BadRequestError("invalid request body", err)
@@ -58,7 +90,7 @@ func editHandler(app core.App) func(e *core.RequestEvent) error {
 		if postID == "" {
 			return e.BadRequestError("post is required", nil)
 		}
-		if body.Note == nil && body.EventKind == nil {
+		if body.Note == nil && body.EventKind == nil && body.HappenedAt == nil {
 			return e.BadRequestError("nothing to change", nil)
 		}
 
@@ -98,6 +130,27 @@ func editHandler(app core.App) func(e *core.RequestEvent) error {
 			post.Set("event_kind", kind)
 		}
 
+		if body.HappenedAt != nil {
+			// Measured from `created`, not from now: the window is 24 hours before
+			// the moment was logged, and editing it tomorrow does not move that.
+			logged := post.GetDateTime("created").Time()
+			raw := strings.TrimSpace(*body.HappenedAt)
+			if raw == "" {
+				// Empty puts it back to when it was logged.
+				post.Set("happened_at", logged)
+				post.Set("rewound", false)
+			} else {
+				at, err := types.ParseDateTime(raw)
+				if err != nil || at.IsZero() {
+					return e.BadRequestError("that time could not be read", err)
+				}
+				if msg := checkHappenedAt(at, logged); msg != "" {
+					return e.BadRequestError(msg, nil)
+				}
+				stamp(post, at.Time(), logged)
+			}
+		}
+
 		if err := app.Save(post); err != nil {
 			return e.InternalServerError("failed to save the edit", err)
 		}
@@ -106,10 +159,46 @@ func editHandler(app core.App) func(e *core.RequestEvent) error {
 		// already been told about, and a second notification for the same moment
 		// reads as a second moment.
 		return e.JSON(http.StatusOK, map[string]any{
-			"ok":         true,
-			"note":       post.GetString("note"),
-			"event_kind": post.GetString("event_kind"),
-			"updated":    post.GetString("updated"),
+			"ok":          true,
+			"note":        post.GetString("note"),
+			"event_kind":  post.GetString("event_kind"),
+			"happened_at": post.GetString("happened_at"),
+			"rewound":     post.GetBool("rewound"),
+			"updated":     post.GetString("updated"),
 		})
 	}
+}
+
+// checkHappenedAt returns why a requested time is refused, or "" when it is
+// fine. A zero time is fine: it means "now", and stampHappenedAt fills it in.
+func checkHappenedAt(at types.DateTime, logged time.Time) string {
+	if at.IsZero() {
+		return ""
+	}
+	switch t := at.Time(); {
+	case t.After(logged.Add(clockSkew)):
+		return "a moment cannot happen in the future"
+	case t.Before(logged.Add(-maxRewind - clockSkew)):
+		return "a moment can only be rewound up to 24 hours"
+	}
+	return ""
+}
+
+// stampHappenedAt settles both fields on a new moment. Whatever the request said
+// about `rewound` is overwritten here.
+func stampHappenedAt(post *core.Record, now time.Time) {
+	at := post.GetDateTime("happened_at")
+	if at.IsZero() {
+		stamp(post, now, now)
+		return
+	}
+	stamp(post, at.Time(), now)
+}
+
+func stamp(post *core.Record, at, logged time.Time) {
+	if at.After(logged) {
+		at = logged
+	}
+	post.Set("happened_at", at)
+	post.Set("rewound", logged.Sub(at) > rewoundAfter)
 }

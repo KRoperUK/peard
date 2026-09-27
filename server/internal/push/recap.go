@@ -59,7 +59,7 @@ func sendWeeklyRecaps(app core.App) {
 
 func sendRecapFor(app core.App, pair *core.Record, weekStart time.Time) {
 	posts, err := app.FindRecordsByFilter("posts",
-		"pair = {:pair} && type = 'event' && created >= {:week}",
+		"pair = {:pair} && type = 'event' && happened_at >= {:week}",
 		"", maxRecapPosts, 0,
 		dbx.Params{"pair": pair.Id, "week": weekStart.UTC().Format("2006-01-02 15:04:05.000Z")})
 	if err != nil || len(posts) == 0 {

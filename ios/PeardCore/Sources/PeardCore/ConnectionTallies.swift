@@ -165,14 +165,14 @@ public struct ConnectionTallies: Codable, Hashable, Sendable {
         var byKind = Dictionary(uniqueKeysWithValues: kinds.map { ($0.kind.rawValue, $0) })
 
         for send in relevant {
-            totals = bump(totals, at: send.queuedAt)
+            totals = bump(totals, at: send.happenedOrQueuedAt)
             let key = send.kind.rawValue
             if let existing = byKind[key] {
                 byKind[key] = Kind(
                     kind: existing.kind,
                     emoji: existing.emoji,
                     label: existing.label,
-                    mine: bump(existing.mine, at: send.queuedAt),
+                    mine: bump(existing.mine, at: send.happenedOrQueuedAt),
                     others: existing.others
                 )
             } else {
@@ -180,7 +180,7 @@ public struct ConnectionTallies: Codable, Hashable, Sendable {
                     kind: send.kind,
                     emoji: send.emoji,
                     label: send.label,
-                    mine: bump(.zero, at: send.queuedAt),
+                    mine: bump(.zero, at: send.happenedOrQueuedAt),
                     others: .zero
                 )
             }

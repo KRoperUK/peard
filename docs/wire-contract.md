@@ -84,10 +84,30 @@ names and avatars while never getting an email address.
 | `note` | string | max 280, `""` when unset |
 | `media` | string | filename, `""` when unset |
 | `client_id` | string | max 60, `""` when unset. The sender's own id for the write, carried so a retry cannot duplicate a moment — see below |
-| `created` | date | |
+| `created` | date | when the server heard about it; unread and the badge compare against this |
 | `updated` | date | |
+| `happened_at` | date | when it happened. The timeline sorts by this, and tallies, recap, streaks and "last happened" count by it. Defaults to now; a create may set it up to 24 hours back — see [Rewinding a moment](#rewinding-a-moment) |
+| `rewound` | bool | written by the server, ignored on create: true when `happened_at` is more than a minute before the moment was logged |
 
 Thumbnail URL: `GET /api/files/posts/{id}/{media}?thumb=512x512`.
+
+### Rewinding a moment
+
+A moment can be logged after the fact. Send `happened_at` on the create
+(ISO 8601, e.g. `2026-09-27T18:40:00.000Z`) and the moment sorts and counts at
+that time instead of when it arrived. The server:
+
+- refuses a time more than a minute in the future, or more than 24 hours before
+  now, with `400` and a sentence;
+- sets `rewound` itself — `true` when `happened_at` is more than a minute back —
+  so a client can neither fake the chip nor scrub it;
+- leaves unread alone: a rewound moment is still news to the people who have not
+  seen it, so `created` stays the arrival time and `last_seen_at` compares
+  against that. It is pushed like any other moment.
+
+Omitting `happened_at` means "now", which is what every client that predates
+this sends. Clients draw a "⏪ Rewound" chip on any post with `rewound: true`.
+The widget and Shortcuts log live only.
 
 `client_id` exists because the app queues moments on the device before sending
 them, so a moment logged with no signal is kept rather than discarded. That
@@ -584,16 +604,23 @@ and the `posts` list rule never sees it: `403` for a connection you are not in.
 `POST /api/peard/posts/edit` with any of:
 
 ```json
-{ "post": "abc123def456ghi", "note": "at the other pub", "event_kind": "coffee" }
+{ "post": "abc123def456ghi", "note": "at the other pub", "event_kind": "coffee",
+  "happened_at": "2026-09-27T18:40:00.000Z" }
 ```
 
-→ `{ "ok": true, "note": "…", "event_kind": "…", "updated": "…" }`.
+→ `{ "ok": true, "note": "…", "event_kind": "…", "happened_at": "…", "rewound": true, "updated": "…" }`.
 
-Only the author may, and only these two fields change: `note` (≤ 280, empty
-clears it) and `event_kind` (≤ 40, `event` posts only — a photo has no kind, and
-giving it one would add a moment to the tallies nobody logged). Omitting a field
-leaves it alone, which is why clearing a note means sending `""` rather than
-omitting it. Sending neither answers `400`; somebody else's moment answers `403`.
+Only the author may, and only these three fields change: `note` (≤ 280, empty
+clears it), `event_kind` (≤ 40, `event` posts only — a photo has no kind, and
+giving it one would add a moment to the tallies nobody logged) and `happened_at`.
+Omitting a field leaves it alone, which is why clearing a note means sending `""`
+rather than omitting it. Sending none answers `400`; somebody else's moment
+answers `403`.
+
+`happened_at` may be anything from 24 hours before the moment was *logged* up to
+when it was logged — measured from `created`, not from now, so the window does
+not shrink the longer somebody waits to fix it. `""` puts it back to `created`
+and clears `rewound`. The server recomputes `rewound` either way.
 
 This is a route rather than an `UpdateRule` on `posts` because a collection rule
 cannot say *which* fields may change — the author would otherwise also be able
@@ -643,6 +670,8 @@ column keeps milliseconds, so a strict `>` labels moments nobody touched.
     "label": "Beer",
     "note": "cheers",
     "created": "2026-07-28 21:30:15.250Z",
+    "happened_at": "2026-07-28 21:30:15.250Z",
+    "rewound": false,
     "media_url": "http://host/api/files/posts/<id>/<file>?thumb=512x512",
     "author": "Ada"
   }

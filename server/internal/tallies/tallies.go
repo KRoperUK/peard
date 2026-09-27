@@ -33,7 +33,7 @@ import (
 )
 
 // pocketBaseLayout is how PocketBase stores timestamps, and therefore how a
-// boundary has to be written for a string comparison against `created` to work.
+// boundary has to be written for a string comparison against `happened_at` to work.
 const pocketBaseLayout = "2006-01-02 15:04:05.000Z"
 
 // maxKinds bounds the per-kind breakdown. A connection's catalogue is capped
@@ -56,15 +56,15 @@ const tallyQuery = `
 SELECT
     event_kind                                                  AS event_kind,
     CASE WHEN author = {:user} THEN 1 ELSE 0 END                AS mine,
-    SUM(CASE WHEN created >= {:day}   THEN 1 ELSE 0 END)         AS day_count,
-    SUM(CASE WHEN created >= {:week}  THEN 1 ELSE 0 END)         AS week_count,
-    SUM(CASE WHEN created >= {:month} THEN 1 ELSE 0 END)         AS month_count,
+    SUM(CASE WHEN happened_at >= {:day}   THEN 1 ELSE 0 END)    AS day_count,
+    SUM(CASE WHEN happened_at >= {:week}  THEN 1 ELSE 0 END)    AS week_count,
+    SUM(CASE WHEN happened_at >= {:month} THEN 1 ELSE 0 END)    AS month_count,
     COUNT(*)                                                    AS all_count,
     -- When this kind last happened, whoever logged it. Grouped alongside the
     -- counts rather than fetched per kind: "when did we last..." is the
     -- question the counts are usually a proxy for, and a second query per
     -- moment to answer it would be a query per row of the breakdown.
-    MAX(created)                                                AS last_at
+    MAX(happened_at)                                            AS last_at
 FROM posts
 WHERE pair = {:pair} AND type = 'event'
 GROUP BY event_kind, mine
