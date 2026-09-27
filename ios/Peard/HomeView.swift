@@ -1,3 +1,4 @@
+import AppIntents
 import OSLog
 import PeardCore
 import SwiftUI
@@ -27,6 +28,9 @@ struct HomeView: View {
     @State private var showMomentSheet = false
     @State private var viewingPhoto: Post?
     @State private var showRewind = false
+    /// Once dismissed, stays dismissed on this device. A per-device hint, so
+    /// ordinary UserDefaults rather than the App Group store.
+    @AppStorage("siriTipVisible") private var showSiriTip = true
     @FocusState private var noteFocused: Bool
 
     /// Switches to the tallies tab. The breakdown strip is a summary, and its whole
@@ -176,6 +180,14 @@ struct HomeView: View {
                 onTap: { model.tap(moment: $0) },
                 onMore: { showMomentSheet = true }
             )
+
+            // Tapping is how moments are logged; saying so to Siri is the other
+            // way, and nothing else in the app tells anybody it exists. Kept out
+            // of the way of a send in progress.
+            if model.quickSend == nil {
+                SiriTipView(intent: LogBuiltinMomentIntent(kind: .beer), isVisible: $showSiriTip)
+                    .siriTipViewStyle(.automatic)
+            }
 
             if model.hasMomentBreakdown {
                 breakdownStrip
