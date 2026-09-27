@@ -19,6 +19,7 @@ import (
 	"errors"
 	"fmt"
 	"log"
+	"net/url"
 	"os"
 	"strings"
 
@@ -183,6 +184,7 @@ func notifyPairMembers(app core.App, post *core.Record) {
 			continue
 		}
 		badge := unseenCount(app, memberID)
+		media := mediaURLFor(app, post, memberID)
 		for _, d := range devices {
 			t := d.GetString("push_token")
 			if t == "" {
@@ -196,6 +198,9 @@ func notifyPairMembers(app core.App, post *core.Record) {
 				Category(momentCategory).
 				Custom("post_id", post.Id).
 				Custom("pair_id", pairID)
+			if media != "" {
+				visible.Custom("media_url", media)
+			}
 			n.send(t, visible, apns2.PushTypeAlert, apns2.PriorityHigh, collapseID)
 
 			silent := payload.NewPayload().
@@ -207,6 +212,34 @@ func notifyPairMembers(app core.App, post *core.Record) {
 			n.send(t, silent, apns2.PushTypeBackground, apns2.PriorityLow, "")
 		}
 	}
+}
+
+// mediaURLFor is the thumbnail the app's notification service extension
+// attaches to the alert, so a photo arrives as a photo rather than as "Fresh
+// pear from Ada".
+//
+// `posts.media` is protected and the extension has no session, so the URL
+// carries a file token minted here for the recipient — the widget feed's
+// approach, for the same reason. The token lives as long as the users
+// collection's file-token duration (30 minutes), which covers a notification
+// arriving on a phone that was briefly offline. Empty when there is no photo,
+// no public URL to build it from, or no token: the alert goes as it always did.
+func mediaURLFor(app core.App, post *core.Record, recipientID string) string {
+	media := post.GetString("media")
+	base := strings.TrimRight(app.Settings().Meta.AppURL, "/")
+	if media == "" || base == "" {
+		return ""
+	}
+	recipient, err := app.FindRecordById("users", recipientID)
+	if err != nil {
+		return ""
+	}
+	fileToken, err := recipient.NewFileToken()
+	if err != nil {
+		return ""
+	}
+	return fmt.Sprintf("%s/api/files/%s/%s/%s?thumb=512x512&token=%s",
+		base, post.Collection().Id, post.Id, url.PathEscape(media), url.QueryEscape(fileToken))
 }
 
 // collapseIDFor decides which alerts supersede one another.

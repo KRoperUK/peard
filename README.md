@@ -671,9 +671,17 @@ Set the `PEARD_APNS_*` env vars to enable:
 Notifications are **grouped per connection** with a `thread-id`, so twelve people
 tapping coffee produce one expandable stack rather than twelve banners, and
 collapsed per moment kind so repeats update one notification in place while
-different moments stay separate. The badge counts what other people have posted
-across your connections in the last day. A muted connection is skipped entirely,
-reactions included.
+different moments stay separate. The badge counts the moments other people have
+posted that you have not seen yet, across your connections. A muted connection is
+skipped entirely, reactions included.
+
+**A photo arrives as a photo.** A photo moment's alert carries a `media_url` —
+the 512-point thumbnail, with a file token minted for that recipient, because
+`posts.media` is protected and nothing handling a notification has a session. The
+app's notification service extension (`PearNotificationService`) downloads it and
+attaches it, so the Lock Screen shows the picture and a long press shows it
+larger. No `PEARD_APP_URL`, a failed download or an expired token (30 minutes)
+all fall back to the plain text alert.
 
 The app registers its APNs token in the `devices` collection after notification
 authorization is granted. Without APNs the app still works — it just won't
