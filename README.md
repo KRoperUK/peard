@@ -645,6 +645,19 @@ naming only the kind could be chosen in a way that could never succeed. Built-in
 are listed once and unbound — they work anywhere — and take their connection from
 the action's optional Connection parameter, or the liveliest one if it is empty.
 
+**Being understood.** "Pear'd" is not a word, so what Siri hears for it is
+usually "paired", sometimes "pared", and "Peard" when somebody types to Siri.
+`INAlternativeAppNames` in both Info.plists lists those three (Apple allows at
+most three), each with a "sounds like *paired*" hint, and `CFBundleSpokenName`
+is "Paired" so the name is also *said* the way people say it. The built-in
+moments carry synonyms on their `AppEnum` cases — "pint" for beer, and "toilet",
+"bathroom" and "Lou" for loo, the last because that is what speech-to-text makes
+of it. Phrases are a contract once shipped, so they are only ever added to: "on
+Pear'd" sits alongside "in Pear'd". Near-duplicate wordings are deliberately
+left out; Siri already matches loosely, and Apple's guidance is that piling on
+variants makes matching worse. **Product → App Shortcuts Preview** in Xcode shows
+how a typed phrase resolves; only a device shows how a spoken one does.
+
 Three traps, all found by running it:
 
 - **`isDiscoverable = false` removes an intent's App Shortcut too**, phrases and
