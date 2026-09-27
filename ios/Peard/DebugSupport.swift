@@ -47,7 +47,27 @@ enum DebugSupport {
     }
 
     /// Requirement 21.1 — password sign-in as the fixed test account.
+    ///
+    /// A fresh server has never heard of the account, and "Failed to
+    /// authenticate" on the first run sent people to the Admin UI to make it by
+    /// hand. So a 400 creates it through the superuser, the same way the seeded
+    /// partner is made, and signs in again.
     static func signInAsTestUser(api: APIClient) async throws -> Session {
+        do {
+            return try await passwordSignIn(api: api)
+        } catch let error as APIError where error.status == 400 {
+            let superuser = SuperuserClient(baseURL: api.baseURL)
+            try await superuser.authenticate(identity: superuserIdentity, password: superuserPassword)
+            _ = try await superuser.findOrCreatePartner(
+                email: testEmail,
+                password: testPassword,
+                displayName: "Test User"
+            )
+            return try await passwordSignIn(api: api)
+        }
+    }
+
+    private static func passwordSignIn(api: APIClient) async throws -> Session {
         let response: AuthResponse = try await api.post(
             path: "/api/collections/users/auth-with-password",
             fields: ["identity": testEmail, "password": testPassword]
