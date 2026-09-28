@@ -1,0 +1,58 @@
+name: Bug report
+description: Something in the app, the server or the website is not doing what it should.
+labels: ["bug"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        A security problem belongs in a private report, not here. SECURITY.md explains how.
+
+  - type: dropdown
+    id: area
+    attributes:
+      label: Where
+      options:
+        - iOS app
+        - Widget, Lock Screen or Live Activity
+        - iMessage extension
+        - Notifications
+        - Server
+        - Website
+        - Not sure
+    validations:
+      required: true
+
+  - type: textarea
+    id: what
+    attributes:
+      label: What happened, and what you expected
+      placeholder: Tapped "Pear'd", the countdown started, and the moment never showed up for my partner.
+    validations:
+      required: true
+
+  - type: textarea
+    id: steps
+    attributes:
+      label: Steps to reproduce
+      placeholder: |
+        1. …
+        2. …
+    validations:
+      required: false
+
+  - type: input
+    id: build
+    attributes:
+      label: App build and device
+      description: Settings → About shows the version and build. Leave it blank for a server-only bug.
+      placeholder: 1.2.0 (1759000000), iPhone 16 Pro, iOS 26.1
+    validations:
+      required: false
+
+  - type: textarea
+    id: extra
+    attributes:
+      label: Screenshots or logs
+      description: Please remove invite codes, tokens and other people's details before posting.
+    validations:
+      required: false
