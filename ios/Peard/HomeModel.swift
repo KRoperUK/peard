@@ -43,6 +43,11 @@ final class HomeModel {
     private(set) var quickSend: QuickSend?
     /// Re-read on every tick so the countdown redraws.
     private(set) var quickSendCaption = ""
+    /// Whether someone is using VoiceOver or Switch Control. Replaceable so a
+    /// test can stand in for either.
+    var assistiveTechnologyIsRunning: () -> Bool = {
+        UIAccessibility.isVoiceOverRunning || UIAccessibility.isSwitchControlRunning
+    }
     private(set) var quickSendProgress: Double = 1
 
     var noteText = ""
@@ -475,11 +480,26 @@ final class HomeModel {
 
     private func begin(moment: Moment) {
         noteText = ""
-        let send = QuickSend(moment: moment)
+        // Three seconds is plenty to look at a note field and tap it, and not
+        // nearly enough to swipe to it with VoiceOver or step to it with Switch
+        // Control — the send used to go before the field was reached (issue #5).
+        // So with either running it starts held, as typing a note holds it, and
+        // goes when Send is activated. Everybody else keeps the countdown.
+        let held = assistiveTechnologyIsRunning()
+        let send = QuickSend(moment: moment, isHeld: held)
         quickSend = send
         quickSendCaption = send.caption()
         quickSendProgress = 1
-        startCountdown()
+        if held {
+            countdownTask?.cancel()
+            countdownTask = nil
+            UIAccessibility.post(
+                notification: .announcement,
+                argument: "\(moment.label) ready. Add a note, or activate Send."
+            )
+        } else {
+            startCountdown()
+        }
     }
 
     private func startCountdown() {
