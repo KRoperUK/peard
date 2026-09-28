@@ -123,6 +123,14 @@ platform :ios do
   lane :archive do
     require_distribution_credentials!
     generate
+    number = build_number
+    UI.message("Build number #{number}")
+    # Xcode's export runs /usr/bin/rsync and starts the receiving side by name,
+    # so a Homebrew rsync earlier on PATH gets it — and it rejects Xcode's -E
+    # ("--extended-attributes: unknown option"), failing the export with nothing
+    # but "Copy failed". /usr/bin first, for this lane only.
+    original_path = ENV["PATH"]
+    ENV["PATH"] = "/usr/bin:#{original_path}"
     build_app(
       project: PROJECT,
       scheme: SCHEME,
@@ -131,12 +139,18 @@ platform :ios do
       output_directory: OUTPUT_DIR,
       output_name: "Peard.ipa",
       export_method: "app-store",
+      # Leave the number alone. Xcode can renumber on export to one past what
+      # App Store Connect last saw, which is one way to ship a build number
+      # nobody chose (issue #7). The number is set above, and checked below.
+      export_options: { manageAppVersionAndBuildNumber: false },
       # Automatic signing, matching the project: there is no match/sigh setup, so
       # Xcode resolves the profile from the team on the machine or — on a CI
       # runner with no Apple ID signed in — from the App Store Connect API key,
       # which has to be handed to xcodebuild itself for cloud-managed signing.
-      xcargs: ["-allowProvisioningUpdates", *xcodebuild_auth_args, build_number_xcarg].compact.join(" ")
+      xcargs: ["-allowProvisioningUpdates", *xcodebuild_auth_args, "CURRENT_PROJECT_VERSION=#{number.shellescape}"].join(" ")
     )
+    ENV["PATH"] = original_path
+    verify_build_number!("#{OUTPUT_DIR}/Peard.ipa", number)
   end
 
   desc "Archive and upload to TestFlight"
@@ -268,11 +282,34 @@ platform :ios do
   # number baked in silently. An xcarg applies to all three targets at once
   # (they must agree, or App Store validation rejects the appexes), touches
   # nothing on disk, and leaves the plists saying what they mean.
-  def build_number_xcarg
-    number = ENV["PEARD_BUILD_NUMBER"]
-    return nil if number.nil? || number.empty?
+  # Always explicit. PEARD_BUILD_NUMBER when given (CI sets it); otherwise the
+  # current Unix time, which is the scheme every upload has used — so a local
+  # archive and a CI one number the same way, and neither is ever "whatever the
+  # cache had".
+  def build_number
+    number = ENV["PEARD_BUILD_NUMBER"].to_s.strip
+    number = Time.now.to_i.to_s if number.empty?
+    UI.user_error!("PEARD_BUILD_NUMBER must be digits, got #{number.inspect}") unless number.match?(/\A\d+\z/)
+    number
+  end
 
-    "CURRENT_PROJECT_VERSION=#{number.shellescape}"
+  # Fails the lane unless the app and every extension in the IPA carry the
+  # number it was built with. App Store Connect rejects an upload whose
+  # extensions disagree with the app, and a number that differs from the one
+  # passed in is exactly what issue #7 could not explain after the fact.
+  def verify_build_number!(ipa, expected)
+    require "tmpdir"
+    Dir.mktmpdir do |dir|
+      sh("unzip", "-q", File.expand_path(ipa, ".."), "-d", dir, log: false)
+      plists = Dir.glob(File.join(dir, "Payload", "*.app", "{,PlugIns/*.appex/}Info.plist"))
+      UI.user_error!("No Info.plist found in #{ipa}") if plists.empty?
+      wrong = plists.filter_map do |plist|
+        found = `/usr/libexec/PlistBuddy -c 'Print :CFBundleVersion' #{plist.shellescape}`.strip
+        "#{plist.sub(dir + "/", "")}: #{found}" unless found == expected
+      end
+      UI.user_error!("Build number is not #{expected} in:\n  #{wrong.join("\n  ")}") unless wrong.empty?
+      UI.success("Build number #{expected} in the app and #{plists.count - 1} extension(s)")
+    end
   end
 
   def changelog_or_nil

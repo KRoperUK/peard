@@ -158,7 +158,7 @@ if they are missing:
 | `APP_STORE_CONNECT_API_KEY_ID` | API key id |
 | `APP_STORE_CONNECT_API_ISSUER_ID` | Issuer id |
 | `APP_STORE_CONNECT_API_KEY_CONTENT` | The `.p8` contents (or `…_KEY_PATH`) |
-| `PEARD_BUILD_NUMBER` | Optional; CI sets it so each upload is unique |
+| `PEARD_BUILD_NUMBER` | Optional; defaults to the current Unix time, which CI also uses. `archive` fails if the exported app or any extension carries a different number |
 | `PEARD_APP_STORE_APP_ID` | Optional; overrides the App Store Connect app id, `6795739297` |
 
 `beta` uploads against that numeric app id rather than looking the app up by
