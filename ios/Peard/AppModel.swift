@@ -266,11 +266,18 @@ final class AppModel {
 
     /// Kicks off a flush, coalescing with one already in flight. Non-blocking so
     /// callers on the main actor (a tap, a foreground) are never held up by it.
+    ///
+    /// Coalescing means returning while one is running, not cancelling it and
+    /// starting again: bootstrap, reachability and foregrounding can all fire at
+    /// once, and each cancel withdrew a request mid-flight while the replacement
+    /// found the queue still flushing and did nothing (issue #58). The running
+    /// flush picks up anything enqueued behind it, since it walks the queue
+    /// rather than a copy.
     func flushSendQueue() {
-        guard sessionStore.hasSession else { return }
-        flushTask?.cancel()
+        guard sessionStore.hasSession, flushTask == nil else { return }
         flushTask = Task { [weak self] in
             await self?.performFlush()
+            self?.flushTask = nil
         }
     }
 
