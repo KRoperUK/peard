@@ -1,0 +1,45 @@
+name: TestFlight (external)
+
+# Sends a build that is already on TestFlight — internal testers have been
+# running it — to the external testers' group. Nothing is rebuilt: what goes out
+# is exactly the binary that was tried.
+#
+# Run from the Actions tab. The `testflight-external` environment is where a
+# required reviewer belongs, so pressing the button asks somebody first.
+on:
+  workflow_dispatch:
+    inputs:
+      build_number:
+        description: "TestFlight build number to send (empty for the latest)"
+        required: false
+        default: ""
+
+concurrency:
+  group: testflight-external
+  cancel-in-progress: false
+
+jobs:
+  promote:
+    name: Send to external testers
+    runs-on: macos-15
+    environment:
+      name: testflight-external
+    env:
+      APP_STORE_CONNECT_API_KEY_ID: ${{ secrets.APP_STORE_CONNECT_API_KEY_ID }}
+      APP_STORE_CONNECT_API_ISSUER_ID: ${{ secrets.APP_STORE_CONNECT_API_ISSUER_ID }}
+      APP_STORE_CONNECT_API_KEY_BASE64: ${{ secrets.APP_STORE_CONNECT_API_KEY_BASE64 }}
+      PEARD_TESTFLIGHT_EXTERNAL_GROUP: ${{ vars.PEARD_TESTFLIGHT_EXTERNAL_GROUP }}
+      # Through the environment rather than interpolated into the script, so a
+      # typed-in value cannot become shell.
+      PEARD_PROMOTE_BUILD: ${{ inputs.build_number }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+
+      - uses: ruby/setup-ruby@14594264cd68ce8a2345dd349bc3d138a4ef85c8 # v1.327.0
+        with:
+          # fastlane's supported range; the Gemfile pins fastlane itself.
+          ruby-version: "3.3"
+          bundler-cache: true
+
+      - name: Send to external testers
+        run: bundle exec fastlane promote_external

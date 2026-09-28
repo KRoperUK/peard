@@ -15,7 +15,9 @@ concurrency:
   # A new push supersedes an in-flight run for the same ref. macOS runners are the
   # expensive part, so not queueing three of them for one branch matters.
   group: ${{ github.workflow }}-${{ github.ref }}
-  cancel-in-progress: true
+  # Pull requests only. On main a run can be mid-upload to TestFlight or mid-
+  # deploy, and cancelling either halfway is worse than letting it finish.
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
 
 jobs:
   server:
@@ -133,13 +135,11 @@ jobs:
       - name: Generate project
         run: make project
 
-      - name: Build (Debug)
-        run: make app
-
-      - name: Build (Release)
-        # Catches anything that only compiles with DEBUG defined, and anything the
-        # Release Info.plist or entitlements get wrong.
-        run: make app-release
+      # No separate build step: the tests below build the app, and that one
+      # Debug build is all a pull request needs. Release is built on main, where
+      # the TestFlight archive is a Release build anyway — so anything that only
+      # compiles with DEBUG defined still turns main red before it reaches
+      # anybody's phone.
 
       - name: Pick a simulator
         id: sim
@@ -171,6 +171,59 @@ jobs:
           name: xcresult
           path: ios/build/PeardTests.xcresult
           retention-days: 7
+
+  testflight:
+    name: TestFlight (internal)
+    runs-on: macos-15
+    # The same gate as the server deploy: a build only goes to testers from a
+    # commit on main whose every check passed.
+    needs: [server, docker, core, app]
+    if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+    environment:
+      name: testflight-internal
+    env:
+      APP_STORE_CONNECT_API_KEY_ID: ${{ secrets.APP_STORE_CONNECT_API_KEY_ID }}
+      APP_STORE_CONNECT_API_ISSUER_ID: ${{ secrets.APP_STORE_CONNECT_API_ISSUER_ID }}
+      APP_STORE_CONNECT_API_KEY_BASE64: ${{ secrets.APP_STORE_CONNECT_API_KEY_BASE64 }}
+    steps:
+      # Skipped with a warning, not failed, until the secrets exist: a red main
+      # for a setup step nobody has done yet would teach people to ignore red.
+      - name: Credentials
+        id: creds
+        run: |
+          if [ -n "$APP_STORE_CONNECT_API_KEY_ID" ] && [ -n "$APP_STORE_CONNECT_API_ISSUER_ID" ] && [ -n "$APP_STORE_CONNECT_API_KEY_BASE64" ]; then
+            echo "ready=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "::warning title=TestFlight skipped::Add APP_STORE_CONNECT_API_KEY_ID, APP_STORE_CONNECT_API_ISSUER_ID and APP_STORE_CONNECT_API_KEY_BASE64 as secrets (repository or the testflight-internal environment) to upload builds from main."
+            echo "ready=false" >> "$GITHUB_OUTPUT"
+          fi
+
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        if: steps.creds.outputs.ready == 'true'
+
+      - uses: ruby/setup-ruby@14594264cd68ce8a2345dd349bc3d138a4ef85c8 # v1.327.0
+        if: steps.creds.outputs.ready == 'true'
+        with:
+          # fastlane's supported range; the Gemfile pins fastlane itself.
+          ruby-version: "3.3"
+          bundler-cache: true
+
+      - name: Install XcodeGen
+        if: steps.creds.outputs.ready == 'true'
+        run: brew install xcodegen
+
+      - name: Archive and upload
+        if: steps.creds.outputs.ready == 'true'
+        # Every upload needs a build number App Store Connect has not seen. The
+        # run number only goes up; PEARD_BUILD_NUMBER_OFFSET (a repository
+        # variable, default 0) lifts it past anything uploaded by hand before
+        # this job existed.
+        env:
+          PEARD_BUILD_NUMBER_OFFSET: ${{ vars.PEARD_BUILD_NUMBER_OFFSET }}
+        run: |
+          export PEARD_BUILD_NUMBER=$(( ${{ github.run_number }} + ${PEARD_BUILD_NUMBER_OFFSET:-0} ))
+          echo "Build number $PEARD_BUILD_NUMBER"
+          bundle exec fastlane beta
 
   deploy:
     name: Deploy server
