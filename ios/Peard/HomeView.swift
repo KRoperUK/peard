@@ -28,6 +28,9 @@ struct HomeView: View {
     @State private var showMomentSheet = false
     @State private var viewingPhoto: Post?
     @State private var showRewind = false
+    /// The day the "a year ago today" card was last dismissed, as yyyy-MM-dd,
+    /// so closing it hides it until tomorrow rather than for good.
+    @AppStorage("yearAgoDismissedOn") private var yearAgoDismissedOn = ""
     /// Once dismissed, stays dismissed on this device. A per-device hint, so
     /// ordinary UserDefaults rather than the App Group store.
     @AppStorage("siriTipVisible") private var showSiriTip = true
@@ -191,6 +194,10 @@ struct HomeView: View {
 
             if model.hasMomentBreakdown {
                 breakdownStrip
+            }
+
+            if let first = model.yearAgo.first, yearAgoDismissedOn != Self.today() {
+                yearAgoCard(first: first, more: model.yearAgo.count - 1)
             }
 
             if let toast = model.toast {
@@ -420,6 +427,57 @@ struct HomeView: View {
         // VoiceOver can activate (issue #3).
         .accessibilityLabel(breakdownAccessibilityLabel)
         .accessibilityHint("Opens the tallies")
+    }
+
+    /// One thing from a year ago, occasionally (issue #12). A card, not a feed,
+    /// and never a notification.
+    private func yearAgoCard(first: Post, more: Int) -> some View {
+        HStack(alignment: .top, spacing: 12) {
+            Text(model.emoji(for: first))
+                .font(.title)
+                .accessibilityHidden(true)
+            VStack(alignment: .leading, spacing: 3) {
+                Text("A year ago today")
+                    .font(.caption.bold())
+                    .foregroundStyle(PearColor.accent)
+                Text("\(model.authorLabel(for: first)) · \(model.caption(for: first))")
+                    .font(.subheadline)
+                    .foregroundStyle(PearColor.textPrimary)
+                    .lineLimit(2)
+                // What somebody said about it is the part worth remembering.
+                if let note = first.displayNote {
+                    Text(note)
+                        .font(.callout.italic())
+                        .foregroundStyle(PearColor.textSecondary)
+                        .lineLimit(2)
+                }
+                if more > 0 {
+                    Text(more == 1 ? "and 1 more moment" : "and \(more) more moments")
+                        .font(.caption)
+                        .foregroundStyle(PearColor.textTertiary)
+                }
+            }
+            Spacer(minLength: 0)
+            Button {
+                yearAgoDismissedOn = Self.today()
+            } label: {
+                Image(systemName: "xmark")
+                    .font(.caption.bold())
+                    .foregroundStyle(PearColor.textTertiary)
+                    .frame(minWidth: 44, minHeight: 44)
+                    .contentShape(Rectangle())
+            }
+            .buttonStyle(.plain)
+            .accessibilityLabel("Hide until tomorrow")
+        }
+        .padding(.leading, 12)
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .background(PearColor.surface, in: RoundedRectangle(cornerRadius: 12))
+        .accessibilityElement(children: .contain)
+    }
+
+    private static func today() -> String {
+        Date().formatted(.iso8601.year().month().day())
     }
 
     private var breakdownAccessibilityLabel: String {
