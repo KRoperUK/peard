@@ -44,7 +44,8 @@ public enum MomentLogging {
         // before the round trip below even starts — otherwise the only sign of
         // life is the tallies changing once the real fetch lands, which on a
         // slow connection reads as a button that did nothing.
-        store.pendingWidgetLog = PendingWidgetLog(pairID: pairID, emoji: emoji, label: label, at: Date())
+        let pending = PendingWidgetLog(pairID: pairID, emoji: emoji, label: label, at: Date())
+        store.pendingWidgetLog = pending
         WidgetCenter.shared.reloadAllTimelines()
 
         let api = APIClient(baseURL: baseURL)
@@ -57,7 +58,9 @@ public enum MomentLogging {
             // The reload below redraws from the server, so the widget never shows a
             // moment that did not land.
         }
-        store.pendingWidgetLog = nil
+        // Kept, not cleared: the widget shows the outcome for a few seconds and
+        // schedules its own return to normal (see PendingWidgetLog).
+        store.pendingWidgetLog = pending.finished(accepted ? .logged : .failed)
         WidgetCenter.shared.reloadAllTimelines()
         return accepted
     }

@@ -224,6 +224,51 @@ the client treats as "already reacted" rather than an error.
 | `user` | string | relation → `users` |
 | `platform` | `"ios"` \| `"android"` | |
 | `push_token` | string | lower-case hex APNs token, unique index |
+| `activity_start_token` | string | lower-case hex ActivityKit push-to-start token for `PhotoDropAttributes` (iOS 17.2+); `""` when the device has none |
+
+### `live_activities`
+
+One row per running photo-drop Live Activity: where to send its updates.
+Owner-only like `devices`; creating one also needs membership of `pair`.
+
+| Field | Type | Notes |
+|---|---|---|
+| `id` | string | |
+| `user` | string | relation → `users` |
+| `pair` | string | relation → `pairs` |
+| `push_token` | string | lower-case hex ActivityKit update token, unique index |
+| `expires` | date | **server-set**: thirty minutes after the last photo. A client write cannot move it |
+
+#### Photo-drop pushes
+
+A new photo (any post with `media`) goes to each recipient's devices as the
+ordinary alert *and*, on the Live Activity topic
+(`<bundle id>.push-type.liveactivity`), either:
+
+- an **update** to every unexpired `live_activities` row for that user and
+  connection — which pushes `expires` on — or, when there are none,
+- a **start** to each device's `activity_start_token`.
+
+```json
+{ "aps": {
+    "timestamp": 1790000000,
+    "event": "start",
+    "attributes-type": "PhotoDropAttributes",
+    "attributes": { "pairID": "…", "title": "Flatmates" },
+    "content-state": { "postID": "…", "authorName": "Ada", "caption": "", "count": 2, "updatedAt": 1790000000 },
+    "stale-date": 1790001800,
+    "alert": { "title": "🍐 Fresh pear from Ada", "body": "" },
+    "relevance-score": 50
+} }
+```
+
+An update has `"event": "update"` and no `attributes` or `alert`. The start's
+alert has no sound: the ordinary photo alert already made one. `count` is photos
+in the connection in the last thirty minutes; `updatedAt` is Unix seconds, not a
+Date, because ActivityKit decodes a bare Date from seconds since 2001. Muted
+connections get neither. The activity cannot fetch the photo itself; it shows
+the thumbnail the notification service extension cached in the App Group under
+`PhotoDrops/<postID>.jpg`, and a 📸 until that exists.
 
 ### `users` (subset the client reads)
 

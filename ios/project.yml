@@ -230,10 +230,15 @@ targets:
       - path: PearNotificationService
         excludes:
           - Info.plist
+          - PearNotificationService.entitlements
       - path: PearNotificationService/Info.plist
+        buildPhase: none
+      - path: PearNotificationService/PearNotificationService.entitlements
         buildPhase: none
     settings:
       base:
+        # The App Group, to leave each photo where the Live Activity can find it.
+        CODE_SIGN_ENTITLEMENTS: PearNotificationService/PearNotificationService.entitlements
         CODE_SIGN_STYLE: Automatic
         CURRENT_PROJECT_VERSION: 1
         DEVELOPMENT_TEAM: 72Q6R744M4

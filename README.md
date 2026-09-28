@@ -725,6 +725,16 @@ attaches it, so the Lock Screen shows the picture and a long press shows it
 larger. No `PEARD_APP_URL`, a failed download or an expired token (30 minutes)
 all fall back to the plain text alert.
 
+**Photo drops.** A photo also starts a Live Activity on each recipient's
+iPhone (iOS 17.2+) — pushed, so the app need not be running — showing who
+shared it, their caption, and how many photos the connection has shared in the
+last half hour. Photos in that window update the same activity; after it the
+activity goes stale and the next photo starts a new one. The app registers two
+tokens for this: a push-to-start token on its `devices` row, and each running
+activity's update token in `live_activities`. The activity shows the photo the
+notification extension cached, since it has no network of its own. People can
+turn Live Activities off per app in Settings. See `docs/wire-contract.md`.
+
 The app registers its APNs token in the `devices` collection after notification
 authorization is granted. Without APNs the app still works — it just won't
 receive live pushes.
@@ -820,7 +830,9 @@ or can be omitted.
 - [x] An empty connections screen instead of a locked door — a new account lands
       on its own contacts, searchable and invitable, rather than on a code it
       has to create or be given before the app will show it anything
-- [ ] Live Activity for "instant photo drop" moments (ActivityKit push-to-update)
+- [x] "Instant photo drop": a photo arrives in its notification as a photo, and a
+      Live Activity (iOS 17.2+, started and updated by push) keeps the latest one
+      from a connection on the Lock Screen and in the Dynamic Island for half an hour
 - [ ] Android widget (Jetpack Glance) — blocked on the Android client decision above
 - [ ] Media storage (S3 compatible via PB filesystem settings)
 

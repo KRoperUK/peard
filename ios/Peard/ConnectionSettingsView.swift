@@ -44,6 +44,7 @@ struct ConnectionSettingsView: View {
                 nameSection
                 membersSection
                 notificationsSection
+                debugSection
                 pendingSection
                 yourNameSection
                 discoverabilitySection
@@ -347,6 +348,22 @@ struct ConnectionSettingsView: View {
                     : "Muting stops the alerts. Moments still arrive."
             )
         }
+    }
+
+    /// Debug builds only: things that otherwise need a push server to see.
+    @ViewBuilder
+    private var debugSection: some View {
+        #if DEBUG
+        Section {
+            Button("🔧 Start a test photo drop") {
+                DebugSupport.startTestPhotoDrop(pairID: model.pairID, title: model.connectionTitle)
+            }
+        } header: {
+            Text("Debug")
+        } footer: {
+            Text("Starts the photo-drop Live Activity on this phone without a push. Lock the screen to see it.")
+        }
+        #endif
     }
 
     // MARK: Pending sends
