@@ -3,7 +3,7 @@
 //
 // Routes:
 //
-//	GET  /api/peard/widget/feed?token=...  (widget-token auth, no PB session)
+//	GET  /api/peard/widget/feed?token=...[&tz=Europe/London]  (widget-token auth, no PB session)
 //	POST /api/peard/widget/token           (requires PB auth; issues a token)
 //
 // The widget token is deliberately NOT the user's PocketBase auth token:
@@ -30,6 +30,7 @@ import (
 	// For UnreadCount — one definition of "unread" shared with the connections
 	// route and the push badge. `pairs` imports nothing internal, so no cycle.
 	"peard/internal/pairs"
+	"peard/internal/zone"
 
 	"github.com/pocketbase/dbx"
 	"github.com/pocketbase/pocketbase/apis"
@@ -335,11 +336,12 @@ func feedHandler(app core.App) func(e *core.RequestEvent) error {
 			return e.JSON(http.StatusOK, map[string]any{"state": "unpaired"})
 		}
 
+		today := startOfToday(time.Now(), callerZone(query.Get("tz")))
 		res := map[string]any{
 			"state":      "ok",
 			"connection": connectionInfo(app, chosenPair, len(others)+1),
-			"counts":     todayCounts(app, chosenPair, userID),
-			"tallies":    todayTallies(app, chosenPair, userID),
+			"counts":     todayCounts(app, chosenPair, userID, today),
+			"tallies":    todayTallies(app, chosenPair, userID, today),
 			// The same count the rail and the badge use, for the connection this
 			// widget is showing. Without it the widget was the one surface that
 			// could not tell you whether the moment on it was one you had already
@@ -537,20 +539,20 @@ func unreadForWidget(app core.App, pairID, userID string) int {
 	return pairs.UnreadCount(app, membership, userID)
 }
 
-func todayCounts(app core.App, pairID, userID string) map[string]int {
+func todayCounts(app core.App, pairID, userID, today string) map[string]int {
 	return map[string]int{
-		"beer": len(todayPosts(app, pairID, userID, "beer")),
-		"loo":  len(todayPosts(app, pairID, userID, "loo")),
+		"beer": len(todayPosts(app, pairID, userID, "beer", today)),
+		"loo":  len(todayPosts(app, pairID, userID, "loo", today)),
 	}
 }
 
 // todayTallies counts every kind anybody else logged in this connection today,
 // most frequent first.
-func todayTallies(app core.App, pairID, userID string) []map[string]any {
+func todayTallies(app core.App, pairID, userID, today string) []map[string]any {
 	posts, err := app.FindRecordsByFilter("posts",
 		"pair = {:pair} && author != {:user} && type = 'event' && happened_at >= {:today}",
 		"", 500, 0,
-		dbx.Params{"pair": pairID, "user": userID, "today": startOfToday()})
+		dbx.Params{"pair": pairID, "user": userID, "today": today})
 	if err != nil {
 		return []map[string]any{}
 	}
@@ -584,7 +586,7 @@ func todayTallies(app core.App, pairID, userID string) []map[string]any {
 	return out
 }
 
-func todayPosts(app core.App, pairID, userID, kind string) []*core.Record {
+func todayPosts(app core.App, pairID, userID, kind, today string) []*core.Record {
 	recs, _ := app.FindRecordsByFilter("posts",
 		"pair = {:pair} && author != {:user} && type = 'event' && event_kind = {:kind} && happened_at >= {:today}",
 		"", 500, 0,
@@ -592,20 +594,36 @@ func todayPosts(app core.App, pairID, userID, kind string) []*core.Record {
 			"pair":  pairID,
 			"user":  userID,
 			"kind":  kind,
-			"today": startOfToday(),
+			"today": today,
 		})
 	return recs
 }
 
-// startOfToday is local midnight, expressed the way PocketBase stores
+// callerZone is the zone the widget named in `tz`, or the server's own for a
+// widget that sent none or sent something that is not a zone.
+//
+// An IANA name rather than the ±minutes offset the recap route takes, because
+// "today" is a question about the date, and a fixed offset gets the answer
+// wrong for the hours after a clock change until the next refresh sends a new
+// one. The widget has TimeZone.current.identifier to hand, so it sends that.
+//
+// Falling back rather than refusing: the extension has no screen to show an
+// error on, and a build that predates `tz` must keep getting what it always
+// got.
+func callerZone(name string) *time.Location {
+	if loc, ok := zone.Load(name); ok {
+		return loc
+	}
+	return time.Local
+}
+
+// startOfToday is midnight in loc, expressed the way PocketBase stores
 // timestamps. Formatting the local date directly (the original behaviour) built
 // a naive string that was then compared against UTC values, so "today" was off
 // by the UTC offset — an hour of moments landed in the wrong day in BST, and a
 // whole evening of them further east.
-func startOfToday() string {
-	now := time.Now()
-	midnight := time.Date(now.Year(), now.Month(), now.Day(), 0, 0, 0, 0, now.Location())
-	return midnight.UTC().Format("2006-01-02 15:04:05.000Z")
+func startOfToday(now time.Time, loc *time.Location) string {
+	return zone.StartOfDay(now, loc).UTC().Format("2006-01-02 15:04:05.000Z")
 }
 
 func displayName(user *core.Record) string {

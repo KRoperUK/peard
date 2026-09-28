@@ -225,6 +225,14 @@ the client treats as "already reacted" rather than an error.
 | `platform` | `"ios"` \| `"android"` | |
 | `push_token` | string | lower-case hex APNs token, unique index |
 | `activity_start_token` | string | lower-case hex ActivityKit push-to-start token for `PhotoDropAttributes` (iOS 17.2+); `""` when the device has none |
+| `time_zone` | string | the device's IANA zone name, e.g. `"Europe/London"` (`TimeZone.current.identifier`), written with every registration. Letters, digits, `_`, `+`, `-` in `/`-separated parts, at most 64 characters; anything else is refused. `""` from builds that predate it |
+
+The weekly recap push goes to each device at 18:00 on Sunday in its
+`time_zone`: the server runs the job hourly and sends to the devices whose own
+clock is in the Sunday 18:00 hour, with the week counted from that device's
+Monday midnight. A device with no zone, or one the server does not recognise,
+is treated as UTC — 18:00 UTC on Sunday, which is when every device got it
+before.
 
 ### `live_activities`
 
@@ -746,7 +754,7 @@ column keeps milliseconds, so a strict `>` labels moments nobody touched.
 
 `POST /api/peard/widget/token` → `{ "id": "<record id>", "token": "<hex>" }`.
 
-`GET /api/peard/widget/feed?token=<token>[&pair=<id>]` (no PocketBase session):
+`GET /api/peard/widget/feed?token=<token>[&pair=<id>][&tz=<IANA zone>]` (no PocketBase session):
 
 ```json
 {
@@ -794,6 +802,13 @@ whichever was chosen, so a group can be captioned as one rather than implying a
 single partner. `partner.name` is whoever wrote `post` — the other member in a
 1:1, the actual author in a group — and follows `display_name` → email local part
 → `"Partner"`.
+
+`tz` is the zone "today" is counted in — `counts` and `tallies` — as an IANA
+name such as `America/New_York`, which the widget sends as
+`TimeZone.current.identifier`. A name rather than the `±minutes` offset the
+[recap route](#recap-and-streaks) takes, so the day is right on the day the
+clocks change. Absent, or not a zone the server recognises, and "today" is the
+server's own day, which is what every widget got before it sent one.
 
 `tallies` covers every moment kind anybody else logged in that connection today,
 most frequent first, with `emoji` and `label` resolved server-side against the

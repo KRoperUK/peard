@@ -141,7 +141,7 @@ final class PushCoordinator {
                 of: Device.self,
                 filter: PeardFilter.equals("push_token", token)
             )
-            let fields = ["user": userID, "platform": "ios", "push_token": token]
+            let fields = Device.registrationFields(user: userID, pushToken: token)
             if let existing {
                 let _: Device = try await api.update("devices", id: existing.id, fields: fields)
             } else {
