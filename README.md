@@ -147,6 +147,8 @@ bundle exec fastlane build           # Debug simulator build
 bundle exec fastlane release_build   # Release build
 bundle exec fastlane beta            # archive + TestFlight
 bundle exec fastlane promote_external  # send a TestFlight build to external testers
+bundle exec fastlane lint              # SwiftLint with .swiftlint.yml
+bundle exec fastlane ci_release        # what main runs: lint, unit tests, archive, upload
 ```
 
 Every lane that touches Xcode regenerates the project first. `archive` and `beta`
@@ -169,39 +171,38 @@ and the failure reads as "app not found" rather than as a permissions problem.
 ### 6. Continuous integration
 
 `.github/workflows/ci.yml` is the safety net rather than the first line of
-defence — that is section 4. It runs on every push to `main` and every pull
-request, in four parallel check jobs so feedback on a server-only change is not
-stuck behind Xcode:
+defence — that is section 4. It has two shapes.
 
-- **Server** (Ubuntu) — `go build`, `go vet`, `go test`, and a `gofmt` gate.
-- **Docker** (Ubuntu) — validate both compose files, build the image, then start
-  it and wait for `/api/health`. A green `go build` does not prove the container
-  serves, and migrations apply on start, so this is where a broken image surfaces
-  rather than mid-deploy.
-- **PeardCore** (macOS) — `swift test`, no simulator needed.
-- **App** (macOS) — generate the project and run the app-target tests, which is
-  the one Debug build a pull request needs. On failure the `.xcresult` bundle is
-  uploaded as an artifact.
+**Pull requests** get the fast checks only, three jobs in parallel. None of them
+builds the app or boots a simulator, and every merge is gated on them:
 
-Two more jobs run on pushes to `main` only, after all four pass:
+- **SwiftLint** (Ubuntu, SwiftLint's own container) — `.swiftlint.yml`; errors
+  fail, warnings are reported inline.
+- **PeardCore unit tests** (macOS) — `swift test`, no simulator needed.
+- **Server unit tests** (Ubuntu) — `go build`, `go vet`, `go test`, and a
+  `gofmt` gate.
 
-- **Deploy server** asks Komodo to roll the server — see [Deployment](#deployment).
-- **TestFlight (internal)** archives a Release build and uploads it
-  (`fastlane beta`). Internal testers get it automatically when the internal
-  group has automatic distribution on in App Store Connect. The Release build
-  that pull requests no longer make happens here, so a Release-only break still
-  turns `main` red before it reaches a phone.
+**Pushes to `main`** get the release:
 
-External testers are a deliberate step in the same run: after the internal
-upload, **TestFlight (external)** waits for approval (the `testflight-external`
-environment's required reviewer). Approving it adds *that* build to the external
-group (`fastlane promote_external`), waiting for App Store Connect to finish
-processing it first. Nothing is rebuilt, so what goes out is exactly what
-internal testers ran. The first build of each version goes through Beta App
-Review. The next push to `main` cancels an unapproved run, and offers its newer
-build for approval instead.
+- **iOS release** runs one fastlane lane, `ci_release`: SwiftLint, the PeardCore
+  and app-target unit tests, then a Release archive uploaded to TestFlight for
+  internal testers. Nothing uploads unless everything before it passed. Internal
+  testers get the build automatically — the internal group has automatic
+  distribution on. The build number is the upload time in Unix seconds.
+- **TestFlight (external)** waits for approval (the `testflight-external`
+  environment's required reviewer). Approving it waits for App Store Connect to
+  finish processing *that* build, then adds it to the external group
+  (`fastlane promote_external`). Nothing is rebuilt, so what goes out is exactly
+  what internal testers ran. The first build of each version goes through Beta
+  App Review. The next push to `main` cancels an unapproved run and offers its
+  newer build instead.
+- **Server unit tests**, **Docker** (validate the compose files, build the
+  image, start it and wait for `/api/health`) and **Deploy server** (asks Komodo
+  to roll the server — see [Deployment](#deployment)). The deploy waits on the
+  server's checks, not on the iOS release: a server fix should not wait on
+  Apple's upload queue.
 
-To switch these on (until then the internal job skips itself with a warning):
+What it needs, all already set:
 
 | Where | Name | What |
 |---|---|---|
@@ -211,14 +212,16 @@ To switch these on (until then the internal job skips itself with a warning):
 | Variable | `PEARD_TESTFLIGHT_EXTERNAL_GROUP` | The external testers' group name |
 | Environment | `testflight-internal`, `testflight-external` | `testflight-external` has a required reviewer: that is the approval |
 
-The key needs the **Admin** role: the runner has no Apple ID signed in, so the
-archive signs with cloud-managed certificates through the key
-(`-authenticationKeyPath` and friends, passed by the `archive` lane).
+The runner has no Apple ID signed in, so the archive signs with cloud-managed
+certificates through the API key (`-authenticationKeyPath` and friends, passed by
+the `archive` lane). `bundle exec fastlane ci_release` runs the same pipeline
+locally.
 
-Neither macOS job pins an `Xcode_NN.app` path or names a simulator: both come and
-go with the runner image, and hard-coding either turns an image update into a red
-build for a reason that has nothing to do with the code. The simulator is chosen
-from what `simctl` reports as available.
+No macOS job pins an `Xcode_NN.app` path or names a simulator: both come and go
+with the runner image, and hard-coding either turns an image update into a red
+build for a reason that has nothing to do with the code. `scripts/select-newest-xcode`
+picks the newest release Xcode, and `scripts/pick-simulator` a simulator that
+exists.
 
 ### Configuration
 
