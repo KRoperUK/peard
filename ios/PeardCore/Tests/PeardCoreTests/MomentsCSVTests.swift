@@ -116,6 +116,63 @@ final class MomentsCSVTests: XCTestCase {
         XCTAssertEqual(MomentsCSV.field(""), "")
     }
 
+    // MARK: Formula injection
+
+    /// Every character a spreadsheet treats as the start of a formula gets a
+    /// leading quote, so the note is shown rather than evaluated.
+    func testANoteStartingWithAFormulaTriggerIsDefused() {
+        let notes = [
+            "=HYPERLINK(\"https://example.com\",\"click\")",
+            "+1+2",
+            "-5 degrees",
+            "@SUM(A1:A2)",
+            "\t=1+1",
+            "\r=1+1",
+        ]
+        for note in notes {
+            let text = csv([post(author: "me", note: note)])
+            XCTAssertTrue(text.contains(MomentsCSV.field("'" + note)), "not defused: \(note.debugDescription)")
+            XCTAssertFalse(text.contains("," + MomentsCSV.field(note) + ","), "left live: \(note.debugDescription)")
+        }
+    }
+
+    func testEachTriggerCharacterIsPrefixed() {
+        XCTAssertEqual(MomentsCSV.text("=1"), "'=1")
+        XCTAssertEqual(MomentsCSV.text("+1"), "'+1")
+        XCTAssertEqual(MomentsCSV.text("-1"), "'-1")
+        XCTAssertEqual(MomentsCSV.text("@x"), "'@x")
+        XCTAssertEqual(MomentsCSV.text("\u{09}x"), "'\u{09}x")
+        XCTAssertEqual(MomentsCSV.text("\u{0D}x"), "'\u{0D}x")
+    }
+
+    /// Only the first character counts: a formula sign later in a note is not
+    /// something a spreadsheet evaluates.
+    func testAnOrdinaryNoteIsLeftAlone() {
+        XCTAssertEqual(MomentsCSV.text("Flat white, 2 = too many"), "Flat white, 2 = too many")
+        XCTAssertEqual(MomentsCSV.text(""), "")
+        let rows = lines(csv([post(author: "me", note: "Great chat")]))
+        XCTAssertEqual(rows[1], "2026-03-12T19:04:05Z,You,☕ Coffee,Great chat,no,no")
+    }
+
+    /// Custom moment labels and member names come from other people too.
+    func testAMomentLabelAndANameAreDefusedToo() {
+        let evil = MomentKind(id: "k1", pair: "pair1", slug: "evil", emoji: "=1+1", label: "x")
+        let text = MomentsCSV.make(
+            posts: [post(author: "sam", kind: "evil")],
+            customKinds: [evil],
+            authorLabel: { _ in "@Sam" },
+            timeZone: utc
+        )
+        XCTAssertEqual(lines(text)[1], "2026-03-12T19:04:05Z,'@Sam,'=1+1 x,,no,no")
+    }
+
+    /// Ours, and never starting with a trigger: the date and the yes/no cells
+    /// go out exactly as generated.
+    func testTheGeneratedColumnsAreUntouched() {
+        let rows = lines(csv([post(author: "me", note: "-5 degrees")]))
+        XCTAssertEqual(rows[1], "2026-03-12T19:04:05Z,You,☕ Coffee,'-5 degrees,no,no")
+    }
+
     // MARK: File name
 
     func testTheFileNameCarriesTheConnectionsTitle() {

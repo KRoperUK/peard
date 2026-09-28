@@ -36,9 +36,11 @@ public enum MomentsCSV {
                 // Local time with its offset, so a spreadsheet can chart by the
                 // hour it happened where it happened, and nothing is ambiguous.
                 post.hasTimestamp ? formatter.string(from: post.happenedAt) : "",
-                authorLabel(post.author),
-                moment(for: post, customKinds: customKinds),
-                post.displayNote ?? "",
+                // Names, labels and notes are typed by other members, so they
+                // are defused; the date and the yes/no cells are ours.
+                text(authorLabel(post.author)),
+                text(moment(for: post, customKinds: customKinds)),
+                text(post.displayNote ?? ""),
                 post.hasMedia ? "yes" : "no",
                 post.rewound ? "yes" : "no",
             ]
@@ -56,6 +58,24 @@ public enum MomentsCSV {
         case .unknown(let value): label = value
         }
         return label.isEmpty ? emoji : "\(emoji) \(label)"
+    }
+
+    /// Characters a spreadsheet reads as the start of a formula (or, for tab
+    /// and carriage return, as padding before one).
+    static let formulaTriggers: Set<Unicode.Scalar> = ["=", "+", "-", "@", "\t", "\r"]
+
+    /// Neutralises a cell somebody else typed before it reaches a spreadsheet.
+    ///
+    /// A note of `=HYPERLINK("https://…","click")` — or worse — would otherwise
+    /// run as a formula the moment the file is opened in Excel, on the machine
+    /// of whoever exported it rather than whoever wrote it. The OWASP advice is
+    /// a leading single quote, which every spreadsheet reads as "this is text".
+    /// The cost is that an innocent "-5 degrees" or "+1" exports as "'-5
+    /// degrees": a visible quote in a few notes is a fair price for not being
+    /// able to smuggle a formula into somebody's spreadsheet.
+    static func text(_ value: String) -> String {
+        guard let first = value.unicodeScalars.first, formulaTriggers.contains(first) else { return value }
+        return "'" + value
     }
 
     static func row(_ fields: [String]) -> String {
