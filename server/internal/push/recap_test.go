@@ -1,12 +1,17 @@
 package push
 
 import (
+	"net/http"
+	"net/http/httptest"
 	"os"
+	"strings"
+	"sync"
 	"testing"
 	"time"
 
 	"github.com/pocketbase/pocketbase/core"
 	"github.com/pocketbase/pocketbase/tests"
+	"github.com/sideshow/apns2"
 
 	_ "peard/migrations"
 )
@@ -123,5 +128,42 @@ func TestStartOfWeekPinsToMonday(t *testing.T) {
 				t.Fatalf("startOfWeek(%v) = %v, want %v", c.now, got, c.want)
 			}
 		})
+	}
+}
+
+// A connection somebody has muted must stay silent for them on Sunday too: the
+// recap is a notification from that connection like any other.
+func TestTheRecapSkipsAMemberWhoMutedTheConnection(t *testing.T) {
+	app := newMediaApp(t)
+	var mu sync.Mutex
+	var sentTo []string
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		mu.Lock()
+		sentTo = append(sentTo, strings.TrimPrefix(r.URL.Path, "/3/device/"))
+		mu.Unlock()
+	}))
+	t.Cleanup(srv.Close)
+	previous := n
+	n = &notifier{client: &apns2.Client{Host: srv.URL, HTTPClient: srv.Client()}, bundleID: "com.peard.test"}
+	t.Cleanup(func() { n = previous })
+
+	ada := newUser(t, app, "ada@example.com")
+	bo := newUser(t, app, "bo@example.com")
+	pair := newRecord(t, app, "pairs", map[string]any{"name": "Flatmates"})
+	newRecord(t, app, "pair_members", map[string]any{"pair": pair.Id, "user": ada.Id, "role": "member"})
+	newRecord(t, app, "pair_members", map[string]any{"pair": pair.Id, "user": bo.Id, "role": "member", "muted": true})
+	newRecord(t, app, "devices", map[string]any{"user": ada.Id, "platform": "ios", "push_token": "ada-device"})
+	newRecord(t, app, "devices", map[string]any{"user": bo.Id, "platform": "ios", "push_token": "bo-device"})
+	weekStart := startOfWeek(time.Now())
+	newRecord(t, app, "posts", map[string]any{
+		"pair": pair.Id, "author": ada.Id, "type": "event", "event_kind": "beer", "happened_at": time.Now(),
+	})
+
+	sendRecapFor(app, pair, weekStart)
+
+	mu.Lock()
+	defer mu.Unlock()
+	if len(sentTo) != 1 || sentTo[0] != "ada-device" {
+		t.Fatalf("recap sent to %v, want only ada-device", sentTo)
 	}
 }
