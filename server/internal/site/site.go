@@ -1,7 +1,7 @@
 // Package site serves the public marketing pages at the root of the domain:
 // a hero and feature outline for anyone who lands on peard.kroper.uk with
 // the app not installed yet, pointing them at the TestFlight build, plus the
-// privacy policy those app-store listings link to.
+// privacy policy and support page those app-store listings link to.
 package site
 
 import (
@@ -38,6 +38,7 @@ func Register(app core.App) {
 		pages.GET("/{$}", homeHandler)
 		pages.GET("/", notFoundHandler)
 		pages.GET("/privacy", privacyHandler)
+		pages.GET("/support", supportHandler)
 		pages.GET("/c/{code}", inviteHandler)
 		pages.GET("/.well-known/apple-app-site-association", associationHandler)
 		return se.Next()
@@ -179,6 +180,18 @@ func privacyHandler(e *core.RequestEvent) error {
 	))
 }
 
+// supportHandler serves the page App Store Connect's Support URL points at.
+//
+// There is no /terms page to go with it: nothing in the app or its listing
+// needs one yet, and Apple's standard licence agreement applies until it does.
+func supportHandler(e *core.RequestEvent) error {
+	return e.HTML(http.StatusOK, page(
+		"Support — Pear'd",
+		"Get help with Pear'd: contact, common questions, deleting your account and beta feedback.",
+		supportBody,
+	))
+}
+
 // repoURL is where the footer sends anybody curious how it works. The repo is
 // public, and the privacy policy's promises are easier to believe when the code
 // that keeps them is a click away.
@@ -209,6 +222,7 @@ func page(title, description, body string) string {
     <nav class="footer-links" aria-label="Footer">
       <a href="/">Pear'd</a>
       <a href="/privacy">Privacy Policy</a>
+      <a href="/support">Support</a>
       <a href="` + repoURL + `" rel="noopener">
         <svg viewBox="0 0 16 16" width="16" height="16" aria-hidden="true" focusable="false"><path fill="currentColor" d="M8 0C3.58 0 0 3.58 0 8c0 3.54 2.29 6.53 5.47 7.59.4.07.55-.17.55-.38 0-.19-.01-.82-.01-1.49-2.01.37-2.53-.49-2.69-.94-.09-.23-.48-.94-.82-1.13-.28-.15-.68-.52-.01-.53.63-.01 1.08.58 1.23.82.72 1.21 1.87.87 2.33.66.07-.52.28-.87.51-1.07-1.78-.2-3.64-.89-3.64-3.95 0-.87.31-1.59.82-2.15-.08-.2-.36-1.02.08-2.12 0 0 .67-.21 2.2.82.64-.18 1.32-.27 2-.27.68 0 1.36.09 2 .27 1.53-1.04 2.2-.82 2.2-.82.44 1.1.16 1.92.08 2.12.51.56.82 1.27.82 2.15 0 3.07-1.87 3.75-3.65 3.95.29.25.54.73.54 1.48 0 1.07-.01 1.93-.01 2.2 0 .21.15.46.55.38A8.013 8.013 0 0016 8c0-4.42-3.58-8-8-8z"/></svg>
         Source on GitHub
@@ -546,5 +560,43 @@ const privacyBody = `
 
     <h2>Contact</h2>
     <p><a href="mailto:` + contactEmail + `">` + contactEmail + `</a></p>
+  </div>
+`
+
+// supportBody describes the app as it is, so each answer names the control it
+// means by the words on screen. Change the app's wording and this goes stale.
+const supportBody = `
+  <div class="doc">
+    <header>
+      <h1>Support</h1>
+      <div class="updated">Help with Pear'd</div>
+    </header>
+
+    <h2>Contact</h2>
+    <p>Email <a href="mailto:` + contactEmail + `">` + contactEmail + `</a>. Pear'd is run by one person, so replies can take a few days.</p>
+    <p>If something's broken, include your diagnostics: in the app, open <strong>Settings</strong>, go down to <strong>About</strong> and tap <strong>Copy diagnostics</strong>, then paste them into your email. They say which build of the app and the server you're on, and nothing about you.</p>
+
+    <h2>Common questions</h2>
+
+    <h3>My invite link or code doesn't work</h3>
+    <p>Invite codes expire 24 hours after they're made, and each one can only be used once. Ask whoever invited you to make a new one. Codes are letters and numbers only, and upper or lower case both work.</p>
+
+    <h3>How do I stop notifications from one connection?</h3>
+    <p>On <strong>Home</strong>, pick the connection from the row of faces at the top. Then open <strong>Settings</strong> and turn on <strong>Mute this connection</strong>. Moments still arrive and still show in the widget; they just stop making a noise. Muting only affects you.</p>
+
+    <h3>How do I add the widget?</h3>
+    <p>Touch and hold an empty part of your Home Screen, add a widget and choose Pear'd. It comes in small and medium sizes, and for the Lock Screen. On the Home Screen it shows the latest moment and today's tallies, and its buttons log a moment without opening the app. To choose which connection it follows, touch and hold it and tap <strong>Edit Widget</strong>. Left on <strong>Automatic</strong>, it follows whichever connection is liveliest.</p>
+    <p>On iOS 18 and later there are also Control Centre controls to log a beer, coffee or loo.</p>
+
+    <h3>Can I use Siri?</h3>
+    <p>Yes. Say "Log a beer in Pear'd" (or coffee, or loo) to log one straight away, or "Log a moment in Pear'd" to choose any moment, including ones your connection made up. Both are also actions in the Shortcuts app. Without a connection chosen, they go to your liveliest one.</p>
+
+    <h2>Deleting your account</h2>
+    <p>In the app, open <strong>Settings</strong>, tap <strong>Delete account</strong>, then <strong>Delete my account</strong>. It happens straight away and can't be undone: your profile, photo, moments, reactions and push registration are erased, as the <a href="/privacy">privacy policy</a> describes. To keep a copy, tap <strong>Export your data</strong> on the same screen first.</p>
+    <p>The Settings tab is only there once you're in a connection. If you aren't in one, or you'd rather we did it, email <a href="mailto:` + contactEmail + `">` + contactEmail + `</a> from the address you signed up with.</p>
+
+    <h2>Beta feedback</h2>
+    <p>Pear'd is in beta on TestFlight. To send feedback, take a screenshot in Pear'd and tap <strong>Share Beta Feedback</strong>, or open the TestFlight app, choose Pear'd and tap <strong>Send Beta Feedback</strong>. If the app crashes, TestFlight will offer to send a report.</p>
+    <p>Feedback is used to track bugs, and what you write may be copied into an issue in Pear'd's <a href="` + repoURL + `">public source repository</a>. For anything private, email instead.</p>
   </div>
 `
