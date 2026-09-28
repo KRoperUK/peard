@@ -23,17 +23,32 @@ public struct TimelineFilter: Hashable, Sendable {
     /// post", and it combines with a kind: "the coffees I photographed" is a
     /// question somebody can now ask.
     public var photosOnly: Bool
+    /// Text to find in a note or caption, or in a moment's name (issue #9).
+    /// Trimmed; empty means no search.
+    public var search: String
+    /// The kinds whose *label* contains `search` — "flat white" finds the
+    /// `flat_white` moment even though no note says so. Worked out by the
+    /// caller from its catalogue, because the server knows slugs, not labels.
+    public var searchKinds: [String]
 
     public static let none = TimelineFilter()
 
-    public init(author: String? = nil, kind: EventKind? = nil, photosOnly: Bool = false) {
+    public init(
+        author: String? = nil,
+        kind: EventKind? = nil,
+        photosOnly: Bool = false,
+        search: String = "",
+        searchKinds: [String] = []
+    ) {
         self.author = author
         self.kind = kind
         self.photosOnly = photosOnly
+        self.search = search
+        self.searchKinds = searchKinds
     }
 
     public var isActive: Bool {
-        author != nil || kind != nil || photosOnly
+        author != nil || kind != nil || photosOnly || !search.isEmpty
     }
 
     /// PocketBase filter clauses, to be joined with the caller's own.
@@ -54,21 +69,52 @@ public struct TimelineFilter: Hashable, Sendable {
         if let kind, !kind.rawValue.isEmpty {
             clauses.append(PeardFilter.equals("event_kind", kind.rawValue))
         }
+        if !search.isEmpty {
+            // One group, ANDed with the rest: it composes with who and which
+            // kind rather than replacing them. `~` is PocketBase's
+            // case-insensitive "contains", run on the server, so it reaches
+            // every page and not only what is loaded.
+            let text = PeardFilter.escaped(search)
+            clauses.append(PeardFilter.or(
+                ["note ~ \"\(text)\"", "event_kind ~ \"\(text)\""]
+                    + searchKinds.map { PeardFilter.equals("event_kind", $0) }
+            ))
+        }
         return clauses
+    }
+
+    /// Searching for `text`, keeping everything else. `catalogue` is what the
+    /// connection calls its moments, so a search can match a name as well as a
+    /// note.
+    public func searching(_ text: String, catalogue: [Moment]) -> TimelineFilter {
+        let trimmed = text.trimmingCharacters(in: .whitespacesAndNewlines)
+        let kinds = trimmed.isEmpty ? [] : catalogue
+            .filter { $0.label.range(of: trimmed, options: [.caseInsensitive, .diacriticInsensitive]) != nil }
+            .map(\.kind.rawValue)
+        var copy = self
+        copy.search = trimmed
+        copy.searchKinds = kinds
+        return copy
     }
 
     /// Each dimension is set on its own now. They used to clear each other,
     /// because together they matched nothing; a moment that carries a photo
     /// makes the combination meaningful instead.
     public func choosing(kind: EventKind?) -> TimelineFilter {
-        TimelineFilter(author: author, kind: kind, photosOnly: photosOnly)
+        var copy = self
+        copy.kind = kind
+        return copy
     }
 
     public func choosingPhotos(_ photos: Bool) -> TimelineFilter {
-        TimelineFilter(author: author, kind: kind, photosOnly: photos)
+        var copy = self
+        copy.photosOnly = photos
+        return copy
     }
 
     public func choosing(author: String?) -> TimelineFilter {
-        TimelineFilter(author: author, kind: kind, photosOnly: photosOnly)
+        var copy = self
+        copy.author = author
+        return copy
     }
 }
