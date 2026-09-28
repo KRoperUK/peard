@@ -187,7 +187,7 @@ func TestInvitePageNeverReflectsItsInput(t *testing.T) {
 func TestTheMarketingPagesStillServe(t *testing.T) {
 	mux := newSiteMux(t)
 
-	for _, path := range []string{"/", "/privacy"} {
+	for _, path := range []string{"/", "/privacy", "/support"} {
 		if code := get(t, mux, path).Code; code != http.StatusOK {
 			t.Fatalf("%s: got %d, want 200", path, code)
 		}
@@ -232,7 +232,7 @@ func TestUnknownPathsAreANotFoundPage(t *testing.T) {
 func TestKnownPathsAreNotCaughtByTheNotFoundPage(t *testing.T) {
 	mux := newSiteMux(t)
 
-	for _, path := range []string{"/", "/privacy", "/c/AB12CD", "/.well-known/apple-app-site-association"} {
+	for _, path := range []string{"/", "/privacy", "/support", "/c/AB12CD", "/.well-known/apple-app-site-association"} {
 		rec := get(t, mux, path)
 		if rec.Code != http.StatusOK {
 			t.Fatalf("%s: got %d, want 200", path, rec.Code)
@@ -435,6 +435,46 @@ func TestPocketBaseRoutesDoNotGetThePageHeaders(t *testing.T) {
 			if got := h.Get(name); got != "" {
 				t.Errorf("%s: %s is %q, want none", path, name, got)
 			}
+		}
+	}
+}
+
+// The support page is the App Store listing's Support URL, so it has to serve,
+// say how to reach somebody, and cover the account deletion Apple asks about.
+func TestSupportPageServes(t *testing.T) {
+	mux := newSiteMux(t)
+
+	rec := get(t, mux, "/support")
+	if rec.Code != http.StatusOK {
+		t.Fatalf("got %d, want 200", rec.Code)
+	}
+	body := rec.Body.String()
+	for _, want := range []string{
+		`href="mailto:kieran@kroper.uk"`,
+		"24 hours",
+		"Mute this connection",
+		"Edit Widget",
+		"Log a beer in Pear'd",
+		"Delete account",
+		"Send Beta Feedback",
+		"<main>",
+	} {
+		if !strings.Contains(body, want) {
+			t.Errorf("support page is missing %q", want)
+		}
+	}
+	if got := rec.Header().Get("Cache-Control"); got != "public, max-age=300" {
+		t.Errorf("Cache-Control %q, want the static pages' short public cache", got)
+	}
+}
+
+// Every page links the support page from the shared footer.
+func TestEveryPageLinksSupport(t *testing.T) {
+	mux := newSiteMux(t)
+
+	for _, path := range []string{"/", "/privacy", "/support", "/c/ABC123", "/nope"} {
+		if !strings.Contains(get(t, mux, path).Body.String(), `href="/support"`) {
+			t.Errorf("%s: no link to /support in the footer", path)
 		}
 	}
 }
