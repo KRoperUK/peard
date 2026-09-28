@@ -12,15 +12,15 @@ on:
   workflow_dispatch:
 
 concurrency:
-  # A new push supersedes an in-flight run for the same ref. macOS runners are the
-  # expensive part, so not queueing three of them for one branch matters.
-  # Pull requests share a group per branch, and a new push cancels the old run.
-  # Every other run gets a group of its own: a run on main can sit waiting for
-  # the external TestFlight approval for days, and a shared group would hold
-  # every later push — deploys included — behind it. The jobs that must not
-  # overlap (deploy, the TestFlight upload) have job-level groups instead.
-  group: ${{ github.workflow }}-${{ github.event_name == 'pull_request' && github.ref || github.run_id }}
-  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+  # One run per branch or pull request, and a newer push cancels the older run —
+  # on main as well as on pull requests. That includes a main run waiting for
+  # the external TestFlight approval, or midway through an upload or deploy: the
+  # newer commit's run does all of it again, for the newer code. The deploy and
+  # TestFlight jobs also have job-level groups so two runs never do either at
+  # once. CI still running for a pull request when it merges is cancelled by
+  # cancel-merged-pr-ci.yml, since the merge's push runs on main instead.
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
 
 jobs:
   server:
@@ -295,10 +295,10 @@ jobs:
     # Only once the internal job actually uploaded something.
     if: needs.testflight.outputs.build_number != ''
     # The approval. The testflight-external environment requires a reviewer, so
-    # the run pauses here until somebody approves it in the Actions tab — and a
-    # run nobody approves simply sits there, blocking nothing (see concurrency
-    # at the top). Nothing is rebuilt: the build internal testers have is the
-    # one that goes out.
+    # the run pauses here until somebody approves it in the Actions tab. The
+    # next push to main cancels an unapproved one, and its own run offers the
+    # newer build instead. Nothing is rebuilt: the build internal testers have
+    # is the one that goes out.
     environment:
       name: testflight-external
     env:
