@@ -48,13 +48,20 @@ func main() {
 		Automigrate: isGoRun,
 	})
 
-	// Allow overriding the public app URL (used to build media URLs for the widget).
+	// Allow overriding the public app URL (used to build media, widget, push
+	// and export URLs, and the site's link previews). After e.Next(), because
+	// bootstrapping loads the stored settings over whatever was set before it:
+	// set first, the variable only ever took effect on a brand-new data
+	// directory, and every later boot quietly went back to the stored value.
 	app.OnBootstrap().BindFunc(func(e *core.BootstrapEvent) error {
+		if err := e.Next(); err != nil {
+			return err
+		}
 		if u := os.Getenv("PEARD_APP_URL"); u != "" {
 			e.App.Settings().Meta.AppURL = strings.TrimRight(u, "/")
 		}
 		e.App.Settings().Meta.AppName = "Pear'd"
-		return e.Next()
+		return nil
 	})
 
 	limits.Register(app)
