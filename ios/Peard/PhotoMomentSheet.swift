@@ -30,6 +30,9 @@ struct PhotoMomentSheet: View {
     @State private var chosen: Moment?
     @State private var caption = ""
     @State private var edit = PhotoEdit.identity
+    /// The zoom and pan somebody had in Fill, kept while they look at Fit so
+    /// coming back to Fill puts the picture where they left it (issue #13).
+    @State private var fillFraming: (zoom: CGFloat, offset: CGSize)?
     /// Set while the square is being drawn, off the main thread: it can take a
     /// moment for a full-size photo, and the sheet should say so rather than
     /// freeze (issue #1).
@@ -133,13 +136,41 @@ struct PhotoMomentSheet: View {
             .buttonStyle(.plain)
             .accessibilityLabel("Rotate")
             .accessibilityHint("Turns the photo a quarter turn clockwise")
+
+            // Only once there is something to undo: an always-there reset is a
+            // button that does nothing most of the time.
+            if !edit.isIdentity {
+                Button {
+                    fillFraming = nil
+                    edit = .identity
+                } label: {
+                    Image(systemName: "arrow.counterclockwise")
+                        .font(.body.weight(.medium))
+                        .foregroundStyle(PearColor.textPrimary)
+                        .frame(width: 44, height: 32)
+                        .background(PearColor.surface, in: RoundedRectangle(cornerRadius: 8))
+                }
+                .buttonStyle(.plain)
+                .accessibilityLabel("Reset")
+                .accessibilityHint("Puts the photo back the way it was taken")
+                .transition(.opacity)
+            }
         }
+        .animation(.easeOut(duration: 0.15), value: edit.isIdentity)
         // The whole point of Fit is not losing an edge, so a zoom left over
         // from Fill would quietly undo it.
-        .onChange(of: edit.fit) { _, newValue in
+        .onChange(of: edit.fit) { oldValue, newValue in
             if newValue == .fit {
+                if oldValue == .fill, edit.zoom != 1 || edit.offset != .zero {
+                    fillFraming = (edit.zoom, edit.offset)
+                }
                 edit.zoom = 1
                 edit.offset = .zero
+            } else if let framing = fillFraming {
+                // Back to Fill: where they had it, not the default crop.
+                edit.zoom = framing.zoom
+                edit.offset = framing.offset
+                fillFraming = nil
             }
         }
     }

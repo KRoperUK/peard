@@ -162,6 +162,9 @@ struct SquarePhotoEditor: View {
             .frame(width: side, height: side)
             .clipShape(RoundedRectangle(cornerRadius: 16))
             .contentShape(RoundedRectangle(cornerRadius: 16))
+            // Double-tap flips between filled and the whole photo, the gesture
+            // every photo viewer has taught people (issue #13).
+            .onTapGesture(count: 2) { edit.toggleFit() }
             .gesture(gestures(side: side))
             .frame(maxWidth: .infinity, maxHeight: .infinity)
         }
@@ -171,6 +174,9 @@ struct SquarePhotoEditor: View {
         .accessibilityElement()
         .accessibilityLabel("The photo you just took")
         .accessibilityValue(edit.fit == .fill ? "Filling the square" : "Whole photo, padded")
+        .accessibilityAction(named: edit.fit == .fill ? "Show the whole photo" : "Fill the square") {
+            edit.toggleFit()
+        }
     }
 
     /// Only ever seen around a letterboxed photo, and matched to the render so
