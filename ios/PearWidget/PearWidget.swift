@@ -94,6 +94,14 @@ struct PearEntry: TimelineEntry {
         pendingLog: nil,
         unreadCount: 0
     )
+
+    func withoutPendingLog(at date: Date) -> PearEntry {
+        PearEntry(
+            date: date, state: state, partnerName: partnerName, groupName: groupName, note: note,
+            emoji: emoji, momentLabel: momentLabel, created: created, tallies: tallies, image: image,
+            pairID: pairID, moments: moments, pendingLog: nil, unreadCount: unreadCount
+        )
+    }
 }
 
 struct PearTimelineProvider: AppIntentTimelineProvider {
@@ -109,6 +117,14 @@ struct PearTimelineProvider: AppIntentTimelineProvider {
 
     func timeline(for configuration: SelectConnectionIntent, in context: Context) async -> Timeline<PearEntry> {
         let entry = await loadEntry(pairID: configuration.connection?.id)
+        // A tap's acknowledgement is shown now and taken down by a second entry
+        // WidgetKit renders on its own schedule, without waking this provider.
+        if let log = entry.pendingLog {
+            return Timeline(
+                entries: [entry, entry.withoutPendingLog(at: log.visibleUntil)],
+                policy: .after(Date().addingTimeInterval(Self.refreshInterval))
+            )
+        }
         return Timeline(entries: [entry], policy: .after(Date().addingTimeInterval(Self.refreshInterval)))
     }
 
@@ -140,7 +156,7 @@ struct PearTimelineProvider: AppIntentTimelineProvider {
                 image: await image(for: feed),
                 pairID: resolvedPairID,
                 moments: feed.buttonMoments,
-                pendingLog: (pending?.isFresh == true && pending?.pairID == resolvedPairID) ? pending : nil,
+                pendingLog: (pending?.isVisible() == true && pending?.pairID == resolvedPairID) ? pending : nil,
                 unreadCount: feed.unreadCount
             )
         } catch {
@@ -243,6 +259,9 @@ struct PearWidgetEntryView: View {
                     pendingBadge(for: pendingLog)
                 } else {
                     content
+                        // Dimmed by the system the instant a button is tapped,
+                        // before any reload: the first sign the tap registered.
+                        .invalidatableContent()
                 }
             }
             momentButtons
@@ -257,14 +276,41 @@ struct PearWidgetEntryView: View {
     /// silently failed until that happens.
     private func pendingBadge(for pendingLog: PendingWidgetLog) -> some View {
         VStack(spacing: 4) {
-            Text(pendingLog.emoji).font(.title)
-            Text("Logged \(pendingLog.label)")
+            ZStack(alignment: .bottomTrailing) {
+                Text(pendingLog.emoji).font(.title)
+                if let symbol = Self.badgeSymbol(pendingLog.outcome) {
+                    Image(systemName: symbol)
+                        .font(.caption.bold())
+                        .foregroundStyle(pendingLog.outcome == .failed ? PearColor.error : PearColor.accent)
+                        .background(Circle().fill(PearColor.background))
+                        .offset(x: 6, y: 4)
+                }
+            }
+            Text(Self.badgeText(pendingLog))
                 .font(.caption2.bold())
                 .foregroundStyle(PearColor.textSecondary)
+                .multilineTextAlignment(.center)
+                .lineLimit(2)
         }
         .frame(maxWidth: .infinity)
         .accessibilityElement(children: .combine)
-        .accessibilityLabel("Logged \(pendingLog.label)")
+        .accessibilityLabel(Self.badgeText(pendingLog))
+    }
+
+    static func badgeText(_ log: PendingWidgetLog) -> String {
+        switch log.outcome {
+        case nil: return "Logging \(log.label)…"
+        case .logged: return "\(log.label) logged"
+        case .failed: return "Couldn't log \(log.label)"
+        }
+    }
+
+    static func badgeSymbol(_ outcome: PendingWidgetLog.Outcome?) -> String? {
+        switch outcome {
+        case nil: return nil
+        case .logged: return "checkmark.circle.fill"
+        case .failed: return "exclamationmark.circle.fill"
+        }
     }
 
     @ViewBuilder
