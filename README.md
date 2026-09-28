@@ -151,7 +151,7 @@ bundle exec fastlane release_build   # Release build
 bundle exec fastlane beta            # archive + TestFlight
 bundle exec fastlane promote_external  # send a TestFlight build to external testers
 bundle exec fastlane lint              # SwiftLint with .swiftlint.yml
-bundle exec fastlane ci_release        # what main runs: lint, unit tests, archive, upload
+bundle exec fastlane ci_release        # lint, unit tests, archive, upload (CI: skip_checks:true)
 ```
 
 Every lane that touches Xcode regenerates the project first. `archive` and `beta`
@@ -174,37 +174,45 @@ and the failure reads as "app not found" rather than as a permissions problem.
 ### 6. Continuous integration
 
 `.github/workflows/ci.yml` is the safety net rather than the first line of
-defence — that is section 4. It has two shapes.
+defence — that is section 4.
 
-**Pull requests** get the fast checks only, three jobs in parallel. None of them
-builds the app or boots a simulator, and every merge is gated on them:
+**Every push**, to a pull request or to `main`, gets the fast checks, in
+parallel. None of them builds the app or boots a simulator, and every merge is
+gated on them:
 
 - **SwiftLint** (Ubuntu, SwiftLint's own container) — `.swiftlint.yml`; errors
   fail, warnings are reported inline.
 - **PeardCore unit tests** (macOS) — `swift test`, no simulator needed.
-- **Server unit tests** (Ubuntu) — `go build`, `go vet`, `go test`, and a
-  `gofmt` gate.
+- **Server unit tests** (Ubuntu) — `go build`, `go vet`, `go test`, a `gofmt`
+  gate and `govulncheck`.
+- **Docker image + compose**, when a pull request touches the image, and always
+  on `main`.
 
-**Pushes to `main`** get the release:
+**Pushes to `main`** then offer the release, as two approvals:
 
-- **iOS release** runs one fastlane lane, `ci_release`: SwiftLint, the PeardCore
-  and app-target unit tests, then a Release archive uploaded to TestFlight for
-  internal testers. Nothing uploads unless everything before it passed. Internal
-  testers get the build automatically — the internal group has automatic
+- **TestFlight (internal)** waits for SwiftLint and PeardCore's tests, then for
+  approval (the `testflight-internal` environment's required reviewer). It runs
+  `fastlane ci_release skip_checks:true`: the app-target tests, then a Release
+  archive uploaded to TestFlight. Nothing uploads unless they pass. Internal
+  testers get the build automatically, because the internal group has automatic
   distribution on. The build number is the upload time in Unix seconds.
-- **TestFlight (external)** waits for approval (the `testflight-external`
-  environment's required reviewer). Approving it waits for App Store Connect to
+- **TestFlight (external)** waits for a second approval (the
+  `testflight-external` environment's required reviewer). Approving it waits for App Store Connect to
   finish processing *that* build, then adds it to the external group
   (`fastlane promote_external`). Nothing is rebuilt, so what goes out is exactly
   what internal testers ran. The first build of each version goes through Beta
-  App Review. The next push to `main` cancels an unapproved run and offers its
-  newer build instead. Testers' "What to Test" is the pending changelog (see
+  App Review. Testers' "What to Test" is the pending changelog (see
   [Releases](#releases-and-changelog)).
-- **Server unit tests**, **Docker** (validate the compose files, build the
-  image, start it and wait for `/api/health`) and **Deploy server** (asks Komodo
-  to roll the server — see [Deployment](#deployment)). The deploy waits on the
-  server's checks, not on the iOS release: a server fix should not wait on
-  Apple's upload queue.
+- **Deploy server** asks Komodo to roll the server (see
+  [Deployment](#deployment)). It waits on the server's checks and the Docker
+  image, not on either approval: a server fix should not wait on Apple's upload
+  queue.
+
+A newer push cancels an older run, including one still waiting for an
+approval, because the newer run offers a newer build. That is GitHub's own
+`concurrency` setting. Closing or merging a pull request starts a run whose
+only effect is to join that group, which cancels whatever was still running
+for it; every job skips it.
 
 What it needs, all already set:
 
@@ -214,12 +222,12 @@ What it needs, all already set:
 | Secret | `APP_STORE_CONNECT_API_ISSUER_ID` | Issuer id |
 | Secret | `APP_STORE_CONNECT_API_KEY_BASE64` | The `.p8`, base64-encoded (`base64 -i AuthKey_XXXX.p8`) |
 | Variable | `PEARD_TESTFLIGHT_EXTERNAL_GROUP` | The external testers' group name |
-| Environment | `testflight-internal`, `testflight-external` | `testflight-external` has a required reviewer: that is the approval |
+| Environment | `testflight-internal`, `testflight-external` | Each has a required reviewer: those are the two approvals |
 
 The runner has no Apple ID signed in, so the archive signs with cloud-managed
 certificates through the API key (`-authenticationKeyPath` and friends, passed by
-the `archive` lane). `bundle exec fastlane ci_release` runs the same pipeline
-locally.
+the `archive` lane). `bundle exec fastlane ci_release` runs the whole pipeline
+locally, SwiftLint and PeardCore's tests included.
 
 #### Releases and changelog
 
