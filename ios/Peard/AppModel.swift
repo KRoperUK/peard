@@ -150,6 +150,11 @@ final class AppModel {
     /// (Requirement 18.6).
     var onHomeRefreshRequested: (@MainActor () async -> Void)?
 
+    /// Set by the home screen so a return to the foreground re-reads its
+    /// content — and only its content: `applicationDidBecomeActive` has already
+    /// refreshed the connections and started the flush by the time it runs.
+    var onHomeForegrounded: (@MainActor () async -> Void)?
+
     /// Requirement 18.6 — refresh posts, refresh the App Group container, and
     /// reload widget timelines. Also drains the send queue: a silent push is a
     /// free wake-up, and the device demonstrably has connectivity to have received
@@ -914,14 +919,20 @@ final class AppModel {
         // running, this covers everything that changed while it was not.
         flushSendQueue()
         // And re-read the connections, which is where the unread counts live.
-        //
-        // The home screen has its own scenePhase hook that does this, but only
-        // while the home screen exists: background the app from Settings or the
-        // timeline and come back, and the rail's counts and the springboard
-        // badge were whatever they had been when you left. Which tab you happen
-        // to be standing on is not a sensible reason for the badge to be right
-        // or wrong, so this lives at the app level where it applies either way.
+        // Here at the app level because which tab you happen to be standing on
+        // is not a sensible reason for the rail's counts or the springboard
+        // badge to be right or wrong.
         await refreshConnections()
+        // Then the home screen's own content (Requirement 11.13).
+        //
+        // This is the only foreground path (issue #169). The home screen used
+        // to run a full refresh from its own scenePhase hook as well, which
+        // re-read the connections and flushed the queue a second time — and,
+        // without the inactive→active guard `PeardApp` has, did all of it again
+        // whenever Control Centre or a notification banner was dismissed. A
+        // flush that delivers something asks for a full home refresh itself,
+        // so content read here before a queued moment lands is corrected then.
+        await onHomeForegrounded?()
     }
 }
 
