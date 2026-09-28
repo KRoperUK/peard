@@ -126,12 +126,38 @@ jobs:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
 
       - name: Toolchain
+        id: xcode
         # The newest release Xcode on the image rather than its default, found by
         # version rather than by a pinned Xcode_NN.app path: those paths come and
         # go with the runner image, and a hard-coded one turns an image update
         # into a red build for a reason that has nothing to do with the code.
         # Tests build with the SDK that ships.
-        run: scripts/select-newest-xcode
+        run: |
+          scripts/select-newest-xcode
+          echo "version=$(xcodebuild -version | tr '\n' ' ' | tr -s ' ')" >> "$GITHUB_OUTPUT"
+
+      # The first simulator command after switching Xcode starts the simulator
+      # service and loads its runtime, which took nearly two minutes on a fresh
+      # runner — and then the simulator still has to boot. None of that needs the
+      # app, so it all happens in the background while the app compiles, and the
+      # build below targets a generic simulator so it does not wait for a device.
+      - name: Start a simulator (background)
+        run: |
+          # Single-quoted on purpose: the variables belong to the background shell.
+          # shellcheck disable=SC2016
+          nohup bash -c '
+            id=$(scripts/pick-simulator) || exit 1
+            echo "$id" > "$RUNNER_TEMP/sim-id"
+            xcrun simctl boot "$id"
+          ' > "$RUNNER_TEMP/sim.log" 2>&1 &
+
+      # Clang's module cache: the SDK's modules, precompiled. The same for every
+      # run on one Xcode, so it is keyed on nothing else, and rebuilding it is a
+      # fixed cost every cold run otherwise pays.
+      - uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        with:
+          path: ios/build/ModuleCache.noindex
+          key: module-cache-${{ runner.os }}-${{ runner.arch }}-${{ steps.xcode.outputs.version }}
 
       - name: Install XcodeGen
         # ios/Peard.xcodeproj is generated from ios/project.yml and is not
@@ -141,34 +167,53 @@ jobs:
       - name: Generate project
         run: make project
 
-      # No separate build step: the tests below build the app, and that one
-      # Debug build is all a pull request needs. Release is built on main, where
-      # the TestFlight archive is a Release build anyway — so anything that only
-      # compiles with DEBUG defined still turns main red before it reaches
-      # anybody's phone.
-
-      - name: Pick a simulator
-        id: sim
-        # Chosen from what the image actually has rather than named outright, for
-        # the same reason as the Xcode version above.
-        # scripts/pick-simulator is what the Makefile uses too.
-        run: |
-          if ! id=$(scripts/pick-simulator); then
-            echo "No iPhone simulator available on this runner:"
-            xcrun simctl list devices available
-            exit 1
-          fi
-          echo "Using $id"
-          echo "id=$id" >> "$GITHUB_OUTPUT"
-
-      - name: App-target tests
+      # Everything CI does not need is off: coverage (instrumentation slows both
+      # the build and the run, and nothing reads it here — the scheme still
+      # gathers it locally), the index store (nobody jumps to a definition on a
+      # runner), and Intel slices (the runner and its simulator are arm64, and a
+      # generic destination would otherwise build both).
+      - name: Build for testing
         run: |
           xcodebuild -project ios/Peard.xcodeproj -scheme Peard \
             -configuration Debug \
+            -destination "generic/platform=iOS Simulator" \
+            -derivedDataPath ios/build \
+            -enableCodeCoverage NO \
+            -skipMacroValidation \
+            -skipPackagePluginValidation \
+            COMPILER_INDEX_STORE_ENABLE=NO \
+            ARCHS=arm64 ONLY_ACTIVE_ARCH=NO \
+            build-for-testing
+
+      - name: Wait for the simulator
+        id: sim
+        timeout-minutes: 10
+        run: |
+          until [ -s "$RUNNER_TEMP/sim-id" ]; do
+            if ! pgrep -f "simctl boot|pick-simulator" >/dev/null && [ ! -s "$RUNNER_TEMP/sim-id" ]; then
+              echo "No simulator was picked:"; cat "$RUNNER_TEMP/sim.log"
+              xcrun simctl list devices available
+              exit 1
+            fi
+            sleep 2
+          done
+          id=$(cat "$RUNNER_TEMP/sim-id")
+          echo "Using $id"
+          xcrun simctl bootstatus "$id" -b
+          echo "id=$id" >> "$GITHUB_OUTPUT"
+
+      # The whole suite, against what was just built. One simulator: parallel
+      # testing clones it, which costs more than it saves for a suite that runs
+      # in seconds.
+      - name: App-target tests
+        run: |
+          xcodebuild -project ios/Peard.xcodeproj -scheme Peard \
             -destination "platform=iOS Simulator,id=${{ steps.sim.outputs.id }}" \
             -derivedDataPath ios/build \
             -resultBundlePath ios/build/PeardTests.xcresult \
-            test
+            -enableCodeCoverage NO \
+            -parallel-testing-enabled NO \
+            test-without-building
 
       - name: Upload test results
         if: failure()
