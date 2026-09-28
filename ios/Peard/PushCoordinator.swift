@@ -171,6 +171,13 @@ final class PushCoordinator {
         }
     }
 
+    /// Forgets this device's registration without asking the server, for
+    /// account deletion: the server removes the account's `devices` rows with
+    /// it, and the deleted account's token can no longer ask for anything.
+    func forgetRegistration() {
+        store.devicePushToken = nil
+    }
+
     // MARK: Badge
 
     /// Sets the springboard badge.
