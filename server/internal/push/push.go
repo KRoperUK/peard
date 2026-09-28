@@ -19,6 +19,7 @@ import (
 	"errors"
 	"fmt"
 	"log"
+	"net/http"
 	"net/url"
 	"os"
 	"strings"
@@ -68,12 +69,21 @@ func Register(app core.App) {
 		log.Println("[push] APNs configured for bundle", n.bundleID)
 	}
 
+	// Delivery happens after the request has been answered, so the poster does
+	// not wait on Apple. The record is cloned because the request goes on using
+	// its own copy while the push is being put together.
 	app.OnRecordAfterCreateSuccess("posts").BindFunc(func(e *core.RecordEvent) error {
-		notifyPairMembers(app, e.Record)
+		if n != nil {
+			post := e.Record.Clone()
+			deliverInBackground(app, "moment", func() { notifyPairMembers(app, post) })
+		}
 		return e.Next()
 	})
 	app.OnRecordAfterCreateSuccess("reactions").BindFunc(func(e *core.RecordEvent) error {
-		notifyPostAuthor(app, e.Record)
+		if n != nil {
+			reaction := e.Record.Clone()
+			deliverInBackground(app, "reaction", func() { notifyPostAuthor(app, reaction) })
+		}
 		return e.Next()
 	})
 	// Registered whether or not APNs is configured: the window is data, and a
@@ -203,9 +213,13 @@ func notifyPairMembers(app core.App, post *core.Record) {
 		}
 		badge := unseenCount(app, memberID)
 		media := mediaURLFor(app, post, memberID)
+		// The devices still registered once APNs has had its say, which is what
+		// the Live Activity pushes below go to.
+		live := make([]*core.Record, 0, len(devices))
 		for _, d := range devices {
 			t := d.GetString("push_token")
 			if t == "" {
+				live = append(live, d)
 				continue
 			}
 			visible := payload.NewPayload().
@@ -219,7 +233,10 @@ func notifyPairMembers(app core.App, post *core.Record) {
 			if media != "" {
 				visible.Custom("media_url", media)
 			}
-			n.send(t, visible, apns2.PushTypeAlert, apns2.PriorityHigh, collapseID)
+			if n.send(t, visible, apns2.PushTypeAlert, apns2.PriorityHigh, collapseID) {
+				forgetDevice(app, d)
+				continue
+			}
 
 			silent := payload.NewPayload().
 				ContentAvailable().
@@ -227,9 +244,13 @@ func notifyPairMembers(app core.App, post *core.Record) {
 				Custom("pair_id", pairID)
 			// No collapse id on the background push: collapsing would let APNs
 			// drop the nudge that tells the app to refresh.
-			n.send(t, silent, apns2.PushTypeBackground, apns2.PriorityLow, "")
+			if n.send(t, silent, apns2.PushTypeBackground, apns2.PriorityLow, "") {
+				forgetDevice(app, d)
+				continue
+			}
+			live = append(live, d)
 		}
-		notifyPhotoDrop(app, post, memberID, devices, name, title, body)
+		notifyPhotoDrop(app, post, memberID, live, name, title, body)
 	}
 }
 
@@ -365,7 +386,9 @@ func notifyPostAuthor(app core.App, reaction *core.Record) {
 			Badge(badge).
 			Custom("post_id", post.Id).
 			Custom("pair_id", pairID)
-		n.send(t, p, apns2.PushTypeAlert, apns2.PriorityHigh, collapseID)
+		if n.send(t, p, apns2.PushTypeAlert, apns2.PriorityHigh, collapseID) {
+			forgetDevice(app, d)
+		}
 	}
 }
 
@@ -383,7 +406,9 @@ func isMuted(app core.App, pairID, userID string) bool {
 	return mem.GetBool("muted")
 }
 
-func (nt *notifier) send(deviceToken string, p *payload.Payload, pushType apns2.EPushType, priority int, collapseID string) {
+// send pushes one notification and reports whether APNs said the token is dead,
+// in which case the caller forgets it.
+func (nt *notifier) send(deviceToken string, p *payload.Payload, pushType apns2.EPushType, priority int, collapseID string) (dead bool) {
 	res, err := nt.client.Push(&apns2.Notification{
 		DeviceToken: deviceToken,
 		Topic:       nt.bundleID,
@@ -394,10 +419,36 @@ func (nt *notifier) send(deviceToken string, p *payload.Payload, pushType apns2.
 	})
 	if err != nil {
 		log.Println("[push] send error:", err)
-		return
+		return false
 	}
 	if res.StatusCode != 200 {
 		log.Printf("[push] APNs status %d: %s\n", res.StatusCode, res.Reason)
+	}
+	return tokenIsDead(res)
+}
+
+// tokenIsDead reports whether APNs has disowned a token for good.
+//
+// 410 is Apple saying the app was removed or the token expired; 400 with
+// BadDeviceToken is a token it does not recognise at all. Either way retrying
+// cannot work, and keeping the row only means a wasted request on every moment
+// for ever. Every other refusal — a bad topic, an oversized payload, Apple
+// having a bad minute — is not the phone's fault, and the token is kept. The
+// reason is the `reason` field of APNs's JSON reply, which apns2 decodes.
+//
+// One caveat: a server pointed at the wrong APNs environment gets
+// BadDeviceToken for every token, and would forget them all. The app registers
+// again on its next launch, so that heals, but it is why the production flag
+// matters.
+func tokenIsDead(res *apns2.Response) bool {
+	return res.StatusCode == http.StatusGone ||
+		(res.StatusCode == http.StatusBadRequest && res.Reason == apns2.ReasonBadDeviceToken)
+}
+
+// forgetDevice deletes a devices row whose push token APNs has disowned.
+func forgetDevice(app core.App, device *core.Record) {
+	if err := app.Delete(device); err != nil {
+		app.Logger().Error("push: could not forget a dead device token", "device", device.Id, "error", err)
 	}
 }
 

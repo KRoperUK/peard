@@ -101,7 +101,9 @@ func sendRecapFor(app core.App, pair *core.Record, weekStart time.Time) {
 				Sound("default").
 				ThreadID(threadID).
 				Custom("pair_id", pair.Id)
-			n.send(t, p, apns2.PushTypeAlert, apns2.PriorityLow, "recap:"+pair.Id)
+			if n.send(t, p, apns2.PushTypeAlert, apns2.PriorityLow, "recap:"+pair.Id) {
+				forgetDevice(app, d)
+			}
 		}
 	}
 }
