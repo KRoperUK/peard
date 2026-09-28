@@ -1,0 +1,59 @@
+#!/bin/bash
+# Regenerates the site's two images from the app icon:
+#
+#   server/internal/site/static/apple-touch-icon.png  180×180, the icon iOS puts
+#       on the Home Screen when somebody adds the site there
+#   server/internal/site/static/og.png  1200×630, the card iMessage, Slack and
+#       the rest show when a link to the site is shared
+#
+# macOS only: sips does the resizing, and Google Chrome renders the card so its
+# wordmark is set in the same system font as the pages. The output is committed
+# and embedded in the server binary, so this only needs running when the icon or
+# the card changes — never as part of a build.
+set -euo pipefail
+
+cd "$(dirname "$0")/.."
+icon=ios/Peard/Assets.xcassets/AppIcon.appiconset/AppIcon-1024.png
+out=server/internal/site/static
+chrome="/Applications/Google Chrome.app/Contents/MacOS/Google Chrome"
+work=$(mktemp -d)
+trap 'rm -rf "$work"' EXIT
+
+sips -z 180 180 "$icon" --out "$out/apple-touch-icon.png" >/dev/null
+
+sips -z 360 360 "$icon" --out "$work/icon.png" >/dev/null
+cat >"$work/card.html" <<'HTML'
+<!doctype html>
+<html><head><meta charset="utf-8"><style>
+  html, body { margin: 0; width: 1200px; height: 630px; overflow: hidden; }
+  body {
+    display: flex; align-items: center; justify-content: center; gap: 64px;
+    background: #FBF7EC; color: #3B2E1A;
+    font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+  }
+  img { width: 360px; height: 360px; border-radius: 80px; box-shadow: 0 12px 40px rgba(59, 46, 26, 0.18); }
+  h1 { font-size: 112px; margin: 0 0 12px; letter-spacing: -2px; }
+  p { font-size: 40px; margin: 0; color: #7A6A53; max-width: 560px; line-height: 1.25; }
+</style></head><body>
+  <img src="icon.png" alt="">
+  <div><h1>Pear'd</h1><p>Moments and tallies shared with your favourite people.</p></div>
+</body></html>
+HTML
+# Headless Chrome can sit there after writing the screenshot instead of
+# exiting, so it runs in the background and is stopped once the file lands.
+rm -f "$out/og.png"
+"$chrome" --headless=new --disable-gpu --hide-scrollbars --force-device-scale-factor=1 \
+    --user-data-dir="$work/profile" --window-size=1200,630 \
+    --screenshot="$work/og.png" "file://$work/card.html" >/dev/null 2>&1 &
+chrome_pid=$!
+for _ in $(seq 1 100); do
+    [ -s "$work/og.png" ] && break
+    sleep 0.2
+done
+sleep 0.5
+kill "$chrome_pid" 2>/dev/null || true
+wait "$chrome_pid" 2>/dev/null || true
+[ -s "$work/og.png" ] || { echo "Chrome didn't render the card" >&2; exit 1; }
+mv "$work/og.png" "$out/og.png"
+
+sips -g pixelWidth -g pixelHeight "$out/apple-touch-icon.png" "$out/og.png"

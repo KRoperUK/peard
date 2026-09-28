@@ -2,6 +2,7 @@ package site_test
 
 import (
 	"encoding/json"
+	"image/png"
 	"math"
 	"net/http"
 	"net/http/httptest"
@@ -36,6 +37,9 @@ func newSiteMux(t *testing.T) http.Handler {
 		os.RemoveAll(dir)
 	})
 
+	// What PEARD_APP_URL sets. The trailing slash is how somebody might well
+	// write it, and the absolute URLs in the pages must not double it.
+	app.Settings().Meta.AppURL = "https://peard.example/"
 	site.Register(app)
 
 	router, err := apis.NewRouter(app)
@@ -475,6 +479,91 @@ func TestEveryPageLinksSupport(t *testing.T) {
 	for _, path := range []string{"/", "/privacy", "/support", "/c/ABC123", "/nope"} {
 		if !strings.Contains(get(t, mux, path).Body.String(), `href="/support"`) {
 			t.Errorf("%s: no link to /support in the footer", path)
+		}
+	}
+}
+
+// Each page describes itself for link previews, with absolute URLs built from
+// the configured public address rather than the request's Host.
+func TestPagesCarryPreviewTags(t *testing.T) {
+	mux := newSiteMux(t)
+
+	for _, tc := range []struct{ path, canonical, ogTitle string }{
+		{"/", "https://peard.example/", "Pear'd 🍐"},
+		{"/privacy", "https://peard.example/privacy", "Privacy Policy — Pear'd"},
+		{"/support", "https://peard.example/support", "Support — Pear'd"},
+		{"/c/ab12cd", "https://peard.example/c/AB12CD", "You've been invited to Pear'd"},
+	} {
+		req := httptest.NewRequest("GET", tc.path, nil)
+		req.Host = "evil.example"
+		rec := httptest.NewRecorder()
+		mux.ServeHTTP(rec, req)
+		body := rec.Body.String()
+		for _, want := range []string{
+			`<link rel="canonical" href="` + tc.canonical + `">`,
+			`<meta property="og:url" content="` + tc.canonical + `">`,
+			`<meta property="og:title" content="` + tc.ogTitle + `">`,
+			`<meta property="og:type" content="website">`,
+			`<meta property="og:description" content="`,
+			`<meta property="og:image" content="https://peard.example/og.png">`,
+			`<meta name="twitter:card" content="summary_large_image">`,
+			`<meta name="theme-color" content="#FBF7EC" media="(prefers-color-scheme: light)">`,
+			`<link rel="apple-touch-icon" href="/apple-touch-icon.png">`,
+		} {
+			if !strings.Contains(body, want) {
+				t.Errorf("%s: missing %s", tc.path, want)
+			}
+		}
+		if strings.Contains(body, "evil.example") {
+			t.Errorf("%s: the request's Host reached the page", tc.path)
+		}
+		// Not until the app is on the App Store.
+		if strings.Contains(body, "apple-itunes-app") {
+			t.Errorf("%s: has a Smart App Banner", tc.path)
+		}
+	}
+}
+
+// Error pages aren't somewhere to send anybody, so they don't claim a canonical
+// address, but a shared dead link still gets a preview.
+func TestErrorPagesHaveNoCanonical(t *testing.T) {
+	mux := newSiteMux(t)
+
+	for _, path := range []string{"/nope", "/c/AB-12"} {
+		body := get(t, mux, path).Body.String()
+		if strings.Contains(body, `rel="canonical"`) || strings.Contains(body, "og:url") {
+			t.Errorf("%s: an error page has a canonical URL", path)
+		}
+		if !strings.Contains(body, "og:image") {
+			t.Errorf("%s: no preview image", path)
+		}
+	}
+}
+
+// The images are real PNGs of the sizes the tags promise, and cached for long.
+func TestPreviewImagesServe(t *testing.T) {
+	mux := newSiteMux(t)
+
+	for _, tc := range []struct {
+		path          string
+		width, height int
+	}{
+		{"/apple-touch-icon.png", 180, 180},
+		{"/og.png", 1200, 630},
+	} {
+		rec := get(t, mux, tc.path)
+		if rec.Code != http.StatusOK || rec.Header().Get("Content-Type") != "image/png" {
+			t.Fatalf("%s: got %d %q, want 200 image/png", tc.path, rec.Code, rec.Header().Get("Content-Type"))
+		}
+		if got := rec.Header().Get("Cache-Control"); got != "public, max-age=2592000" {
+			t.Errorf("%s: Cache-Control %q", tc.path, got)
+		}
+		cfg, err := png.DecodeConfig(rec.Body)
+		if err != nil {
+			t.Fatalf("%s: not a PNG: %v", tc.path, err)
+		}
+		if cfg.Width != tc.width || cfg.Height != tc.height {
+			t.Errorf("%s: %dx%d, want %dx%d", tc.path, cfg.Width, cfg.Height, tc.width, tc.height)
 		}
 	}
 }

@@ -5,6 +5,7 @@
 package site
 
 import (
+	_ "embed"
 	"net/http"
 	"regexp"
 	"strings"
@@ -41,6 +42,8 @@ func Register(app core.App) {
 		pages.GET("/support", supportHandler)
 		pages.GET("/c/{code}", inviteHandler)
 		pages.GET("/.well-known/apple-app-site-association", associationHandler)
+		pages.GET("/apple-touch-icon.png", imageHandler(appleTouchIcon))
+		pages.GET("/og.png", imageHandler(previewImage))
 		return se.Next()
 	})
 }
@@ -133,27 +136,30 @@ func inviteHandler(e *core.RequestEvent) error {
 	// URL, and reflecting it into the page would be an invitation of a
 	// different kind.
 	if !inviteCodePattern.MatchString(code) {
-		return e.HTML(http.StatusNotFound, page(
-			"Invite not found — Pear'd",
-			"That invite link doesn't look right.",
-			invitePage("", false),
-		))
+		return e.HTML(http.StatusNotFound, page(e, pageMeta{
+			title:       "Invite not found — Pear'd",
+			description: "That invite link doesn't look right.",
+		}, invitePage("", false)))
 	}
-	return e.HTML(http.StatusOK, page(
-		"Join on Pear'd 🍐",
-		"Somebody wants to share moments with you on Pear'd.",
-		invitePage(code, true),
-	))
+	return e.HTML(http.StatusOK, page(e, pageMeta{
+		title:       "Join on Pear'd 🍐",
+		description: "Somebody wants to share moments with you on Pear'd.",
+		path:        "/c/" + code,
+		// The preview in the message thread is the first thing the invited
+		// person sees, before they've tapped anything, so it says what the
+		// link is rather than naming the app.
+		previewTitle: "You've been invited to Pear'd",
+	}, invitePage(code, true)))
 }
 
 var inviteCodePattern = regexp.MustCompile(`^[A-Z0-9]{4,12}$`)
 
 func homeHandler(e *core.RequestEvent) error {
-	return e.HTML(http.StatusOK, page(
-		"Pear'd 🍐",
-		"Moments and tallies shared with your favourite people.",
-		homeBody,
-	))
+	return e.HTML(http.StatusOK, page(e, pageMeta{
+		title:       "Pear'd 🍐",
+		description: "Moments and tallies shared with your favourite people.",
+		path:        "/",
+	}, homeBody))
 }
 
 // notFoundHandler catches every GET that no other route claims.
@@ -165,19 +171,18 @@ func notFoundHandler(e *core.RequestEvent) error {
 	if strings.HasPrefix(e.Request.URL.Path, "/api/") {
 		return e.NotFoundError("", nil)
 	}
-	return e.HTML(http.StatusNotFound, page(
-		"Page not found — Pear'd",
-		"There's nothing at this address.",
-		notFoundBody,
-	))
+	return e.HTML(http.StatusNotFound, page(e, pageMeta{
+		title:       "Page not found — Pear'd",
+		description: "There's nothing at this address.",
+	}, notFoundBody))
 }
 
 func privacyHandler(e *core.RequestEvent) error {
-	return e.HTML(http.StatusOK, page(
-		"Privacy Policy — Pear'd",
-		"How Pear'd collects, uses and protects your data.",
-		privacyBody,
-	))
+	return e.HTML(http.StatusOK, page(e, pageMeta{
+		title:       "Privacy Policy — Pear'd",
+		description: "How Pear'd collects, uses and protects your data.",
+		path:        "/privacy",
+	}, privacyBody))
 }
 
 // supportHandler serves the page App Store Connect's Support URL points at.
@@ -185,11 +190,11 @@ func privacyHandler(e *core.RequestEvent) error {
 // There is no /terms page to go with it: nothing in the app or its listing
 // needs one yet, and Apple's standard licence agreement applies until it does.
 func supportHandler(e *core.RequestEvent) error {
-	return e.HTML(http.StatusOK, page(
-		"Support — Pear'd",
-		"Get help with Pear'd: contact, common questions, deleting your account and beta feedback.",
-		supportBody,
-	))
+	return e.HTML(http.StatusOK, page(e, pageMeta{
+		title:       "Support — Pear'd",
+		description: "Get help with Pear'd: contact, common questions, deleting your account and beta feedback.",
+		path:        "/support",
+	}, supportBody))
 }
 
 // repoURL is where the footer sends anybody curious how it works. The repo is
@@ -197,20 +202,94 @@ func supportHandler(e *core.RequestEvent) error {
 // that keeps them is a click away.
 const repoURL = "https://github.com/KRoperUK/peard"
 
+// The two images the site serves, both made from the app icon by
+// scripts/site-images. They're embedded so the binary stays the whole deploy.
+var (
+	//go:embed static/apple-touch-icon.png
+	appleTouchIcon []byte
+	//go:embed static/og.png
+	previewImage []byte
+)
+
+// imageHandler serves one of the embedded images. They change only when the app
+// icon does, so they're cached for a month: long enough that a preview never
+// waits on them, short enough that a new icon shows up without renaming files.
+func imageHandler(png []byte) func(*core.RequestEvent) error {
+	return func(e *core.RequestEvent) error {
+		e.Response.Header().Set("Cache-Control", "public, max-age=2592000")
+		return e.Blob(http.StatusOK, "image/png", png)
+	}
+}
+
+// pageMeta is what a page says about itself, to the browser tab and to the
+// link previews iMessage and the rest build from the Open Graph tags.
+type pageMeta struct {
+	title       string
+	description string
+	// path is the page's canonical path. Empty on an error page, which isn't
+	// an address anybody should be sent to, so it gets no canonical link.
+	path string
+	// previewTitle, when set, is used in link previews instead of title.
+	previewTitle string
+}
+
+// publicURL is the site's own address, from PEARD_APP_URL (see main.go), for
+// the absolute URLs link previews need. Not the request's Host header: that is
+// whatever the client sent, and the pages are publicly cacheable, so a forged
+// one could put somebody else's domain into a cached copy.
+func publicURL(e *core.RequestEvent) string {
+	return strings.TrimRight(e.App.Settings().Meta.AppURL, "/")
+}
+
+// attr escapes a value for a double-quoted HTML attribute. The values are
+// constants and validated codes today, but the base URL comes from config.
+var attr = strings.NewReplacer(`&`, "&amp;", `"`, "&quot;", `<`, "&lt;", `>`, "&gt;").Replace
+
+// previewTags are the head tags for search engines, link previews and the Home
+// Screen. There's no apple-itunes-app Smart App Banner yet: it needs the app on
+// the App Store, and while it's TestFlight only the banner would lead nowhere.
+func previewTags(e *core.RequestEvent, m pageMeta) string {
+	base := publicURL(e)
+	title := m.previewTitle
+	if title == "" {
+		title = m.title
+	}
+	tags := `<meta property="og:site_name" content="Pear'd">
+<meta property="og:type" content="website">
+<meta property="og:title" content="` + attr(title) + `">
+<meta property="og:description" content="` + attr(m.description) + `">
+<meta property="og:image" content="` + attr(base) + `/og.png">
+<meta property="og:image:width" content="1200">
+<meta property="og:image:height" content="630">
+<meta property="og:image:alt" content="The Pear'd app icon, two pears, beside the name Pear'd">
+<meta name="twitter:card" content="summary_large_image">
+`
+	if m.path != "" {
+		url := attr(base + m.path)
+		tags += `<meta property="og:url" content="` + url + `">
+<link rel="canonical" href="` + url + `">
+`
+	}
+	return tags + `<meta name="theme-color" content="#FBF7EC" media="(prefers-color-scheme: light)">
+<meta name="theme-color" content="#1C1810" media="(prefers-color-scheme: dark)">
+<link rel="apple-touch-icon" href="/apple-touch-icon.png">
+`
+}
+
 // page wraps a page's body with the shared document head, styling and footer.
 //
 // The body goes inside <main> and the footer stays outside it, so a screen
 // reader can jump straight to the content or the links without walking a page
 // of anonymous divs.
-func page(title, description, body string) string {
+func page(e *core.RequestEvent, m pageMeta, body string) string {
 	return `<!doctype html>
 <html lang="en">
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>` + title + `</title>
-<meta name="description" content="` + description + `">
-<link rel="icon" href="data:image/svg+xml,<svg xmlns=%22http://www.w3.org/2000/svg%22 viewBox=%220 0 16 16%22><text y=%2214%22 font-size=%2214%22>🍐</text></svg>">
+<title>` + m.title + `</title>
+<meta name="description" content="` + m.description + `">
+` + previewTags(e, m) + `<link rel="icon" href="data:image/svg+xml,<svg xmlns=%22http://www.w3.org/2000/svg%22 viewBox=%220 0 16 16%22><text y=%2214%22 font-size=%2214%22>🍐</text></svg>">
 <style>` + sharedCSS + `</style>
 </head>
 <body>
