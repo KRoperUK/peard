@@ -30,6 +30,10 @@ struct PhotoMomentSheet: View {
     @State private var chosen: Moment?
     @State private var caption = ""
     @State private var edit = PhotoEdit.identity
+    /// Set while the square is being drawn, off the main thread: it can take a
+    /// moment for a full-size photo, and the sheet should say so rather than
+    /// freeze (issue #1).
+    @State private var isRendering = false
     @FocusState private var captionFocused: Bool
 
     var body: some View {
@@ -68,12 +72,18 @@ struct PhotoMomentSheet: View {
                     Button("Skip") {
                         send(nil)
                     }
+                    .disabled(isRendering)
                 }
                 ToolbarItem(placement: .confirmationAction) {
-                    Button("Send") {
-                        send(chosen)
+                    if isRendering {
+                        ProgressView()
+                            .accessibilityLabel("Preparing the photo")
+                    } else {
+                        Button("Send") {
+                            send(chosen)
+                        }
+                        .fontWeight(.semibold)
                     }
-                    .fontWeight(.semibold)
                 }
             }
         }
@@ -82,10 +92,18 @@ struct PhotoMomentSheet: View {
     /// Normalised here rather than at the caller, so a caption of nothing but
     /// spaces is the same as no caption at all.
     private func send(_ moment: Moment?) {
+        guard !isRendering else { return }
+        isRendering = true
         let text = PostNote.normalised(caption)
-        let square = PhotoSquare.render(image, edit: edit)
-        dismiss()
-        onSend(square, moment, text)
+        let image = image
+        let edit = edit
+        Task {
+            let square = await Task.detached(priority: .userInitiated) {
+                PhotoSquare.render(image, edit: edit)
+            }.value
+            dismiss()
+            onSend(square, moment, text)
+        }
     }
 
     /// Fill or fit, and a turn.
