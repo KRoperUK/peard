@@ -194,13 +194,18 @@ platform :ios do
     upload_to_testflight(
       app_identifier: "com.peard.app",
       apple_id: APP_STORE_APP_ID,
+      # Named, because with distribute_only nothing else tells pilot which
+      # platform the build is — and it asks, which on CI is a crash
+      # ("Could not retrieve response as fastlane runs in non-interactive mode").
+      app_platform: "ios",
       distribute_only: true,
       build_number: build,
       app_version: version,
       distribute_external: true,
       groups: [group],
       notify_external_testers: true,
-      changelog: changelog_or_nil
+      # External testers need "What to Test", and Beta App Review reads it.
+      changelog: changelog_or_nil || what_to_test
     )
   end
 
@@ -317,6 +322,15 @@ platform :ios do
       UI.user_error!("Build number is not #{expected} in:\n  #{wrong.join("\n  ")}") unless wrong.empty?
       UI.success("Build number #{expected} in the app and #{plists.count - 1} extension(s)")
     end
+  end
+
+  # The notes external testers see when there is no CHANGELOG.md: the commit
+  # the build came from, which on CI is the merge that triggered it.
+  def what_to_test
+    subject = `git log -1 --format=%s 2>/dev/null`.strip
+    body = `git log -1 --format=%b 2>/dev/null`.strip
+    text = [subject, body].reject(&:empty?).join("\n\n")
+    text.empty? ? "Latest changes from main." : text[0, 4000]
   end
 
   def changelog_or_nil
