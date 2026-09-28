@@ -68,11 +68,15 @@ struct MomentGrid: View {
             VStack(spacing: 4) {
                 Text(moment.emoji)
                     .font(.largeTitle)
+                // Two lines, centred, before any shrinking: a connection's own
+                // moments can be 40 characters in an 80-point tile, and one line
+                // at 80% scale either touched the edges or cut the name short.
                 Text(moment.label)
                     .font(.caption.bold())
                     .foregroundStyle(PearColor.textSecondary)
-                    .lineLimit(1)
-                    .minimumScaleFactor(0.8)
+                    .multilineTextAlignment(.center)
+                    .lineLimit(2)
+                    .minimumScaleFactor(0.7)
                 // Held open even when there is nothing to say, so a grid of
                 // mixed tiles does not come out ragged — the same reason the
                 // Messages tray holds its status line.
@@ -81,7 +85,10 @@ struct MomentGrid: View {
                     .foregroundStyle(PearColor.textTertiary)
                     .lineLimit(1)
             }
-            .frame(maxWidth: .infinity)
+            .padding(.horizontal, 6)
+            // Fills the row's height, so a two-line name beside one-line names
+            // does not leave its neighbours as shorter tiles.
+            .frame(maxWidth: .infinity, maxHeight: .infinity)
             .padding(.vertical, 14)
             .background(
                 isPending ? PearColor.accent.opacity(0.18) : PearColor.surface,
@@ -147,7 +154,7 @@ struct MomentGrid: View {
                     .foregroundStyle(PearColor.textSecondary)
                     .lineLimit(1)
             }
-            .frame(maxWidth: .infinity)
+            .frame(maxWidth: .infinity, maxHeight: .infinity)
             .padding(.vertical, 14)
             .background(PearColor.surface.opacity(0.6), in: RoundedRectangle(cornerRadius: 14))
             .overlay {
