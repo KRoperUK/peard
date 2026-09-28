@@ -1,0 +1,32 @@
+#!/bin/bash
+# Points xcode-select at the newest release Xcode installed on this machine.
+#
+# For CI. A runner image ships several Xcodes and defaults to an older one —
+# macos-15 defaults to 16.4, whose iOS 18.5 SDK App Store Connect refuses
+# ("All iOS and iPadOS apps must be built with the iOS 26 SDK or later"). Picked
+# by version rather than named, for the same reason the simulator is: a
+# hard-coded Xcode_NN.app path turns an image update into a red build for a
+# reason that has nothing to do with the code. Betas are skipped.
+set -euo pipefail
+
+best=""
+best_version=""
+for app in /Applications/Xcode*.app; do
+    [ -d "$app" ] || continue
+    case "$app" in *[Bb]eta*) continue ;; esac
+    version=$(/usr/libexec/PlistBuddy -c 'Print :CFBundleShortVersionString' "$app/Contents/Info.plist" 2>/dev/null || true)
+    [ -n "$version" ] || continue
+    if [ -z "$best_version" ] || [ "$(printf '%s\n%s\n' "$best_version" "$version" | sort -V | tail -1)" = "$version" ]; then
+        best="$app"
+        best_version="$version"
+    fi
+done
+
+if [ -z "$best" ]; then
+    echo "No Xcode found in /Applications" >&2
+    exit 1
+fi
+
+echo "Selecting $best ($best_version)"
+sudo xcode-select -s "$best/Contents/Developer"
+xcodebuild -version

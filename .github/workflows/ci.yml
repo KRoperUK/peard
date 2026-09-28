@@ -14,9 +14,12 @@ on:
 concurrency:
   # A new push supersedes an in-flight run for the same ref. macOS runners are the
   # expensive part, so not queueing three of them for one branch matters.
-  group: ${{ github.workflow }}-${{ github.ref }}
-  # Pull requests only. On main a run can be mid-upload to TestFlight or mid-
-  # deploy, and cancelling either halfway is worse than letting it finish.
+  # Pull requests share a group per branch, and a new push cancels the old run.
+  # Every other run gets a group of its own: a run on main can sit waiting for
+  # the external TestFlight approval for days, and a shared group would hold
+  # every later push — deploys included — behind it. The jobs that must not
+  # overlap (deploy, the TestFlight upload) have job-level groups instead.
+  group: ${{ github.workflow }}-${{ github.event_name == 'pull_request' && github.ref || github.run_id }}
   cancel-in-progress: ${{ github.event_name == 'pull_request' }}
 
 jobs:
@@ -107,7 +110,8 @@ jobs:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
 
       - name: Toolchain
-        run: swift --version && xcodebuild -version
+        # The newest Xcode on the image, not its default — see the script.
+        run: scripts/select-newest-xcode && swift --version
 
       - name: Test
         working-directory: ios/PeardCore
@@ -122,10 +126,12 @@ jobs:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
 
       - name: Toolchain
-        # Printed rather than pinned to a specific Xcode_NN.app path: those paths
-        # come and go with the runner image, and a hard-coded one turns an image
-        # update into a red build for a reason that has nothing to do with the code.
-        run: xcodebuild -version
+        # The newest release Xcode on the image rather than its default, found by
+        # version rather than by a pinned Xcode_NN.app path: those paths come and
+        # go with the runner image, and a hard-coded one turns an image update
+        # into a red build for a reason that has nothing to do with the code.
+        # Tests build with the SDK that ships.
+        run: scripts/select-newest-xcode
 
       - name: Install XcodeGen
         # ios/Peard.xcodeproj is generated from ios/project.yml and is not
@@ -181,6 +187,11 @@ jobs:
     if: github.event_name == 'push' && github.ref == 'refs/heads/main'
     environment:
       name: testflight-internal
+    concurrency:
+      group: testflight-internal
+      cancel-in-progress: false
+    outputs:
+      build_number: ${{ steps.upload.outputs.build_number }}
     env:
       APP_STORE_CONNECT_API_KEY_ID: ${{ secrets.APP_STORE_CONNECT_API_KEY_ID }}
       APP_STORE_CONNECT_API_ISSUER_ID: ${{ secrets.APP_STORE_CONNECT_API_ISSUER_ID }}
@@ -208,20 +219,63 @@ jobs:
           ruby-version: "3.3"
           bundler-cache: true
 
+      - name: Toolchain
+        if: steps.creds.outputs.ready == 'true'
+        # App Store Connect refuses anything built with an SDK older than iOS
+        # 26, and the image's default Xcode is older than that.
+        run: scripts/select-newest-xcode
+
       - name: Install XcodeGen
         if: steps.creds.outputs.ready == 'true'
         run: brew install xcodegen
 
       - name: Archive and upload
+        id: upload
         if: steps.creds.outputs.ready == 'true'
         # Every upload needs a build number App Store Connect has not seen. The
         # upload time in Unix seconds: it only goes up, and it is the scheme the
         # builds uploaded by hand already use (build 1785639368 was one), so CI's
         # numbers carry on from them rather than starting below.
         run: |
-          export PEARD_BUILD_NUMBER=$(date +%s)
+          PEARD_BUILD_NUMBER=$(date +%s)
+          export PEARD_BUILD_NUMBER
           echo "Build number $PEARD_BUILD_NUMBER"
           bundle exec fastlane beta
+          echo "build_number=$PEARD_BUILD_NUMBER" >> "$GITHUB_OUTPUT"
+
+  testflight-external:
+    name: TestFlight (external)
+    runs-on: macos-15
+    needs: testflight
+    # Only once the internal job actually uploaded something.
+    if: needs.testflight.outputs.build_number != ''
+    # The approval. The testflight-external environment requires a reviewer, so
+    # the run pauses here until somebody approves it in the Actions tab — and a
+    # run nobody approves simply sits there, blocking nothing (see concurrency
+    # at the top). Nothing is rebuilt: the build internal testers have is the
+    # one that goes out.
+    environment:
+      name: testflight-external
+    env:
+      APP_STORE_CONNECT_API_KEY_ID: ${{ secrets.APP_STORE_CONNECT_API_KEY_ID }}
+      APP_STORE_CONNECT_API_ISSUER_ID: ${{ secrets.APP_STORE_CONNECT_API_ISSUER_ID }}
+      APP_STORE_CONNECT_API_KEY_BASE64: ${{ secrets.APP_STORE_CONNECT_API_KEY_BASE64 }}
+      PEARD_TESTFLIGHT_EXTERNAL_GROUP: ${{ vars.PEARD_TESTFLIGHT_EXTERNAL_GROUP }}
+      PEARD_PROMOTE_BUILD: ${{ needs.testflight.outputs.build_number }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+
+      - uses: ruby/setup-ruby@14594264cd68ce8a2345dd349bc3d138a4ef85c8 # v1.327.0
+        with:
+          # fastlane's supported range; the Gemfile pins fastlane itself.
+          ruby-version: "3.3"
+          bundler-cache: true
+
+      # Adds that build to the external group, waiting for App Store Connect
+      # to finish processing it if it has not yet. The first build of each
+      # version is submitted for Beta App Review on the way.
+      - name: Send to external testers
+        run: bundle exec fastlane promote_external
 
   deploy:
     name: Deploy server
@@ -251,6 +305,9 @@ jobs:
     environment:
       name: production
       url: https://peard.kroper.uk
+    concurrency:
+      group: deploy-production
+      cancel-in-progress: false
     # Pushes to main only. A pull_request run must never deploy — the code has
     # not landed — and a workflow_dispatch on a branch would deploy whatever
     # Komodo pulls from main, which is not what the person who pressed it meant.

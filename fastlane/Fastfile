@@ -167,8 +167,15 @@ platform :ios do
     build = ENV["PEARD_PROMOTE_BUILD"].to_s.strip if build.empty?
     if build.empty?
       build = latest_testflight_build_number(app_identifier: "com.peard.app").to_s
+      version = lane_context[SharedValues::LATEST_TESTFLIGHT_VERSION]
+    else
+      # The version that build belongs to, from App Store Connect itself, so a
+      # build number is enough to name exactly one build.
+      found = Spaceship::ConnectAPI::Build.all(app_id: APP_STORE_APP_ID, build_number: build).first
+      UI.user_error!("No TestFlight build #{build} for app #{APP_STORE_APP_ID}") if found.nil?
+      version = found.app_version
     end
-    version = lane_context[SharedValues::LATEST_TESTFLIGHT_VERSION]
+    UI.message("Sending #{version} (#{build}) to #{group}")
 
     upload_to_testflight(
       app_identifier: "com.peard.app",
