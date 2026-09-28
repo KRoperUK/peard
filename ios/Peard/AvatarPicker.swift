@@ -104,6 +104,11 @@ struct AvatarPickerRow: View {
                         .font(.subheadline.bold())
                         .foregroundStyle(PearColor.accent)
                 }
+                // Borderless, both of these. This row sits in a Form, and a Form
+                // row with default-style buttons in it treats a tap anywhere on
+                // the row as a tap on *every* button — so "Change photo" also
+                // ran Remove, and cancelling the picker left the photo gone.
+                .buttonStyle(.borderless)
                 .disabled(isWorking)
 
                 if let onRemove {
@@ -116,6 +121,7 @@ struct AvatarPickerRow: View {
                     }
                     .font(.subheadline)
                     .foregroundStyle(PearColor.error)
+                    .buttonStyle(.borderless)
                     .disabled(isWorking)
                 }
             }
