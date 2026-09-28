@@ -274,6 +274,7 @@ final class HomeModel {
         await refresh()
         await refreshTallies()
         await refreshRecap()
+        await refreshYearAgo()
         isLoading = false
         // After the posts are in, not before: the stamp means "you have seen up
         // to here", and claiming it while the request that fetches them could
@@ -309,6 +310,19 @@ final class HomeModel {
     /// server predating the route, which an installed app cannot assume has
     /// caught up with it.
     private(set) var recap: MomentRecap?
+
+    /// Moments from this day last year (issue #12). Empty most days, which is
+    /// the point: the card only appears when there is something to remember.
+    private(set) var yearAgo: [Post] = []
+
+    func refreshYearAgo() async {
+        do {
+            yearAgo = try await api.postsOnThisDay(pairID: pairID)
+        } catch {
+            // A card that fails to appear is not worth a word on screen, and an
+            // older server without `happened_at` simply has nothing to show.
+        }
+    }
 
     func refreshRecap() async {
         do {
@@ -378,6 +392,7 @@ final class HomeModel {
         await refresh()
         await refreshTallies()
         await refreshRecap()
+        await refreshYearAgo()
     }
 
     func focus(postID: String?) async {
