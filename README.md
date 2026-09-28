@@ -654,6 +654,30 @@ PocketBase auth token.
 - The `_externalAuths` collection is kept in sync so PB's built-in
   OAuth2/OIDC flows recognise the link.
 
+#### Token revocation on account deletion
+
+App Store guideline 5.1.1(v) expects deleting an account to revoke its Sign in
+with Apple tokens. The app sends the credential's one-time `authorization_code`
+with the identity token; the server exchanges it at Apple's `/auth/token` for a
+refresh token, keeps that in the superuser-only `apple_tokens` collection, and
+sends it to `/auth/revoke` when the user record is deleted — by
+`DELETE /api/peard/account` or any other way.
+
+| Env | Value |
+|---|---|
+| `PEARD_APPLE_TEAM_ID` | The Apple Developer team id |
+| `PEARD_APPLE_KEY_ID` | The id of a key with **Sign in with Apple** enabled for the app's App ID |
+| `PEARD_APPLE_PRIVATE_KEY` | That key's `.p8`, base64-encoded on one line (`base64 < AuthKey_XXXXXXXXXX.p8 \| tr -d '\n'`); the PEM text is accepted too |
+
+The client secret is an ES256 JWT signed with that key, with `sub` set to
+`PEARD_APPLE_AUDIENCE`. With the three unset, sign-in and deletion work exactly
+as before and nothing is revoked. Apple being down or refusing never blocks
+either: the failure goes to the server log and the request carries on.
+
+The refresh token is not encrypted at rest. On its own it is useless — every
+Apple call that accepts it also needs a client secret signed with the private
+key, which is in the environment, not the database.
+
 #### Server-to-server notifications
 
 Apple posts a signed JWT to the URL set as the App ID's **Server-to-Server

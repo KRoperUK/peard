@@ -329,6 +329,13 @@ func applyNotificationAction(app core.App, user *core.Record, action notificatio
 			}
 		}
 
+		// Apple has already revoked the refresh token on its side, so it is
+		// dead weight. Dropping it before any erase also stops the deletion
+		// hook calling Apple from inside this transaction.
+		if err := deleteAppleTokens(txApp, txUser.Id); err != nil {
+			return err
+		}
+
 		if action == actionErase {
 			// Cascades: pair_members, posts (and their reactions), reactions,
 			// invites, devices, widget_tokens.

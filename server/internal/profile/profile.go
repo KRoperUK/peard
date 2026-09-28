@@ -84,6 +84,10 @@ func registerNameMirror(app core.App) {
 // as the reason that hook lives at the model layer rather than behind
 // /pairs/leave. A connection that still has other members keeps its shared
 // history; only the deleted account's own moments in it go.
+//
+// The same delete also revokes the account's Sign in with Apple authorisation,
+// through a users delete hook in internal/auth (apple_tokens.go) — a hook so
+// that deleting an account any other way revokes too.
 func deleteAccountHandler(app core.App) func(e *core.RequestEvent) error {
 	return func(e *core.RequestEvent) error {
 		user, err := app.FindRecordById("users", e.Auth.Id)
