@@ -92,6 +92,9 @@ final class HistoryModel {
         if filter.photosOnly {
             parts.append("Photos")
         }
+        if !filter.search.isEmpty {
+            parts.append("“\(filter.search)”")
+        }
         return parts.joined(separator: " · ")
     }
 
@@ -575,6 +578,9 @@ struct HistoryView: View {
     @State private var editing: Post?
     @State private var deleting: Post?
     @State private var viewing: Post?
+    /// What is typed in the search field; applied to the filter after a pause
+    /// in typing rather than on every keystroke (issue #9).
+    @State private var searchText = ""
     private let serverURL: URL
     private let title: String
 
@@ -603,6 +609,14 @@ struct HistoryView: View {
                 }
                 .refreshable { await model.reload() }
                 .task { await model.loadFirstPage() }
+                // Searched on the server, so it finds a note from last spring,
+                // not only what has been scrolled into memory.
+                .searchable(text: $searchText, prompt: "Notes, captions, moments")
+                .task(id: searchText) {
+                    try? await Task.sleep(for: .milliseconds(300))
+                    guard !Task.isCancelled else { return }
+                    await model.apply(model.filter.searching(searchText, catalogue: model.moments))
+                }
         }
         .sheet(item: $editing) { post in
             MomentEditSheet(post: post, moments: model.moments, model: model)
@@ -648,6 +662,7 @@ struct HistoryView: View {
         Menu {
             if model.filter.isActive {
                 Button {
+                    searchText = ""
                     Task { await model.apply(.none) }
                 } label: {
                     Label("Show everything", systemImage: "xmark.circle")
@@ -736,6 +751,7 @@ struct HistoryView: View {
                 .multilineTextAlignment(.center)
             if model.filter.isActive {
                 Button("Show everything") {
+                    searchText = ""
                     Task { await model.apply(.none) }
                 }
                 .font(.footnote.bold())
