@@ -33,18 +33,21 @@ lose it.
 peard/
 ├── server/       PocketBase used as a Go framework (extended)
 │   └── Dockerfile         two-stage, CGO-free, non-root alpine image
-├── ios/          Native SwiftUI app + WidgetKit and Messages extensions
+├── ios/          Native SwiftUI app + widget, Messages and notification extensions
 │   ├── project.yml        XcodeGen spec — the source of truth for the project
 │   ├── Peard/             app target
 │   ├── PearWidget/        widget extension target (home screen + Lock Screen)
 │   ├── PearMessages/      iMessage extension target
+│   ├── PearNotificationService/  notification service extension (photo in the alert)
 │   ├── PeardTests/        app-target XCTest bundle
 │   ├── PeardCore/         shared Swift package (models, API client, App Group)
 │   ├── Tools/             icon generators, run by `make icons`
 │   └── Shared/            colour assets used by every target
 ├── fastlane/     build, test and TestFlight lanes
 ├── scripts/      helpers the git hooks call
-├── docs/         wire contract between app and server
+├── docs/
+│   ├── wire-contract.md    the JSON between app and server, canonically
+│   └── device-checklist.md  what only a real device can confirm
 ├── docker-compose.yml      the server stack (HTTP, proxy in front)
 ├── docker-compose.tls.yml  override: PocketBase owns 80/443 and its own cert
 └── docker-compose.cloudflared.yml  override: no host port, cloudflared ingress
@@ -90,7 +93,7 @@ iOS 17. There is no CocoaPods and no Node.
 make test          # PeardCore unit tests — fast, no simulator
 make test-app      # app-target tests (quick-send flow, routing) on a simulator
 make test-all      # both, plus go test ./...
-make lint          # go vet, and check project.yml still generates
+make lint          # go vet, gofmt, project.yml still generates, SwiftLint
 ```
 
 `PeardCore` builds for macOS as well as iOS so its suite runs under plain

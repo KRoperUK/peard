@@ -1,0 +1,26 @@
+name: Feature request
+description: An idea for something Pear'd should do.
+labels: ["enhancement"]
+body:
+  - type: textarea
+    id: problem
+    attributes:
+      label: What it would let you do
+      description: The moment in real life where it would help matters more than a solution.
+    validations:
+      required: true
+
+  - type: textarea
+    id: idea
+    attributes:
+      label: How it might work
+    validations:
+      required: false
+
+  - type: textarea
+    id: extra
+    attributes:
+      label: Anything else
+      description: Sketches, screenshots, or apps that do something similar.
+    validations:
+      required: false

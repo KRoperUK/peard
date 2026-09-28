@@ -133,7 +133,10 @@ test-integration:
 
 # Mirrors what CI checks, so a green `make lint` means a green pipeline. gofmt
 # was missing here while CI enforced it, which is a lint target that lets exactly
-# the failure it exists to prevent through to the pipeline.
+# the failure it exists to prevent through to the pipeline — and SwiftLint was
+# missing for the same reason. Same invocation as CI's, so warnings print and
+# only errors fail. A missing swiftlint is a skip that says so, not a failure: a
+# server-only contributor should not need it.
 lint:
 	cd server && go vet ./...
 	@cd server && unformatted=$$(gofmt -l .); \
@@ -143,6 +146,12 @@ lint:
 			exit 1; \
 		fi
 	cd ios && xcodegen generate --spec project.yml --use-cache
+	@if command -v swiftlint >/dev/null 2>&1; then \
+		echo "swiftlint lint --config .swiftlint.yml --quiet"; \
+		swiftlint lint --config .swiftlint.yml --quiet; \
+	else \
+		echo "swiftlint not installed — SwiftLint skipped, but CI runs it (brew install swiftlint)"; \
+	fi
 
 fmt:
 	cd server && gofmt -w .
