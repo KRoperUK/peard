@@ -118,7 +118,7 @@ struct HomeView: View {
             }
         }
         .sheet(item: $capturedPhoto) { photo in
-            PhotoMomentSheet(image: photo.image, moments: model.moments) { square, moment, caption in
+            PhotoMomentSheet(image: photo.image, moments: model.gridMoments) { square, moment, caption in
                 Task { await model.upload(image: square, moment: moment, caption: caption) }
             }
         }
@@ -173,12 +173,14 @@ struct HomeView: View {
             }
 
             MomentGrid(
-                moments: model.moments,
+                moments: model.gridMoments,
                 pendingKind: model.quickSend?.moment.kind,
                 isBusy: model.isBusy,
                 lastAt: model.lastLoggedByKind,
                 onTap: { model.tap(moment: $0) },
-                onMore: { showMomentSheet = true }
+                onMore: { showMomentSheet = true },
+                isPinned: { model.isPinned($0) },
+                onTogglePin: { model.togglePin($0) }
             )
 
             // Tapping is how moments are logged; saying so to Siri is the other

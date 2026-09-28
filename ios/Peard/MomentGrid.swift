@@ -31,6 +31,10 @@ struct MomentGrid: View {
     /// a picture is *of*, and publishing a new moment mid-send is a different
     /// errand.
     let onMore: (() -> Void)?
+    /// Moments pinned to the front, and how to pin or unpin one (issue #11).
+    /// Both nil where pinning is not offered.
+    var isPinned: ((Moment) -> Bool)? = nil
+    var onTogglePin: ((Moment) -> Void)? = nil
 
     @ScaledMetric(relativeTo: .caption) private var tileWidth: CGFloat = 80
 
@@ -89,9 +93,33 @@ struct MomentGrid: View {
                         .strokeBorder(PearColor.accent, lineWidth: 1.5)
                 }
             }
+            .overlay(alignment: .topTrailing) {
+                if isPinned?(moment) == true {
+                    Image(systemName: "pin.fill")
+                        .font(.caption2)
+                        .foregroundStyle(PearColor.accent)
+                        .padding(6)
+                        .accessibilityHidden(true)
+                }
+            }
             .contentShape(RoundedRectangle(cornerRadius: 14))
         }
         .buttonStyle(.plain)
+        // Long-press to pin: a gesture, so the grid stays one tap per moment,
+        // and a pinned tile then stays where it was put.
+        .contextMenu {
+            if let onTogglePin {
+                let pinned = isPinned?(moment) == true
+                Button {
+                    onTogglePin(moment)
+                } label: {
+                    Label(pinned ? "Unpin" : "Pin to front", systemImage: pinned ? "pin.slash" : "pin")
+                }
+            }
+        }
+        .accessibilityAction(named: isPinned?(moment) == true ? "Unpin" : "Pin to front") {
+            onTogglePin?(moment)
+        }
         // The age is drawn as a bare "3w" under the label, which means nothing
         // read aloud on its own.
         .accessibilityLabel(
