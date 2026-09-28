@@ -4,7 +4,9 @@ name: CI
 #
 # Pull requests get the fast checks only — SwiftLint, PeardCore's unit tests and
 # the server's — three small jobs in parallel, none of which builds the app or
-# boots a simulator. Every merge is gated on them.
+# boots a simulator. Every merge is gated on them. A pull request that touches
+# the server image also builds and smoke-tests it; one that does not gets a
+# Docker job that finishes in seconds.
 #
 # main gets the release: one fastlane lane (`ci_release`) lints, runs the unit
 # tests including the app target's, archives, and uploads to TestFlight for
@@ -27,6 +29,12 @@ concurrency:
   # cancel-merged-pr-ci.yml.
   group: ${{ github.workflow }}-${{ github.ref }}
   cancel-in-progress: true
+
+# Read-only by default. These jobs hold the App Store Connect and Komodo
+# secrets, and a token able to write to the repository is not something any of
+# them needs; the one job that wants more says so itself.
+permissions:
+  contents: read
 
 jobs:
   lint:
@@ -99,13 +107,46 @@ jobs:
   docker:
     name: Docker image + compose
     runs-on: ubuntu-latest
-    # Main only: it gates the server deploy, and a pull request's job is to be
-    # quick. The Dockerfile and compose files are also checked before commit.
-    if: github.event_name != 'pull_request'
+    # On main it gates the server deploy. On a pull request it runs only the
+    # checks that can tell something: a broken server/Dockerfile used to surface
+    # on main, where it blocked the deploy, rather than on the pull request that
+    # broke it.
+    #
+    # The scope is decided by a step, not by a `paths:` filter or a job-level
+    # `if`. A filter would stop the whole workflow, and a job that never starts
+    # leaves any required check of this name waiting forever; a job that runs
+    # and skips its steps reports success either way.
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          # A pull request checks out its merge commit, whose first parent is
+          # the base branch — so one more commit is enough to see what it
+          # changes.
+          fetch-depth: 2
+
+      # The image is server/ built from a context of the repository root, so a
+      # change to server/, a compose file or the root .dockerignore can change
+      # what gets built or how it runs; so does this workflow, which is how a
+      # change to this job gets tested. Anything else cannot. Pushes and manual
+      # runs always build: that is the check the deploy waits on.
+      - name: Does this change the image?
+        id: scope
+        run: |
+          set -euo pipefail
+          if [ "${{ github.event_name }}" != "pull_request" ]; then
+            echo "build=true" >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+          changed=$(git diff --name-only HEAD^1 HEAD)
+          if echo "$changed" | grep -qE '^(server/|docker-compose[^/]*\.yml$|\.dockerignore$|\.github/workflows/ci\.yml$)'; then
+            echo "build=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "Nothing that goes into the image changed — skipping the build."
+            echo "build=false" >> "$GITHUB_OUTPUT"
+          fi
 
       - name: Validate compose files
+        if: steps.scope.outputs.build == 'true'
         # Parses and interpolates all three shapes. Catches a bad ${VAR} default,
         # a malformed override, and — because the TLS and cloudflared files use
         # `ports: !override` — a runner whose Compose predates 2.24. The last
@@ -121,9 +162,11 @@ jobs:
           test -z "$(docker compose -f docker-compose.yml -f docker-compose.cloudflared.yml config --format json | jq -r '.services.server.ports // [] | length | select(. > 0)')"
 
       - name: Build image
+        if: steps.scope.outputs.build == 'true'
         run: docker compose build
 
       - name: Smoke test
+        if: steps.scope.outputs.build == 'true'
         # The deploy story is "migrations apply on start", so a green `go build`
         # is not enough: this proves the container actually serves. Port 8090 is
         # published by the base file, and the runner has nothing else on it.
@@ -202,6 +245,11 @@ jobs:
     # is the one that goes out.
     environment:
       name: testflight-external
+    # The pending release notes below list pull requests. A job-level block
+    # replaces the workflow's rather than adding to it, hence contents again.
+    permissions:
+      contents: read
+      pull-requests: read
     env:
       APP_STORE_CONNECT_API_KEY_ID: ${{ secrets.APP_STORE_CONNECT_API_KEY_ID }}
       APP_STORE_CONNECT_API_ISSUER_ID: ${{ secrets.APP_STORE_CONNECT_API_ISSUER_ID }}
