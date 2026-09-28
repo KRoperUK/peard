@@ -161,9 +161,9 @@ platform :ios do
       app_identifier: "com.peard.app",
       apple_id: APP_STORE_APP_ID,
       skip_waiting_for_build_processing: true,
-      # Release notes come from the changelog when there is one, rather than a
-      # placeholder nobody updates.
-      changelog: changelog_or_nil
+      # The same notes external testers get, so internal testers see what is
+      # new too rather than a placeholder nobody updates.
+      changelog: release_notes || what_to_test
     )
     # Handed to the external job, which promotes exactly this build.
     if (output = ENV["GITHUB_OUTPUT"])
@@ -248,7 +248,7 @@ platform :ios do
       groups: [group],
       notify_external_testers: true,
       # External testers need "What to Test", and Beta App Review reads it.
-      changelog: changelog_or_nil || what_to_test
+      changelog: release_notes(version) || what_to_test
     )
   end
 
@@ -367,8 +367,8 @@ platform :ios do
     end
   end
 
-  # The notes external testers see when there is no CHANGELOG.md: the commit
-  # the build came from, which on CI is the merge that triggered it.
+  # The notes testers see when there are no release notes: the commit the
+  # build came from, which on CI is the merge that triggered it.
   def what_to_test
     subject = `git log -1 --format=%s 2>/dev/null`.strip
     body = `git log -1 --format=%b 2>/dev/null`.strip
@@ -383,8 +383,48 @@ platform :ios do
     spec.dig("targets", "Peard", "settings", "base", "MARKETING_VERSION").to_s
   end
 
-  def changelog_or_nil
-    path = "../CHANGELOG.md"
-    File.exist?(path) ? File.read(path) : nil
+  # What testers are told is in a build, from release-please's changelog.
+  #
+  # First choice is the pending changelog: the body of the open release pull
+  # request, which CI passes in as PEARD_RELEASE_NOTES. It lists everything
+  # merged since the last release, which is what a build from main contains.
+  # Without one (the build is of the release itself, or nothing releasable has
+  # landed since), CHANGELOG.md's entry for this version. nil when neither.
+  def release_notes(version = marketing_version)
+    pending = ENV["PEARD_RELEASE_NOTES"].to_s
+    return plain_release_notes(pending) unless pending.strip.empty?
+
+    path = File.expand_path("../CHANGELOG.md", __dir__)
+    return nil unless File.exist?(path)
+    entry = changelog_entry(File.read(path), version)
+    entry && plain_release_notes(entry)
+  end
+
+  # The section of CHANGELOG.md headed by `version`, or nil.
+  def changelog_entry(changelog, version)
+    sections = changelog.split(/^(?=## )/)
+    sections.find { |section| section[/\A## \[?v?([\d.]+)/, 1] == version }
+  end
+
+  # TestFlight shows "What to Test" as plain text, so release-please's markdown
+  # is flattened: the pull request's robot preamble and footer go, links keep
+  # their text, commit hashes and pull request numbers go, and headings and
+  # bullets lose their markup.
+  # 4000 characters is App Store Connect's limit.
+  def plain_release_notes(markdown)
+    text = markdown.dup
+    parts = text.split(/^---\s*$/)
+    text = parts[1] if parts.length >= 3
+    text = text
+      .gsub(/\[([^\]]*)\]\([^)]*\)/, '\\1')
+      .gsub(/\s*\([0-9a-f]{7,40}\)/, "")
+      .gsub(/\s*\(#\d+\)/, "")
+      .gsub(/^#+\s*/, "")
+      .gsub(/\*\*([^*]+)\*\*/, '\\1')
+      .gsub(/^\s*[*-]\s+/, "• ")
+      .gsub(/\n{3,}/, "\n\n")
+      .strip
+    return nil if text.empty?
+    text.length > 4000 ? "#{text[0, 3999]}…" : text
   end
 end

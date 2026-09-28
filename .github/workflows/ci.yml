@@ -217,6 +217,20 @@ jobs:
           ruby-version: "3.3"
           bundler-cache: true
 
+      # "What to Test" is the pending changelog: the body of the release pull
+      # request release-please keeps open. Read after the approval, so it is
+      # current. With none open (this push was the release itself, or nothing
+      # releasable has landed since), the lane falls back to CHANGELOG.md's
+      # entry for this version, then to the commit message.
+      - name: Pending release notes
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          notes=$(gh pr list --repo "$GITHUB_REPOSITORY" --state open \
+            --label "autorelease: pending" --json body --jq '.[0].body // ""')
+          delimiter="NOTES_$(openssl rand -hex 8)"
+          { echo "PEARD_RELEASE_NOTES<<$delimiter"; echo "$notes"; echo "$delimiter"; } >> "$GITHUB_ENV"
+
       # Waits for App Store Connect to finish processing that build, then adds
       # it to the external group. The first build of each version is submitted
       # for Beta App Review on the way.

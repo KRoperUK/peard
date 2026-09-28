@@ -1,0 +1,41 @@
+name: Release Please
+
+# Keeps a release pull request open against main, rebuilt from the Conventional
+# Commits that have landed since the last release: `feat:` bumps the minor
+# version, `fix:` the patch, and a `!` or BREAKING CHANGE footer the major. The
+# pull request carries the CHANGELOG.md entry and the MARKETING_VERSION bump in
+# ios/project.yml, and its body is the pending changelog that external TestFlight
+# testers are shown as "What to Test" (see promote_external in the Fastfile).
+#
+# Merging it tags the release and publishes a GitHub release. The merge is an
+# ordinary push to main, so CI builds and uploads that version like any other.
+#
+# RELEASE_PLEASE_TOKEN, a fine-grained token with Contents and Pull requests
+# write on this repository, is what opens the pull request. The workflow token
+# would do, but a pull request it opens never runs CI, so it could never pass
+# the checks main requires, and this repository doesn't let Actions open pull
+# requests anyway.
+
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+concurrency:
+  group: release-please
+  cancel-in-progress: false
+
+permissions:
+  contents: write
+  pull-requests: write
+
+jobs:
+  release-please:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: googleapis/release-please-action@45996ed1f6d02564a971a2fa1b5860e934307cf7 # v5.0.0
+        with:
+          token: ${{ secrets.RELEASE_PLEASE_TOKEN || github.token }}
+          config-file: release-please-config.json
+          manifest-file: .release-please-manifest.json
