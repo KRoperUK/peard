@@ -758,6 +758,20 @@ final class HomeModel {
         }
     }
 
+    /// Whether the signed-in user may remove this moment — only whoever added
+    /// it, matching the server's DeleteRule (`created_by = @request.auth.id`).
+    ///
+    /// The bin used to show on every published moment for every member, so
+    /// most of the people who could see it got an error for pressing it.
+    func canRemove(_ moment: Moment) -> Bool {
+        Self.canRemove(moment, customKinds: customKinds, userID: signedInUserID)
+    }
+
+    static func canRemove(_ moment: Moment, customKinds: [MomentKind], userID: String) -> Bool {
+        guard case .custom(let recordID) = moment.origin, let recordID, !userID.isEmpty else { return false }
+        return customKinds.first { $0.id == recordID }?.createdBy == userID
+    }
+
     /// Removes a published moment. Existing posts keep their kind, so past
     /// tallies are unaffected; the moment just stops being offered.
     func removeCustom(moment: Moment) async {
@@ -767,9 +781,39 @@ final class HomeModel {
             customKinds.removeAll { $0.id == recordID }
         } catch {
             if await app.handleIfUnauthorized(error) { return }
-            alert = AlertContent(
+            if (error as? APIError)?.status == 404 {
+                // Already gone. The bin is only offered to the moment's
+                // creator, so this is them having removed it somewhere else;
+                // what they asked for is true, and there is nothing to say.
+                customKinds.removeAll { $0.id == recordID }
+                return
+            }
+            alert = Self.removalAlert(for: error)
+        }
+    }
+
+    /// What a failed removal says, which used to be "Only whoever added a
+    /// moment can remove it." whatever had actually gone wrong — including no
+    /// signal, which sent people looking for a permission problem that was not
+    /// there.
+    static func removalAlert(for error: Error) -> AlertContent? {
+        let apiError = error as? APIError
+        if apiError?.isCancellation == true { return nil }
+        switch apiError {
+        case .transport:
+            return AlertContent(
+                title: "Couldn't remove it",
+                message: "Couldn't reach Pear'd. Check your connection and try again."
+            )
+        case .server(status: 403, _):
+            return AlertContent(
                 title: "Couldn't remove it",
                 message: "Only whoever added a moment can remove it."
+            )
+        default:
+            return AlertContent(
+                title: "Couldn't remove it",
+                message: "Something went wrong, so it's still there. Try again."
             )
         }
     }
