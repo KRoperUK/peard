@@ -189,6 +189,7 @@ func (w *exportWorld) seed(t *testing.T) {
 
 	w.aliceDevice = w.newRecord(t, "devices", map[string]any{
 		"user": w.alice.Id, "platform": "ios", "push_token": alicePushToken, "activity_start_token": aliceStartToken,
+		"time_zone": "Europe/London",
 	})
 	w.carolDevice = w.newRecord(t, "devices", map[string]any{"user": w.carol.Id, "platform": "ios", "push_token": "carol-push-token-xyz"})
 
@@ -508,6 +509,7 @@ func TestExportContainsCallersDevicesAndTokens(t *testing.T) {
 		"created":              w.aliceDevice.GetString("created"),
 		"push_token":           "…abcdef",
 		"activity_start_token": "…987654",
+		"time_zone":            "Europe/London",
 	})
 	checkFields(t, "widget_token", only(t, "widget_tokens", p.WidgetTokens, w.aliceWidget), map[string]any{
 		"label":   "Home screen",

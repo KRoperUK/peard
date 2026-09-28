@@ -152,6 +152,42 @@ final class APIClientTests: XCTestCase {
         XCTAssertEqual(components.queryItems?.first { $0.name == "token" }?.value, "widget-token")
     }
 
+    /// The feed's "today" is the phone's, so the widget names its zone. By
+    /// name, not offset: the server needs to know when the clocks change.
+    func testTheWidgetFeedSendsItsTimeZone() async throws {
+        StubURLProtocol.respond(json: #"{"state":"unpaired"}"#)
+
+        _ = try await client.widgetFeed(token: "widget-token", timeZone: TimeZone(identifier: "America/New_York")!)
+
+        let components = try XCTUnwrap(URLComponents(
+            url: try XCTUnwrap(StubURLProtocol.lastRequest?.url), resolvingAgainstBaseURL: false
+        ))
+        XCTAssertEqual(components.queryItems?.first { $0.name == "tz" }?.value, "America/New_York")
+    }
+
+    /// The device row carries the zone the weekly recap is timed by.
+    func testDeviceRegistrationCarriesTheTimeZone() {
+        let fields = Device.registrationFields(
+            user: "u1",
+            pushToken: "abc123",
+            timeZone: TimeZone(identifier: "Asia/Tokyo")!
+        )
+
+        XCTAssertEqual(fields, ["user": "u1", "platform": "ios", "push_token": "abc123", "time_zone": "Asia/Tokyo"])
+    }
+
+    /// Left to its default it is the phone's own.
+    func testTheWidgetFeedDefaultsToThePhonesTimeZone() async throws {
+        StubURLProtocol.respond(json: #"{"state":"unpaired"}"#)
+
+        _ = try await client.widgetFeed(token: "widget-token")
+
+        let components = try XCTUnwrap(URLComponents(
+            url: try XCTUnwrap(StubURLProtocol.lastRequest?.url), resolvingAgainstBaseURL: false
+        ))
+        XCTAssertEqual(components.queryItems?.first { $0.name == "tz" }?.value, TimeZone.current.identifier)
+    }
+
     // MARK: Errors
 
     func testServerErrorPrefersMessageField() async throws {

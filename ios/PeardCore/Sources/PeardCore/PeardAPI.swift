@@ -8,8 +8,14 @@ public extension APIClient {
     ///
     /// `pairID` pins the feed to one connection, which is what a configured widget
     /// asks for. Omitting it lets the server pick the liveliest.
-    func widgetFeed(token: String, pairID: String? = nil) async throws -> WidgetFeed {
-        var query = ["token": token]
+    ///
+    /// `timeZone` is sent by name so the feed's "today" is the phone's day, not
+    /// the server's: its container runs in UTC, so without it the day rolled
+    /// over at 7pm in New York. A name rather than an offset, because the
+    /// offset is wrong for the hours after a clock change until the next
+    /// refresh.
+    func widgetFeed(token: String, pairID: String? = nil, timeZone: TimeZone = .current) async throws -> WidgetFeed {
+        var query = ["token": token, "tz": timeZone.identifier]
         if let pairID, !pairID.isEmpty { query["pair"] = pairID }
         let data = try await data(path: "/api/peard/widget/feed", query: query)
         do {
