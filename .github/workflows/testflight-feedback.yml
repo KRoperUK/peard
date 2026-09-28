@@ -19,8 +19,8 @@ name: TestFlight Feedback to Issues
 # Optional:
 #   vars.ASC_APP_ID    App Store Connect app resource id (defaults to 6795739297)
 #   vars.ASC_BUNDLE_ID Defaults to com.peard.app
-#   vars.OPENROUTER_MODEL  OpenRouter model slug (defaults to deepseek/deepseek-v4-flash;
-#                          pick a vision-capable model to have screenshots analysed)
+#   vars.OPENROUTER_MODEL  OpenRouter model slug (defaults to deepseek/deepseek-v4.1-flash;
+#                          use a vision-capable model so screenshots are read)
 
 on:
   schedule:

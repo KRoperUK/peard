@@ -235,7 +235,7 @@ It reuses the App Store Connect secrets above, plus:
 | Where | Name | What |
 |---|---|---|
 | Secret | `OPENROUTER_API_KEY` | OpenRouter API key |
-| Variable | `OPENROUTER_MODEL` | Model slug; defaults to `deepseek/deepseek-v4-flash`. Screenshots are only read by a vision-capable model |
+| Variable | `OPENROUTER_MODEL` | Model slug; defaults to `deepseek/deepseek-v4.1-flash`; `minimax/minimax-m3` also works. Use a vision-capable model so screenshots are read |
 
 No macOS job pins an `Xcode_NN.app` path or names a simulator: both come and go
 with the runner image, and hard-coding either turns an image update into a red

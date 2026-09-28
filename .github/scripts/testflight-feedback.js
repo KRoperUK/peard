@@ -123,7 +123,7 @@ function loadConfig(core) {
     appId: (process.env.ASC_APP_ID || '').trim(),
     bundleId: (process.env.ASC_BUNDLE_ID || '').trim() || DEFAULT_BUNDLE_ID,
     openRouterKey: need('OPENROUTER_API_KEY'),
-    model: (process.env.OPENROUTER_MODEL || '').trim() || 'deepseek/deepseek-v4-flash',
+    model: (process.env.OPENROUTER_MODEL || '').trim() || 'deepseek/deepseek-v4.1-flash',
     limit: Number.parseInt(process.env.FEEDBACK_LIMIT || '50', 10),
     dryRun: /^(1|true|yes)$/i.test(process.env.DRY_RUN || ''),
   };
