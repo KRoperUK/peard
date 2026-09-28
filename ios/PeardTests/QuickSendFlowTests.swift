@@ -256,6 +256,30 @@ final class QuickSendFlowTests: XCTestCase {
         XCTAssertEqual(model.caption(for: post), "Sauna")
     }
 
+    /// Issue #57: a preset has to be published before it is logged, and when
+    /// that failed the moment and its note were already cleared and nothing was
+    /// queued. Pointed at a port nothing listens on, so publishing fails while
+    /// the device still reads as online and the publish is really attempted.
+    func testAMomentWhoseKindCannotBePublishedIsStillQueued() async throws {
+        let unreachable = PeardConfig(serverURL: URL(string: "http://127.0.0.1:9")!, googleClientID: "")
+        let app = AppModel(config: unreachable, sessionStore: sessionStore, sendQueue: queue)
+        await app.attachSendQueue()
+        let model = HomeModel(app: app, pairID: Self.pairID)
+        let tea = try XCTUnwrap(MomentCatalogue.presets.first { $0.kind == "tea" })
+        XCTAssertTrue(tea.needsPublishing)
+
+        model.tap(moment: tea)
+        model.noteText = "builder's"
+        model.noteDidChange()
+        await model.sendNow()
+
+        let queued = await queue.pending
+        XCTAssertEqual(queued.count, 1, "a failed publish must not lose the moment")
+        XCTAssertEqual(queued.first?.kind, "tea")
+        XCTAssertEqual(queued.first?.note, "builder's")
+        XCTAssertEqual(queued.first?.emoji, "🫖")
+    }
+
     // MARK: Rewinding
 
     /// Opening the picker stops the clock, before anything is chosen: the send
