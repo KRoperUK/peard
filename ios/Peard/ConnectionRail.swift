@@ -19,7 +19,16 @@ struct ConnectionRail: View {
     let onSelect: (String) -> Void
     let onAdd: () -> Void
 
-    private let avatarSize: CGFloat = 46
+    // Scaled with the reader's text size (issue #4), rather than fixed points
+    // that stayed put while everything around them grew. The avatar is capped so
+    // the rail stays a rail at the largest sizes; the initials inside it and the
+    // "+" beside it follow its size.
+    @ScaledMetric(relativeTo: .body) private var scaledAvatar: CGFloat = 46
+    @ScaledMetric(relativeTo: .caption2) private var bellSize: CGFloat = 9
+    @ScaledMetric(relativeTo: .caption2) private var badgeText: CGFloat = 10
+    @ScaledMetric(relativeTo: .caption2) private var badgeSide: CGFloat = 16
+
+    private var avatarSize: CGFloat { min(scaledAvatar, 72) }
 
     var body: some View {
         ScrollViewReader { proxy in
@@ -63,7 +72,7 @@ struct ConnectionRail: View {
                 .overlay(alignment: .bottomTrailing) {
                     if connection.isMuted {
                         Image(systemName: "bell.slash.fill")
-                            .font(.system(size: 9, weight: .bold))
+                            .font(.system(size: bellSize, weight: .bold))
                             .foregroundStyle(PearColor.textSecondary)
                             .padding(3)
                             .background(PearColor.background, in: Circle())
@@ -98,11 +107,11 @@ struct ConnectionRail: View {
     /// "9+" so a busy group cannot widen the tile and push the rail around.
     private func unreadBadge(count: Int) -> some View {
         Text(count > 9 ? "9+" : "\(count)")
-            .font(.system(size: 10, weight: .bold))
+            .font(.system(size: badgeText, weight: .bold))
             .foregroundStyle(PearColor.onAccent)
             .monospacedDigit()
             .padding(.horizontal, 4)
-            .frame(minWidth: 16, minHeight: 16)
+            .frame(minWidth: badgeSide, minHeight: badgeSide)
             .background(PearColor.accent, in: Capsule())
             .overlay(Capsule().strokeBorder(PearColor.background, lineWidth: 1.5))
             .offset(x: 4, y: -2)
@@ -126,7 +135,7 @@ struct ConnectionRail: View {
         Button(action: onAdd) {
             VStack(spacing: 5) {
                 Image(systemName: "plus")
-                    .font(.system(size: 18, weight: .semibold))
+                    .font(.system(size: avatarSize * 0.39, weight: .semibold))
                     .foregroundStyle(PearColor.accent)
                     .frame(width: avatarSize, height: avatarSize)
                     .background(PearColor.surface, in: Circle())
