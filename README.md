@@ -146,6 +146,7 @@ bundle exec fastlane test            # PeardCore + server + app target
 bundle exec fastlane build           # Debug simulator build
 bundle exec fastlane release_build   # Release build
 bundle exec fastlane beta            # archive + TestFlight
+bundle exec fastlane promote_external  # send a TestFlight build to external testers
 ```
 
 Every lane that touches Xcode regenerates the project first. `archive` and `beta`
@@ -178,11 +179,38 @@ stuck behind Xcode:
   serves, and migrations apply on start, so this is where a broken image surfaces
   rather than mid-deploy.
 - **PeardCore** (macOS) — `swift test`, no simulator needed.
-- **App** (macOS) — generate the project, build Debug *and* Release, then run the
-  app-target tests. On failure the `.xcresult` bundle is uploaded as an artifact.
+- **App** (macOS) — generate the project and run the app-target tests, which is
+  the one Debug build a pull request needs. On failure the `.xcresult` bundle is
+  uploaded as an artifact.
 
-A fifth job, **Deploy server**, waits on all four and then asks Komodo to roll
-the server — see [Deployment](#deployment).
+Two more jobs run on pushes to `main` only, after all four pass:
+
+- **Deploy server** asks Komodo to roll the server — see [Deployment](#deployment).
+- **TestFlight (internal)** archives a Release build and uploads it
+  (`fastlane beta`). Internal testers get it automatically when the internal
+  group has automatic distribution on in App Store Connect. The Release build
+  that pull requests no longer make happens here, so a Release-only break still
+  turns `main` red before it reaches a phone.
+
+External testers are a deliberate step: **Actions → TestFlight (external) → Run
+workflow** sends a build already on TestFlight — the latest, or the number typed
+in — to the external group (`fastlane promote_external`). Nothing is rebuilt, so
+what goes out is exactly what internal testers ran. The first build of each
+version goes through Beta App Review first.
+
+To switch these on (until then the internal job skips itself with a warning):
+
+| Where | Name | What |
+|---|---|---|
+| Secret | `APP_STORE_CONNECT_API_KEY_ID` | App Store Connect API key id |
+| Secret | `APP_STORE_CONNECT_API_ISSUER_ID` | Issuer id |
+| Secret | `APP_STORE_CONNECT_API_KEY_BASE64` | The `.p8`, base64-encoded (`base64 -i AuthKey_XXXX.p8`) |
+| Variable | `PEARD_TESTFLIGHT_EXTERNAL_GROUP` | The external testers' group name |
+| Environment | `testflight-internal`, `testflight-external` | Add a required reviewer to `testflight-external` so the button asks first |
+
+The key needs the **Admin** role: the runner has no Apple ID signed in, so the
+archive signs with cloud-managed certificates through the key
+(`-authenticationKeyPath` and friends, passed by the `archive` lane).
 
 Neither macOS job pins an `Xcode_NN.app` path or names a simulator: both come and
 go with the runner image, and hard-coding either turns an image update into a red
