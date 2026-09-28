@@ -196,3 +196,22 @@ func TestTrustedHeaderSurvivesLimitsBeingDisabled(t *testing.T) {
 		t.Fatal("trusted proxy config was dropped along with the limits")
 	}
 }
+
+// Invite codes are short enough to read out, so guessing one is only
+// impractical while attempts are scarce.
+func TestAcceptingInvitesIsLimited(t *testing.T) {
+	for _, r := range rules() {
+		if r.Label != "/api/peard/pairs/accept" {
+			continue
+		}
+		perHour := float64(r.MaxRequests) * 3600 / float64(r.Duration)
+		if perHour > 100 {
+			t.Errorf("%.0f attempts an hour is not much of a limit", perHour)
+		}
+		if r.MaxRequests < 5 {
+			t.Errorf("only %d attempts per %ds — a few typos would lock somebody out", r.MaxRequests, r.Duration)
+		}
+		return
+	}
+	t.Fatal("no rule for /api/peard/pairs/accept — only the /api/ catch-all applies")
+}

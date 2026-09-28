@@ -156,6 +156,11 @@ func rules() []core.RateLimitRule {
 		// sends this when the Find Friends screen is opened.
 		{Label: "/api/peard/contacts/match", MaxRequests: 6, Duration: 60},
 
+		// Accepting an invite. A code is six characters so it can be read
+		// out, which makes guessing the thing to stop: a person mistypes one
+		// a few times, a script tries thousands.
+		{Label: "/api/peard/pairs/accept", MaxRequests: 10, Duration: 600},
+
 		// A full export of one account. Expensive, and wanted about once ever.
 		{Label: "/api/peard/export", MaxRequests: 3, Duration: 60},
 

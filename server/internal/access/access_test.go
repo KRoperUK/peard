@@ -20,9 +20,15 @@ import (
 	"github.com/pocketbase/pocketbase/tools/filesystem"
 
 	"peard/internal/avatars"
+	"peard/internal/contacts"
+	"peard/internal/export"
+	"peard/internal/media"
 	"peard/internal/pairs"
+	"peard/internal/posts"
 	"peard/internal/profile"
+	"peard/internal/recap"
 	"peard/internal/tallies"
+	"peard/internal/widget"
 
 	_ "peard/migrations"
 )
@@ -79,10 +85,18 @@ func newWorld(t *testing.T) *world {
 	})
 
 	// Every route that could plausibly disclose somebody else's information.
+	// Rate limits, push and the website are left out: they either get in the
+	// way of a test that makes many requests or reach outside the process.
 	pairs.Register(app)
 	profile.Register(app)
 	avatars.Register(app)
 	tallies.Register(app)
+	media.Register(app)
+	posts.Register(app)
+	recap.Register(app)
+	widget.Register(app)
+	export.Register(app)
+	contacts.Register(app)
 
 	w := &world{app: app}
 	w.seed(t)
