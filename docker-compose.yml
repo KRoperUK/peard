@@ -81,6 +81,9 @@ services:
       - PEARD_APNS_PRODUCTION=${PEARD_APNS_PRODUCTION:-true}
 
       - PEARD_PB_ENCRYPTION_KEY
+      # Keys the stored contact-matching hashes. Unset stores plain SHA-256;
+      # see server/.env.example.
+      - PEARD_CONTACT_HASH_KEY
       - TZ=${TZ:-Etc/UTC}
 
     volumes:

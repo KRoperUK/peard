@@ -539,6 +539,21 @@ hold a multi-line value, so base64 is the form to use there:
 base64 < AuthKey_XXXXXXXXXX.p8 | tr -d '\n'
 ```
 
+**Set a contact hash key.** Contact matching stores a hash of each
+discoverable account's email and phone. Without a key that is plain SHA-256,
+which anyone holding a copy of the database can reverse for phone numbers by
+trying them all; with one it is HMAC-SHA256 under the key, which they cannot.
+
+| Env | Value |
+|---|---|
+| `PEARD_CONTACT_HASH_KEY` | A long random secret, e.g. `openssl rand -hex 32`. Unset stores plain SHA-256 and logs a warning at boot |
+
+Every boot re-keys every account from its stored email and phone, so adding,
+rotating or removing the key is a restart. Keep it wherever the APNs key lives;
+losing it costs nothing but a re-key on the next boot with a new one. It does
+not hide contact hashes from the server itself — the app sends plain SHA-256
+over TLS — which is spelled out in `server/internal/contacts`.
+
 **`pb_data` is a named volume.** It holds the SQLite databases, uploaded media,
 and the Let's Encrypt certificate if TLS is managed here — the only state that
 matters, and the only thing to back up. A fresh named volume inherits uid 1000

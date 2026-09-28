@@ -3,10 +3,17 @@ import Foundation
 
 /// Mirrors `server/internal/contacts`' hashing exactly — same
 /// normalisation, same SHA-256, same "email:"/"phone:" namespace prefix — so
-/// a contact hashed on this device matches the hash the server already
-/// stores for an account with that email or phone. See that package's doc
-/// comment for the privacy trade-off (unsalted SHA-256 is reversible by
-/// brute force for a small input space like a phone number) and for why
+/// a contact hashed on this device matches an account with that email or
+/// phone. The server keys what it stores (HMAC under a server secret,
+/// `PEARD_CONTACT_HASH_KEY`) and applies the same key to what this sends, so
+/// this side stays plain SHA-256 and every installed build keeps working.
+///
+/// Be clear about what that buys. The key means a copy of the server's
+/// database can no longer be reversed by brute force. It does not hide these
+/// hashes from the server itself: they arrive unkeyed (over TLS), and a phone
+/// number's SHA-256 is still reversible by trying every number, so whoever runs
+/// the server could recover them. Closing that needs private set intersection,
+/// which is out of scope. See that package's doc comment for more, and for why
 /// phone matching has no country-code inference: a contact saved locally
 /// without its country code simply will not match.
 public enum ContactHashing {

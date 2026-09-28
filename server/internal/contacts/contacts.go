@@ -9,18 +9,39 @@
 // POST /api/peard/contacts/settings's `discoverable` flag — searching your
 // own contacts needs no opt-in, appearing in someone else's results does.
 //
-// This is not a strong privacy guarantee: unsalted SHA-256 of a phone number
-// or email is reversible by brute force for anyone who can guess the input
-// space (which, for a phone number, is small). It is a meaningfully better
-// default than uploading contacts in the clear, not a cryptographic promise —
-// documented as such in the privacy policy.
+// What is stored is keyed. With PEARD_CONTACT_HASH_KEY set, an account's
+// email_hash and phone_hash hold HMAC-SHA256(key, sha256-hex) rather than the
+// plain SHA-256, and the match route applies the same HMAC to each submitted
+// hash before looking it up. The app is unchanged: it still sends plain
+// SHA-256, which is what keeps the scheme working with every build already
+// installed.
+//
+// What the key protects: the database. A plain SHA-256 of a phone number can
+// be reversed by trying every number, and phone numbers are a small space, so
+// a leaked users table used to be a leaked list of phone numbers and emails.
+// Keyed, the hashes cannot be reversed without the key as well, and the key
+// lives in the server's environment, not its database.
+//
+// What it does not protect: the hashes still reach the server unkeyed (over
+// TLS), so whoever runs the server sees each submitted SHA-256 and could
+// brute-force those just as before. Closing that needs private set
+// intersection, which is out of scope. The match route is also still an
+// oracle for "is this number registered and discoverable?", bounded by
+// maxContactHashes and the rate limits, not by the key.
+//
+// Adding or rotating the key needs nothing else: every boot recomputes every
+// account's hashes from its stored email and phone with the current key. With
+// no key the plain SHA-256 is stored, exactly as before, and the server warns
+// once at boot.
 package contacts
 
 import (
+	"crypto/hmac"
 	"crypto/sha256"
 	"encoding/hex"
 	"fmt"
 	"net/http"
+	"os"
 	"strings"
 
 	"github.com/pocketbase/dbx"
@@ -37,8 +58,51 @@ const maxPhoneLength = 32
 // invitation to enumerate the whole hash space in one call.
 const maxContactHashes = 1000
 
-// Register binds the contact-hash record hooks and the two routes.
+// hashKeyEnv names the server secret stored hashes are keyed with.
+const hashKeyEnv = "PEARD_CONTACT_HASH_KEY"
+
+// hashKey is read on every use rather than once at Register, so the boot
+// re-key, the record hooks and the match route can never disagree about it.
+// The environment does not change under a running process, so in production
+// it is the same key every time.
+func hashKey() []byte {
+	return []byte(strings.TrimSpace(os.Getenv(hashKeyEnv)))
+}
+
+// keyed turns a plain SHA-256 hex digest into what is stored and looked up:
+// HMAC-SHA256 under the server key, hex-encoded, or the digest unchanged when
+// there is no key. Empty stays empty, so "no phone" never matches anything.
+func keyed(digest string) string {
+	key := hashKey()
+	if digest == "" || len(key) == 0 {
+		return digest
+	}
+	mac := hmac.New(sha256.New, key)
+	mac.Write([]byte(digest))
+	return hex.EncodeToString(mac.Sum(nil))
+}
+
+// Register binds the contact-hash record hooks, the boot re-key and the two
+// routes.
 func Register(app core.App) {
+	app.OnBootstrap().BindFunc(func(e *core.BootstrapEvent) error {
+		if err := e.Next(); err != nil {
+			return err
+		}
+		if len(hashKey()) == 0 {
+			e.App.Logger().Warn(hashKeyEnv + " is not set: contact hashes are stored as plain SHA-256, which anyone holding a copy of the database could reverse for phone numbers")
+		}
+		// A failed re-key leaves some accounts unmatchable until the next
+		// boot, which is not worth refusing to start over.
+		changed, err := rekeyAll(e.App)
+		if err != nil {
+			e.App.Logger().Error("contact hash re-key failed", "error", err, "changed", changed)
+		} else if changed > 0 {
+			e.App.Logger().Info("contact hashes re-keyed", "changed", changed)
+		}
+		return nil
+	})
+
 	app.OnRecordCreate("users").BindFunc(func(e *core.RecordEvent) error {
 		applyContactHashes(e.Record)
 		return e.Next()
@@ -61,8 +125,59 @@ func Register(app core.App) {
 // account, or the discoverability settings route below all funnel through
 // the same users collection save.
 func applyContactHashes(record *core.Record) {
-	record.Set("email_hash", HashEmail(MatchableEmail(record)))
-	record.Set("phone_hash", HashPhone(record.GetString("phone")))
+	record.Set("email_hash", storedEmailHash(record))
+	record.Set("phone_hash", storedPhoneHash(record))
+}
+
+func storedEmailHash(record *core.Record) string { return keyed(HashEmail(MatchableEmail(record))) }
+func storedPhoneHash(record *core.Record) string { return keyed(HashPhone(record.GetString("phone"))) }
+
+// rekeyPage bounds how many accounts rekeyAll holds at once.
+const rekeyPage = 500
+
+// rekeyAll recomputes every account's stored hashes with the current key and
+// writes the ones that changed, returning how many did. That is what makes
+// adding, rotating or removing the key a restart and nothing more: the
+// plaintext email and phone are on the record, so no old key is needed.
+//
+// A direct column update rather than app.Save. These two columns are derived
+// data, not an edit to the account: a Save would bump every user's `updated`,
+// fire realtime events and every users hook, and re-validate whole records,
+// so one stale row somewhere could stop the rest being re-keyed. The only hook
+// that cares about these columns is applyContactHashes, which would compute
+// exactly the values written here.
+//
+// Under `serve` this runs after bootstrap but before pending migrations. On a
+// data directory that predates the contacts migration there is nothing to
+// re-key yet, and the accounts that migration backfills go through the record
+// hooks, which key them.
+func rekeyAll(app core.App) (int, error) {
+	users, err := app.FindCollectionByNameOrId("users")
+	if err != nil || users.Fields.GetByName("email_hash") == nil || users.Fields.GetByName("phone_hash") == nil {
+		return 0, nil
+	}
+	changed := 0
+	for offset := 0; ; offset += rekeyPage {
+		records, err := app.FindRecordsByFilter("users", "", "id", rekeyPage, offset)
+		if err != nil {
+			return changed, err
+		}
+		for _, r := range records {
+			email, phone := storedEmailHash(r), storedPhoneHash(r)
+			if email == r.GetString("email_hash") && phone == r.GetString("phone_hash") {
+				continue
+			}
+			if _, err := app.DB().Update("users",
+				dbx.Params{"email_hash": email, "phone_hash": phone},
+				dbx.HashExp{"id": r.Id}).Execute(); err != nil {
+				return changed, err
+			}
+			changed++
+		}
+		if len(records) < rekeyPage {
+			return changed, nil
+		}
+	}
 }
 
 // MatchableEmail is the address to hash for contact matching: whatever the user
@@ -153,7 +268,18 @@ func matchHandler(app core.App) func(e *core.RequestEvent) error {
 		}
 
 		unique := dedupeNonEmpty(body.Hashes)
-		filter, params := matchFilter(unique)
+
+		// Look up what is stored — the keyed form — and remember which
+		// submitted hash each came from, so the response can echo the
+		// caller's own value rather than one only the server can compute.
+		submittedFor := make(map[string]string, len(unique))
+		lookup := make([]string, 0, len(unique))
+		for _, h := range unique {
+			k := keyed(h)
+			submittedFor[k] = h
+			lookup = append(lookup, k)
+		}
+		filter, params := matchFilter(lookup)
 		if filter == "" {
 			return e.JSON(http.StatusOK, map[string]any{"matches": []map[string]any{}})
 		}
@@ -161,11 +287,6 @@ func matchHandler(app core.App) func(e *core.RequestEvent) error {
 		users, err := app.FindRecordsByFilter("users", filter, "", maxContactHashes, 0, params)
 		if err != nil {
 			return e.InternalServerError("match failed", err)
-		}
-
-		wasSubmitted := make(map[string]bool, len(unique))
-		for _, h := range unique {
-			wasSubmitted[h] = true
 		}
 
 		matches := make([]map[string]any, 0, len(users))
@@ -182,19 +303,21 @@ func matchHandler(app core.App) func(e *core.RequestEvent) error {
 				// did not already know, since it is the caller's own hash,
 				// but it is what lets the app show "this is your contact
 				// Alex" instead of an anonymous result it cannot act on.
-				"hash": matchedHash(u, wasSubmitted),
+				"hash": matchedHash(u, submittedFor),
 			})
 		}
 		return e.JSON(http.StatusOK, map[string]any{"matches": matches})
 	}
 }
 
-func matchedHash(user *core.Record, submitted map[string]bool) string {
-	if h := user.GetString("email_hash"); h != "" && submitted[h] {
-		return h
+// matchedHash maps the stored hash an account matched on back to the caller's
+// submitted one.
+func matchedHash(user *core.Record, submittedFor map[string]string) string {
+	if h := user.GetString("email_hash"); h != "" && submittedFor[h] != "" {
+		return submittedFor[h]
 	}
-	if h := user.GetString("phone_hash"); h != "" && submitted[h] {
-		return h
+	if h := user.GetString("phone_hash"); h != "" && submittedFor[h] != "" {
+		return submittedFor[h]
 	}
 	return ""
 }
@@ -256,7 +379,7 @@ func NormalisePhone(phone string) string {
 }
 
 // HashEmail and HashPhone are what both the server (hashing an account's own
-// identity, in the record hooks above) and the app (hashing a contact before
+// identity, in the record hooks above, before keying it) and the app (hashing a contact before
 // it ever leaves the device) must compute identically. Namespaced so an
 // email and a phone number that happen to normalise to the same bytes can
 // never collide.
