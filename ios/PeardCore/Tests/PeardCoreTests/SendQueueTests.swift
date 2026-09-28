@@ -214,6 +214,50 @@ final class SendQueueTests: XCTestCase {
         XCTAssertEqual(performed, 1)
     }
 
+    /// Issue #58: a cancelled request was counted as a failed attempt, so
+    /// overlapping flushes could spend a send's whole retry budget without it
+    /// ever reaching the server. A cancellation must leave it untouched.
+    func testACancelledRequestIsNotCountedAsAnAttempt() async {
+        let now = Date(timeIntervalSince1970: 4_000_000)
+        let store = MemoryStore()
+        let queue = SendQueue(store: store)
+        await queue.enqueue(send(id: "a"))
+
+        for error: Error in [APIError.cancelled, CancellationError()] {
+            let result = await queue.flush(now: now) { _ in throw error }
+
+            XCTAssertEqual(result.failed, 0)
+            XCTAssertEqual(result.remaining, 1)
+        }
+
+        let queued = await queue.pending
+        XCTAssertEqual(queued.first?.attempts, 0)
+        XCTAssertNil(queued.first?.lastAttemptAt)
+        XCTAssertEqual(queued.first?.isReady(now: now), true, "no backoff for a request that was withdrawn")
+        XCTAssertEqual(store.stored.first?.attempts, 0)
+    }
+
+    /// The same when the flush's own task is cancelled while the request is in
+    /// flight, whatever the request then throws.
+    func testCancellingTheFlushingTaskIsNotCountedAsAnAttempt() async {
+        let queue = SendQueue(store: MemoryStore())
+        await queue.enqueue(send(id: "a"))
+
+        let flush = Task {
+            await queue.flush { _ in
+                try? await Task.sleep(nanoseconds: 5_000_000_000)
+                throw APIError.transport("The network connection was lost.")
+            }
+        }
+        try? await Task.sleep(nanoseconds: 50_000_000)
+        flush.cancel()
+        let result = await flush.value
+
+        XCTAssertEqual(result.failed, 0)
+        let attempts = await queue.pending.first?.attempts
+        XCTAssertEqual(attempts, 0)
+    }
+
     // MARK: Ageing and abandonment
 
     func testSendsOlderThanTheMaximumAgeArePruned() async {

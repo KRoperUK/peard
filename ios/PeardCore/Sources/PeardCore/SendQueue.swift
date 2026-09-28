@@ -193,6 +193,17 @@ public actor SendQueue {
                     result.abandoned += 1
                     continue
                 case .retryable(let message):
+                    // A cancelled flush was never a real attempt: nothing was
+                    // learned about the server, so counting it would spend the
+                    // send's retry budget — and start its backoff — on a request
+                    // that was withdrawn rather than refused (issue #58). The
+                    // send is left exactly as it was for the next flush.
+                    if Task.isCancelled || error is CancellationError
+                        || (error as? APIError)?.isCancellation == true {
+                        result.remaining = sends.count
+                        if result.didChangeAnything { persist() }
+                        return result
+                    }
                     sends[index] = send.failed(with: message, at: now)
                     result.failed += 1
                     // Stop at the first retryable failure: it almost certainly
