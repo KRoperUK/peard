@@ -237,4 +237,126 @@ final class MomentTrayModelTests: XCTestCase {
 
         XCTAssertEqual(model.moments.map(\.kind), [.beer, .loo, .coffee])
     }
+
+    // MARK: Switching quickly
+
+    /// Switch to A, then back to B before A's feed arrives. Nothing makes the
+    /// two requests answer in order, and A's landing last used to leave A's
+    /// numbers on screen under B's name.
+    func testAFeedForAConnectionNoLongerSelectedIsDropped() async throws {
+        store.writeWidgetCredentials(token: "widget-token", baseURL: URL(string: "http://127.0.0.1:8090")!)
+        store.messagesConnectionID = "b"
+        TrayStubProtocol.reset()
+        TrayStubProtocol.hold(pair: "a")
+        defer { TrayStubProtocol.reset() }
+        let model = MomentTrayModel(store: store, session: TrayStubProtocol.makeSession())
+        await model.load()
+        XCTAssertEqual(model.feed?.connection?.id, "b")
+
+        let switching = Task { await model.select("a") }
+        let deadline = Date().addingTimeInterval(5)
+        while !TrayStubProtocol.isHolding {
+            guard Date() < deadline else { return XCTFail("timed out waiting for A's feed request") }
+            try await Task.sleep(for: .milliseconds(10))
+        }
+        await model.select("b")
+        XCTAssertEqual(model.feed?.connection?.id, "b")
+
+        TrayStubProtocol.release()
+        await switching.value
+
+        XCTAssertEqual(model.selectedID, "b")
+        XCTAssertEqual(model.feed?.connection?.id, "b", "A's late answer must not replace B's feed")
+    }
+}
+
+/// Answers the tray's two requests, and can hold one connection's feed back
+/// until the test releases it — which is how a switch's answers are made to
+/// arrive in the opposite order to the one they were asked for in.
+final class TrayStubProtocol: URLProtocol {
+    private static let lock = NSLock()
+    nonisolated(unsafe) private static var heldPair: String?
+    nonisolated(unsafe) private static var held: [TrayStubProtocol] = []
+
+    static func makeSession() -> URLSession {
+        let configuration = URLSessionConfiguration.ephemeral
+        configuration.protocolClasses = [TrayStubProtocol.self]
+        return URLSession(configuration: configuration)
+    }
+
+    static func hold(pair: String) {
+        lock.lock()
+        heldPair = pair
+        lock.unlock()
+    }
+
+    static var isHolding: Bool {
+        lock.lock()
+        defer { lock.unlock() }
+        return !held.isEmpty
+    }
+
+    static func release() {
+        lock.lock()
+        let waiting = held
+        held = []
+        heldPair = nil
+        lock.unlock()
+        waiting.forEach { $0.respond() }
+    }
+
+    static func reset() {
+        lock.lock()
+        heldPair = nil
+        held = []
+        lock.unlock()
+    }
+
+    override class func canInit(with request: URLRequest) -> Bool { true }
+    override class func canonicalRequest(for request: URLRequest) -> URLRequest { request }
+
+    private var pair: String? {
+        request.url.flatMap { URLComponents(url: $0, resolvingAgainstBaseURL: false) }?
+            .queryItems?.first { $0.name == "pair" }?.value
+    }
+
+    override func startLoading() {
+        let pair = self.pair
+        Self.lock.lock()
+        let shouldHold = pair != nil && pair == Self.heldPair
+        if shouldHold {
+            Self.held.append(self)
+        }
+        Self.lock.unlock()
+        if !shouldHold {
+            respond()
+        }
+    }
+
+    private func respond() {
+        let body: Data?
+        if request.url?.path.hasSuffix("/connections") == true {
+            body = try? JSONEncoder().encode(WidgetConnectionList(connections: [
+                WidgetConnection(id: "a", title: "Sam"),
+                WidgetConnection(id: "b", title: "Flatmates")
+            ]))
+        } else {
+            body = try? JSONEncoder().encode(WidgetFeed(
+                state: .ok,
+                partner: nil,
+                connection: WidgetFeed.ConnectionInfo(id: pair),
+                tallies: nil,
+                post: nil
+            ))
+        }
+        let response = HTTPURLResponse(
+            url: request.url!, statusCode: 200, httpVersion: "HTTP/1.1",
+            headerFields: ["Content-Type": "application/json"]
+        )!
+        client?.urlProtocol(self, didReceive: response, cacheStoragePolicy: .notAllowed)
+        client?.urlProtocol(self, didLoad: body ?? Data())
+        client?.urlProtocolDidFinishLoading(self)
+    }
+
+    override func stopLoading() {}
 }
