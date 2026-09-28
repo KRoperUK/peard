@@ -629,6 +629,7 @@ struct PearWidgetBundle: WidgetBundle {
             LogBeerControl()
             LogCoffeeControl()
             LogLooControl()
+            LogMomentControl()
         }
     }
 }

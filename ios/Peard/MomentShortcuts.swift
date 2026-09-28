@@ -70,11 +70,9 @@ struct LogPublishedMomentIntent: AppIntent {
         let option = MomentOption(encoded: moment)
         let outcome = await MomentLogging.perform(
             kind: EventKind(rawValue: option.kind),
-            // The moment's own connection, not the parameter: they agree
-            // whenever the picker filled it in, and the moment is the one that
-            // was actually chosen. A built-in carries none and falls through to
-            // the connection, then to liveliest.
-            pairID: option.pairID ?? connection?.id,
+            // The moment's own connection before the parameter; see
+            // `MomentOption.pairID(fallingBackTo:)`.
+            pairID: option.pairID(fallingBackTo: connection?.id),
             emoji: option.emoji,
             label: option.label
         )
@@ -82,132 +80,14 @@ struct LogPublishedMomentIntent: AppIntent {
     }
 }
 
-/// One row of the Moment picker, and everything `perform()` needs to log it.
-///
-/// Carries its connection rather than only its kind, because the server refuses
-/// a custom moment in a connection that has not published it — `isKnownKind`
-/// returns 400 "that moment isn't available in this connection". An option that
-/// named only the kind could be chosen in a way that could never succeed, and
-/// the logging path has nowhere to report a failure.
-struct MomentOption: Hashable {
-    var kind: String
-    var emoji: String
-    var label: String
-    /// The connection this option logs into, or nil for "whichever is liveliest"
-    /// — only nil for the three built-ins, which every connection has.
-    var pairID: String?
-    /// Shown under the label when the option belongs to one connection, so two
-    /// connections that both invented "Dog walk" can be told apart.
-    var connectionTitle: String?
-
-    /// A unit separator: not a character a moment label or a pair id can
-    /// contain, and never seen by anybody — Shortcuts shows the title from the
-    /// options provider, not this.
-    private static let separator = "\u{1F}"
-
-    /// Everything needed to log the moment, packed into the parameter's value.
-    ///
-    /// The emoji and label ride along rather than being looked up again at run
-    /// time. They feed the widget's "logged" acknowledgement, and a custom
-    /// moment's emoji is not derivable from its slug — resolving it would mean a
-    /// network round trip before the badge could be drawn, which is exactly the
-    /// delay the badge exists to cover.
-    var encoded: String {
-        [kind, emoji, label, pairID ?? ""].joined(separator: Self.separator)
-    }
-
-    init(kind: String, emoji: String, label: String, pairID: String? = nil, connectionTitle: String? = nil) {
-        self.kind = kind
-        self.emoji = emoji
-        self.label = label
-        self.pairID = pairID
-        self.connectionTitle = connectionTitle
-    }
-
-    /// Reads back what `encoded` wrote.
-    ///
-    /// Tolerates a value that is only a kind slug, which is what a shortcut
-    /// saved by an earlier build stored: logging it with a catalogue-resolved
-    /// emoji beats failing outright on a shortcut somebody already had working.
-    init(encoded value: String) {
-        let parts = value.components(separatedBy: Self.separator)
-        let slug = parts.first ?? ""
-        let eventKind = EventKind(rawValue: slug)
-        kind = slug
-        emoji = parts.count > 1 && !parts[1].isEmpty ? parts[1] : MomentCatalogue.emoji(for: eventKind)
-        label = parts.count > 2 && !parts[2].isEmpty ? parts[2] : MomentCatalogue.label(for: eventKind)
-        pairID = parts.count > 3 && !parts[3].isEmpty ? parts[3] : nil
-        connectionTitle = nil
-    }
-
-    /// Available in every connection, so they need no pair and log into
-    /// whichever is liveliest — the same fallback an unconfigured widget uses.
-    static let builtins: [MomentOption] = MomentCatalogue.builtin.map {
-        MomentOption(kind: $0.kind.rawValue, emoji: $0.emoji, label: $0.label)
-    }
-
-    /// The whole picker: the three built-ins once, then every moment a
-    /// connection invented, each bound to the connection that has it.
-    ///
-    /// Built-ins are listed once and unbound rather than repeated per
-    /// connection, which would turn three options into three times however many
-    /// connections somebody has. They are valid everywhere, so one entry can
-    /// serve all of them and take its connection from the action's own
-    /// parameter.
-    static func all(from connections: [(ConnectionEntity, [WidgetFeed.AvailableMoment])]) -> [MomentOption] {
-        let builtinKinds = Set(MomentCatalogue.builtin.map(\.kind.rawValue))
-        var options = builtins
-        for (connection, moments) in connections {
-            for moment in moments where !builtinKinds.contains(moment.kind.rawValue) {
-                options.append(
-                    MomentOption(
-                        kind: moment.kind.rawValue,
-                        emoji: moment.emoji,
-                        label: moment.label,
-                        pairID: connection.id,
-                        connectionTitle: connection.title
-                    )
-                )
-            }
-        }
-        return options
-    }
-}
-
 /// Fills the Moment picker from every connection the user is in.
+///
+/// The options themselves, and how they are fetched, are `MomentOption`'s in
+/// PeardCore — shared with the configurable Control Centre control, which needs
+/// the same list from the widget extension. The provider stays here so the
+/// intent above and the provider it names are declared in the same one target.
 struct MomentOptionsProvider: DynamicOptionsProvider {
-    /// Enough for anybody's connection list, and a stop on an accidental sweep
-    /// of hundreds. Exceeding it is logged rather than silently truncated.
-    static let connectionLimit = 24
-
     func results() async throws -> ItemCollection<String> {
-        let options = await Self.load()
-        return ItemCollection(sections: [
-            IntentItemSection(items: options.map { option in
-                IntentItem<String>(
-                    option.encoded,
-                    title: "\(option.emoji) \(option.label)",
-                    subtitle: option.connectionTitle.map { "\($0)" }
-                )
-            }),
-        ])
-    }
-
-    /// A failure leaves the built-ins rather than an empty picker: they work in
-    /// every connection, and a picker with nothing in it reads as an app that
-    /// cannot log anything.
-    ///
-    /// One request. This used to be one per connection — a whole feed, tallies
-    /// and latest post and all, fetched for each one just to read its catalogue
-    /// out — which is why `/api/peard/widget/connections` learned `?moments=1`.
-    static func load() async -> [MomentOption] {
-        let connections = (try? await MomentIntentSource.connections(withMoments: true)) ?? []
-        guard !connections.isEmpty else { return MomentOption.builtins }
-        if connections.count > connectionLimit {
-            NSLog("[Peard] moment picker showing %d of %d connections", connectionLimit, connections.count)
-        }
-        return MomentOption.all(from: connections.prefix(connectionLimit).map {
-            (ConnectionEntity($0), $0.moments ?? [])
-        })
+        await MomentOption.pickerItems()
     }
 }
