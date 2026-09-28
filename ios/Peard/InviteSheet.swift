@@ -44,7 +44,9 @@ struct InviteSheet: View {
                             )
                     }
 
-                    Text("Expires in 7 days.")
+                    // From the server's answer rather than a number typed here: the
+                    // text said seven days long after invites were cut to one.
+                    Text("Expires \(invite.expires, format: .relative(presentation: .named)).")
                         .font(.caption)
                         .foregroundStyle(PearColor.textTertiary)
                 } else {
