@@ -84,7 +84,7 @@ final class ElapsedTimeTests: XCTestCase {
     }
 }
 
-/// Requirement 11.7, 11.8 — partner label derivation and truncation.
+/// Requirement 11.7 — partner label derivation.
 final class PartnerLabelTests: XCTestCase {
     func testPrefersDisplayName() {
         XCTAssertEqual(PartnerLabel.resolve(displayName: "Ada", email: "ada@example.com"), "Ada")
@@ -109,21 +109,19 @@ final class PartnerLabelTests: XCTestCase {
         XCTAssertEqual(PartnerLabel.resolve(user: nil), "Partner")
     }
 
-    func testTruncatesBeyondEightCharacters() {
-        XCTAssertEqual(PartnerLabel.short("Ada"), "Ada")
-        XCTAssertEqual(PartnerLabel.short("12345678"), "12345678")
-        XCTAssertEqual(PartnerLabel.short("123456789"), "1234567…")
-    }
-
     /// A former member's moments stay in the timeline after they leave, and in a
     /// group there is no "partner" to attribute them to.
     func testUnknownAuthorFallbackIsNotPartner() {
         XCTAssertEqual(PartnerLabel.unknown, "Someone")
         XCTAssertNotEqual(PartnerLabel.unknown, PartnerLabel.fallback)
-        XCTAssertEqual(PartnerLabel.short(PartnerLabel.unknown), "Someone")
     }
 
-    func testTruncationCountsCharactersNotBytes() {
-        XCTAssertEqual(PartnerLabel.short("🍐🍐🍐🍐🍐🍐🍐🍐🍐"), "🍐🍐🍐🍐🍐🍐🍐…")
+    /// A long name comes back whole: fitting it to the space is the view's job,
+    /// and VoiceOver and share titles need all of it.
+    func testLongNamesAreNotShortened() {
+        XCTAssertEqual(
+            PartnerLabel.resolve(displayName: "Test Partner Longname", email: nil),
+            "Test Partner Longname"
+        )
     }
 }

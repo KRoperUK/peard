@@ -165,13 +165,6 @@ final class ConnectionTests: XCTestCase {
         XCTAssertNotEqual(alone.othersLabel, PartnerLabel.fallback)
     }
 
-    /// Both neutral labels have to survive the tally row's truncation unchanged,
-    /// or the fix would read as "Someone…" / "Others…".
-    func testNeutralLabelsAreShortEnoughForTheTallyRow() {
-        XCTAssertEqual(PartnerLabel.short(PartnerLabel.unknown), PartnerLabel.unknown)
-        XCTAssertEqual(PartnerLabel.short("Others"), "Others")
-    }
-
     /// The other half of the same wrong assumption: "not a group" was taken to mean
     /// two people, so a connection holding only you claimed "Just the two of you".
     func testAConnectionHoldingOnlyYouSaysSo() {

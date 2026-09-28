@@ -64,6 +64,16 @@ final class AvatarResolutionTests: XCTestCase {
         XCTAssertEqual(model.authorLabel(for: post(by: "departed")), PartnerLabel.unknown)
     }
 
+    /// Longer than the eight characters the old `PartnerLabel.short` allowed: the
+    /// row truncates to its width, and VoiceOver reads this same string, so the
+    /// model must hand over the whole name.
+    func testAuthorAndMemberLabelsUseTheFullName() {
+        let model = historyModel(connection: connection)
+        XCTAssertEqual(model.authorLabel(for: post(by: "ari")), "Ari Bloom")
+        let ari = connection.members.first { $0.user == "ari" }
+        XCTAssertEqual(ari.map(model.memberLabel), "Ari Bloom")
+    }
+
     /// Reached before the connection list has loaded, which is the first frame of a
     /// cold launch.
     func testAuthorAvatarWithNoConnectionAtAllIsStillDrawable() {

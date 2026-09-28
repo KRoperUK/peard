@@ -64,7 +64,12 @@ public enum ElapsedTime {
     }
 }
 
-/// Partner display-name rules (Requirement 11.7, 11.8).
+/// Partner display-name rules (Requirement 11.7).
+///
+/// There is deliberately no shortening here. Cutting to a fixed character count
+/// ("Test Pa…") ignored how much room there actually was, and the cut name leaked
+/// into VoiceOver and share titles. Views pass the full name and let `lineLimit`
+/// truncate it to the space they have.
 public enum PartnerLabel {
     public static let fallback = "Partner"
 
@@ -87,11 +92,5 @@ public enum PartnerLabel {
 
     public static func resolve(user: UserRecord?) -> String {
         resolve(displayName: user?.displayName, email: user?.email)
-    }
-
-    /// Truncates to 7 characters plus an ellipsis beyond 8 characters.
-    public static func short(_ name: String) -> String {
-        guard name.count > 8 else { return name }
-        return String(name.prefix(7)) + "…"
     }
 }
