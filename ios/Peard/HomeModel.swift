@@ -594,12 +594,16 @@ final class HomeModel {
         busy = .moment(moment.kind)
         defer { busy = nil }
 
-        // A preset only exists locally until it is published, and a moment
-        // nobody else can name is not worth logging, so publishing comes first.
-        // Publishing needs the network; when it is unavailable the moment is still
-        // queued, and the kind is published on the next successful attempt.
+        // A preset only exists locally until it is published, so publishing is
+        // tried first, while there is a network to try it on. Its failure must
+        // not stop the send, though: `quickSend` and the note are already gone,
+        // and returning here threw away a moment somebody had deliberately
+        // logged (issue #57). The server takes any slug, so the moment is queued
+        // regardless, exactly as it is when offline: until the kind is published
+        // it draws as the pear with its slug read as the label, which is a far
+        // smaller loss than the moment itself.
         if moment.needsPublishing, !isOffline {
-            guard await publish(moment: moment) else { return }
+            await publish(moment: moment)
         }
 
         await app.enqueue(PendingSend(
