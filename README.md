@@ -224,9 +224,15 @@ with a dry-run option). It pulls new TestFlight beta feedback — tester comment
 and screenshots — from App Store Connect, has an OpenRouter model triage each one
 into a `bug:` or `feat:` issue with a brief that points at the likely files
 (system prompt: `.github/prompts/testflight-triage.md`), then deletes the
-submission so it is only picked up once. Screenshots are committed to the orphan
-`testflight-feedback-assets` branch for the issue to link to, and purged when the
-issue closes (`testflight-feedback-cleanup.yml`). A second job does the same for
+submission so it is only picked up once.
+
+The repo is public, so an issue never names the tester, and screenshots, which
+usually show a tester's connections, stay in App Store Connect by default. The
+issue says how many there are, and the submission is only deleted once the
+issue is closed. With `TESTFLIGHT_PUBLISH_SCREENSHOTS` set, screenshots are
+committed to the orphan `testflight-feedback-assets` branch for the issue to
+link to instead, and purged when it closes (`testflight-feedback-cleanup.yml`).
+Screenshots are sent to the OpenRouter model either way. A second job does the same for
 diagnostic signatures (hangs, disk writes, slow launches) with
 `.github/prompts/testflight-diagnostics-triage.md`.
 
@@ -236,6 +242,7 @@ It reuses the App Store Connect secrets above, plus:
 |---|---|---|
 | Secret | `OPENROUTER_API_KEY` | OpenRouter API key |
 | Variable | `OPENROUTER_MODEL` | Model slug; defaults to `deepseek/deepseek-v4.1-flash`; `minimax/minimax-m3` also works. Use a vision-capable model so screenshots are read |
+| Variable | `TESTFLIGHT_PUBLISH_SCREENSHOTS` | `true` to put screenshots on the issue. Leave unset while the repo is public |
 
 No macOS job pins an `Xcode_NN.app` path or names a simulator: both come and go
 with the runner image, and hard-coding either turns an image update into a red

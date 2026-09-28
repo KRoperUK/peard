@@ -1,16 +1,21 @@
 // TestFlight beta feedback → GitHub issues.
 //
 // Polls the App Store Connect "beta feedback screenshot submissions" endpoint,
-// turns each new submission into a triaged + refined GitHub issue (screenshots
-// and device context pulled through), then deletes the submission from App Store
-// Connect so it isn't processed again.
+// turns each new submission into a triaged + refined GitHub issue (device
+// context pulled through), then deletes the submission from App Store Connect so
+// it isn't processed again.
+//
+// The repo is public, so nothing identifying a tester goes into an issue, and
+// screenshots (which show testers' connections) are only published when
+// PUBLISH_SCREENSHOTS is set. Otherwise they stay in App Store Connect, and the
+// submission is kept there until its issue is closed.
 //
 // Run from a workflow via actions/github-script:
 //   await require('./.github/scripts/testflight-feedback.js')({ github, context, core })
 //
 // Needs (env): ASC_KEY_ID, ASC_ISSUER_ID, ASC_KEY_CONTENT (.p8 contents),
 // OPENROUTER_API_KEY. Optional: ASC_APP_ID or ASC_BUNDLE_ID, OPENROUTER_MODEL,
-// FEEDBACK_LIMIT, DRY_RUN.
+// FEEDBACK_LIMIT, PUBLISH_SCREENSHOTS, DRY_RUN.
 //
 // Only confirmed App Store Connect 4.0 endpoints are used:
 //   GET    /v1/apps/{id}/betaFeedbackScreenshotSubmissions   (list, full objects)
@@ -27,10 +32,10 @@ const REFINED_MARKER = '<!-- issue-refined -->';
 
 // Attribute fields we want back for each submission (see the API reference).
 const SUBMISSION_FIELDS = [
-  'createdDate', 'comment', 'email', 'deviceModel', 'osVersion', 'locale',
+  'createdDate', 'comment', 'deviceModel', 'osVersion', 'locale',
   'timeZone', 'architecture', 'connectionType', 'batteryPercentage',
   'appPlatform', 'devicePlatform', 'deviceFamily', 'buildBundleId',
-  'screenshots', 'build', 'tester',
+  'screenshots', 'build',
 ].join(',');
 
 module.exports = async ({ github, context, core }) => {
@@ -63,17 +68,24 @@ module.exports = async ({ github, context, core }) => {
     const id = sub.id;
     try {
       if (existing.has(id)) {
-        core.info(`#${id}: issue already exists — deleting submission only.`);
         summary.skipped++;
-        if (await deleteSubmission(token, id, cfg, core)) summary.deleted++;
+        if (cfg.publishScreenshots || existing.get(id) === 'closed') {
+          core.info(`#${id}: issue already exists — deleting submission only.`);
+          if (await deleteSubmission(token, id, cfg, core)) summary.deleted++;
+        } else {
+          core.info(`#${id}: issue still open — keeping submission for its screenshots.`);
+        }
         continue;
       }
 
       const detail = describeSubmission(sub, submissions.included);
       const shots = await downloadScreenshots(detail.screenshots, core);
-      const hosted = cfg.dryRun
-        ? shots.map((s, i) => ({ name: s.name, url: `(dry-run, not uploaded ${i})` }))
-        : await commitScreenshots({ github, owner, repo }, id, shots, core);
+      let hosted = [];
+      if (cfg.publishScreenshots) {
+        hosted = cfg.dryRun
+          ? shots.map((s, i) => ({ name: s.name, url: `(dry-run, not uploaded ${i})` }))
+          : await commitScreenshots({ github, owner, repo }, id, shots, core);
+      }
 
       const triage = await triageFeedback(cfg, detail, shots, core);
 
@@ -85,14 +97,16 @@ module.exports = async ({ github, context, core }) => {
 
       const issue = await createIssue(
         { github, owner, repo },
-        { id, detail, triage, hosted, core }
+        { id, detail, triage, hosted, keptShots: hosted.length ? 0 : shots.length, core }
       );
       core.info(`#${id}: opened issue #${issue.number} — ${issue.html_url}`);
       summary.created++;
 
-      // Triaged → safe to remove from App Store Connect (everything, including
-      // the screenshots, now lives on the issue).
-      if (await deleteSubmission(token, id, cfg, core)) summary.deleted++;
+      // Triaged → safe to remove from App Store Connect, unless the screenshots
+      // only live there; then a later run deletes it once the issue is closed.
+      if (hosted.length || shots.length === 0) {
+        if (await deleteSubmission(token, id, cfg, core)) summary.deleted++;
+      }
     } catch (err) {
       summary.failed++;
       core.warning(`#${id}: failed — ${err.message} (left in App Store Connect for retry)`);
@@ -125,6 +139,7 @@ function loadConfig(core) {
     openRouterKey: need('OPENROUTER_API_KEY'),
     model: (process.env.OPENROUTER_MODEL || '').trim() || 'deepseek/deepseek-v4.1-flash',
     limit: Number.parseInt(process.env.FEEDBACK_LIMIT || '50', 10),
+    publishScreenshots: /^(1|true|yes)$/i.test(process.env.PUBLISH_SCREENSHOTS || ''),
     dryRun: /^(1|true|yes)$/i.test(process.env.DRY_RUN || ''),
   };
 }
@@ -205,13 +220,12 @@ async function resolveAppId(token, bundleId, core) {
 // retry transient 5xx. The first query that works is used for pagination.
 function submissionQueries() {
   const rich = new URLSearchParams({
-    include: 'build,tester',
+    include: 'build',
     'fields[betaFeedbackScreenshotSubmissions]': SUBMISSION_FIELDS,
     'fields[builds]': 'version,preReleaseVersion',
-    'fields[betaTesters]': 'firstName,lastName,email',
     limit: '200',
   });
-  const withInclude = new URLSearchParams({ include: 'build,tester', limit: '200' });
+  const withInclude = new URLSearchParams({ include: 'build', limit: '200' });
   const plain = new URLSearchParams({ limit: '200' });
   return [rich.toString(), withInclude.toString(), plain.toString()];
 }
@@ -281,11 +295,8 @@ function describeSubmission(sub, included = []) {
   const a = sub.attributes || {};
   const byRef = (ref) => included.find((i) => i.type === ref?.type && i.id === ref?.id);
   const build = byRef(sub.relationships?.build?.data);
-  const tester = byRef(sub.relationships?.tester?.data);
 
   const buildAttr = build?.attributes || {};
-  const testerAttr = tester?.attributes || {};
-  const testerName = [testerAttr.firstName, testerAttr.lastName].filter(Boolean).join(' ').trim();
 
   const screenshots = (a.screenshots || [])
     .map((s) => ({ name: s.fileName || s.name || 'screenshot.png', url: s.url }))
@@ -293,8 +304,6 @@ function describeSubmission(sub, included = []) {
 
   return {
     comment: (a.comment || '').trim(),
-    email: a.email || testerAttr.email || '',
-    testerName: testerName || (a.email ? a.email : 'Unknown tester'),
     createdDate: a.createdDate || '',
     deviceModel: a.deviceModel || '',
     osVersion: a.osVersion || '',
@@ -496,8 +505,9 @@ function fallbackBrief(detail) {
 
 // ---- GitHub issue --------------------------------------------------------
 
+// Feedback id → the state ('open' or 'closed') of the issue made from it.
 async function loadProcessedIds({ github, owner, repo }) {
-  const ids = new Set();
+  const ids = new Map();
   const issues = await github.paginate(github.rest.issues.listForRepo, {
     owner,
     repo,
@@ -507,7 +517,7 @@ async function loadProcessedIds({ github, owner, repo }) {
   });
   const re = /<!-- tf-feedback-id: ([^\s]+) -->/g;
   for (const issue of issues) {
-    for (const m of (issue.body || '').matchAll(re)) ids.add(m[1]);
+    for (const m of (issue.body || '').matchAll(re)) ids.set(m[1], issue.state);
   }
   return ids;
 }
@@ -528,10 +538,10 @@ async function ensureLabels(github, owner, repo) {
   }
 }
 
-async function createIssue({ github, owner, repo }, { id, detail, triage, hosted, core }) {
+async function createIssue({ github, owner, repo }, { id, detail, triage, hosted, keptShots, core }) {
   await ensureLabels(github, owner, repo);
 
-  const body = buildIssueBody({ id, detail, triage, hosted });
+  const body = buildIssueBody({ id, detail, triage, hosted, keptShots });
   const labels = [FEEDBACK_LABEL, 'refined'];
   if (triage.typeLabel) labels.push(triage.typeLabel);
 
@@ -556,7 +566,7 @@ async function createIssue({ github, owner, repo }, { id, detail, triage, hosted
   return issue;
 }
 
-function buildIssueBody({ id, detail, triage, hosted }) {
+function buildIssueBody({ id, detail, triage, hosted, keptShots = 0 }) {
   const lines = [
     ID_MARKER(id),
     '> 🛫 Imported automatically from TestFlight beta feedback.',
@@ -569,7 +579,6 @@ function buildIssueBody({ id, detail, triage, hosted }) {
     detail.comment ? quote(detail.comment) : '_No written comment — screenshot only._',
     '',
     '### Submission details',
-    `- **Tester:** ${detail.testerName}`,
     `- **Submitted:** ${detail.createdDate || 'unknown'}`,
     `- **Device:** ${detail.deviceModel || 'unknown'} · iOS ${detail.osVersion || 'unknown'}`,
     `- **App build:** ${detail.buildPreRelease || detail.buildVersion || 'unknown'}${detail.buildBundleId ? ` (${detail.buildBundleId})` : ''}`,
@@ -579,6 +588,12 @@ function buildIssueBody({ id, detail, triage, hosted }) {
   if (hosted.length) {
     lines.push('', '### Screenshots');
     for (const s of hosted) lines.push('', `![${s.name}](${s.url})`);
+  } else if (keptShots) {
+    lines.push(
+      '', '### Screenshots', '',
+      `_${keptShots} screenshot(s) kept in App Store Connect (TestFlight → Feedback) until this issue is closed. ` +
+      'They are not published here because they can show testers\' connections._',
+    );
   }
   return lines.join('\n');
 }
