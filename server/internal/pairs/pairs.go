@@ -46,6 +46,11 @@ import (
 // thread, a screenshot or a shoulder-surfer's memory still worked.
 const inviteTTL = 24 * time.Hour
 
+// How many unused codes one person can have at once. Every live code is one
+// more that a guess can land on, and nobody is waiting on five invites; making
+// a new one past this retires the oldest.
+const maxPendingInvites = 5
+
 // How often expired invites are swept, and how many go per sweep. The batch is
 // generous relative to any plausible rate of invite creation, so the sweep
 // keeps up rather than accumulating a backlog it never drains.
@@ -124,6 +129,9 @@ func inviteHandler(app core.App) func(e *core.RequestEvent) error {
 		if err != nil {
 			return e.InternalServerError("pair_invites collection missing", err)
 		}
+		if err := retireOldestInvites(app, e.Auth.Id); err != nil {
+			return e.InternalServerError("failed to retire old invites", err)
+		}
 		inv := core.NewRecord(col)
 		code := newCode(6)
 		inv.Set("code", code)
@@ -146,6 +154,22 @@ func inviteHandler(app core.App) func(e *core.RequestEvent) error {
 		}
 		return e.JSON(http.StatusOK, res)
 	}
+}
+
+// retireOldestInvites deletes the inviter's oldest pending codes so that, with
+// the one about to be made, no more than maxPendingInvites are live.
+func retireOldestInvites(app core.App, inviter string) error {
+	pending, err := app.FindRecordsByFilter("pair_invites",
+		"inviter = {:u} && status = 'pending'", "-created", 0, 0, dbx.Params{"u": inviter})
+	if err != nil {
+		return err
+	}
+	for i := maxPendingInvites - 1; i < len(pending); i++ {
+		if err := app.Delete(pending[i]); err != nil {
+			return err
+		}
+	}
+	return nil
 }
 
 func acceptHandler(app core.App) func(e *core.RequestEvent) error {

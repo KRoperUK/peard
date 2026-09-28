@@ -335,6 +335,30 @@ final class AppModelRoutingTests: XCTestCase {
         XCTAssertEqual(app.phase, .auth)
     }
 
+    // MARK: Account deletion
+
+    /// A delete the server never confirmed must leave push alone. It used to
+    /// drop the device's registration before asking, so a delete that failed —
+    /// offline, a 500 — left somebody signed in to an account that still
+    /// existed and quietly no longer notified.
+    ///
+    /// Pointed at a port nothing listens on, so the delete fails for certain
+    /// and without depending on whether a development server happens to be up.
+    func testAFailedDeleteKeepsThePushRegistration() async {
+        shared.devicePushToken = "device-token"
+        let unreachable = PeardConfig(serverURL: URL(string: "http://127.0.0.1:9")!, googleClientID: "")
+        app = AppModel(config: unreachable, sessionStore: sessionStore, sharedStore: shared, sendQueue: queue)
+        await app.enqueue(sample())
+
+        let deleted = await app.deleteAccount()
+
+        XCTAssertFalse(deleted)
+        XCTAssertNotNil(app.banner, "the failure says so")
+        XCTAssertEqual(shared.devicePushToken, "device-token", "push is only torn down once the account is gone")
+        let remaining = await queue.count
+        XCTAssertEqual(remaining, 1, "and nothing else is cleared either")
+    }
+
     // MARK: Helpers
 
     private func sample(pair: String = "p1") -> PendingSend {

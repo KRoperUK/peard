@@ -43,6 +43,13 @@ final class HistoryModel {
     private(set) var error: String?
 
     private var nextPage = 1
+    /// Bumped whenever the pages in memory stop being the answer to the
+    /// question being asked — see `apply(_:)`. A page request remembers the
+    /// value it started under and is dropped if it has moved on by the time the
+    /// response lands, or a scroll or search from before the change would
+    /// append its rows to the new results and overwrite `nextPage`, `hasMore`
+    /// and `totalItems` with numbers that describe a different query.
+    private var generation = 0
 
     // MARK: Filtering
 
@@ -56,6 +63,7 @@ final class HistoryModel {
     func apply(_ newFilter: TimelineFilter) async {
         guard newFilter != filter else { return }
         filter = newFilter
+        generation += 1
         nextPage = 1
         posts = []
         hasMore = false
@@ -557,14 +565,21 @@ final class HistoryModel {
     /// A cancellation is not a failure and leaves `error` alone: the request
     /// stopped mattering, which is nothing the person using the app did or needs
     /// to know. Anything else is worth saying.
+    ///
+    /// A response for a filter that has since been replaced is treated the same
+    /// way, as nil with `error` untouched: whatever it says, success or failure,
+    /// is about a query nobody is looking at any more.
     private func fetchPage(_ page: Int) async -> PostPage? {
+        let requestedGeneration = generation
         do {
             let result = try await api.postsPage(pairID: pairID, page: page, perPage: Self.pageSize, filter: filter)
+            guard generation == requestedGeneration else { return nil }
             error = nil
             return result
         } catch let error as APIError where error.isCancellation {
             return nil
         } catch {
+            guard generation == requestedGeneration else { return nil }
             self.error = (error as? APIError)?.localizedDescription ?? error.localizedDescription
             return nil
         }

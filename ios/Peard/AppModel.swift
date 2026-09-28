@@ -60,6 +60,9 @@ final class AppModel {
     let liveActivities: LiveActivityCoordinator
     /// Moments logged on the device but not yet accepted by the server.
     let sendQueue: SendQueue
+    /// Moments the widget, Control Centre and Siri could not send, waiting to be
+    /// taken into `sendQueue`; see `MomentInbox`.
+    let momentInbox: MomentInbox
     /// The JPEGs behind queued photo moments; see `PendingPhotoStore`.
     let pendingPhotos: PendingPhotoStore
     let reachability: Reachability
@@ -112,6 +115,7 @@ final class AppModel {
         sessionStore: KeychainSessionStore = KeychainSessionStore(),
         sharedStore: SharedStore = .shared,
         sendQueue: SendQueue? = nil,
+        momentInbox: MomentInbox = .appGroup(),
         reachability: Reachability = Reachability()
     ) {
         self.config = config
@@ -125,6 +129,7 @@ final class AppModel {
         self.push = PushCoordinator(api: api, session: sessionStore, store: sharedStore)
         self.liveActivities = LiveActivityCoordinator(api: api, session: sessionStore, store: sharedStore)
         self.sendQueue = sendQueue ?? SendQueue(store: FilePendingSendStore.appGroup())
+        self.momentInbox = momentInbox
         self.pendingPhotos = PendingPhotoStore.appGroup()
         self.reachability = reachability
 
@@ -266,11 +271,18 @@ final class AppModel {
 
     /// Kicks off a flush, coalescing with one already in flight. Non-blocking so
     /// callers on the main actor (a tap, a foreground) are never held up by it.
+    ///
+    /// Coalescing means returning while one is running, not cancelling it and
+    /// starting again: bootstrap, reachability and foregrounding can all fire at
+    /// once, and each cancel withdrew a request mid-flight while the replacement
+    /// found the queue still flushing and did nothing (issue #58). The running
+    /// flush picks up anything enqueued behind it, since it walks the queue
+    /// rather than a copy.
     func flushSendQueue() {
-        guard sessionStore.hasSession else { return }
-        flushTask?.cancel()
+        guard sessionStore.hasSession, flushTask == nil else { return }
         flushTask = Task { [weak self] in
             await self?.performFlush()
+            self?.flushTask = nil
         }
     }
 
@@ -283,6 +295,7 @@ final class AppModel {
 
     @discardableResult
     private func performFlush() async -> FlushResult {
+        await absorbMomentInbox()
         let api = self.api
         let photos = self.pendingPhotos
         let result = await sendQueue.flush { send in
@@ -310,6 +323,24 @@ final class AppModel {
             widgetSync.reloadTimelines()
         }
         return result
+    }
+
+    /// Takes what the extensions could not send into the queue.
+    ///
+    /// Done at the top of every flush rather than only at launch and on
+    /// foreground, which are the two that matter: those both flush, and so do
+    /// the network coming back and a background push — each a moment the
+    /// extensions' leftovers could go out too. A moment that named no
+    /// connection goes to the one the app last showed, which survives an
+    /// offline launch where the connection list does not.
+    private func absorbMomentInbox() async {
+        guard let userID = sessionStore.userID else { return }
+        let added = await sendQueue.absorb(
+            momentInbox,
+            authorID: userID,
+            fallbackPairID: sharedStore.selectedConnectionID
+        )
+        if added > 0 { await refreshPendingSends() }
     }
 
     /// Clears the failure history of abandoned sends so they are tried again.
@@ -718,18 +749,19 @@ final class AppModel {
     /// because the alternative — signing somebody out of an account that still
     /// exists while telling them it is gone — is worse than an error message.
     ///
-    /// The push registration is deleted first, and separately, so an account
-    /// that has gone cannot leave a `devices` row pointed at this handset. It
-    /// cascades server-side too; doing both means neither has to be trusted
-    /// alone.
+    /// Push and Live Activities are only torn down once the server has said
+    /// yes. Doing it first meant a delete that failed — offline, a 500 — left
+    /// somebody signed in to an account that still exists and silently no
+    /// longer notified. The `devices` row goes with the account server-side,
+    /// so all that is left to do here is forget the token locally; asking the
+    /// server to delete it again would be a request made with the credentials
+    /// of an account that no longer exists.
     ///
     /// Returns true when the account is gone, so the caller knows whether to
     /// dismiss its confirmation.
     @discardableResult
     func deleteAccount() async -> Bool {
         do {
-            await liveActivities.endAll()
-            await push.deleteRegistration()
             try await api.deleteAccount()
         } catch let error as APIError where error.status == 404 {
             // The route is missing, which means the app is talking to a server
@@ -747,8 +779,14 @@ final class AppModel {
         }
         // Deliberately not `signOut()`: that deletes the push registration again
         // against an account that no longer exists, which just produces a 404.
+        await liveActivities.endAll()
+        push.forgetRegistration()
         await sendQueue.removeAll()
         await refreshPendingSends()
+        // The queue is empty now, so this removes every queued photo: they were
+        // the deleted account's, and leaving them in the App Group container is
+        // exactly what deleting an account is meant to prevent.
+        prunePendingPhotos()
         sessionStore.clear()
         widgetSync.clear()
         connections = []

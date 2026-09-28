@@ -60,9 +60,13 @@ final class MomentTrayModel {
     ]
 
     private let store: SharedStore
+    /// Nil in the extension, where `APIClient` makes its own. Tests pass one
+    /// whose answers they control.
+    private let session: URLSession?
 
-    init(store: SharedStore = .shared) {
+    init(store: SharedStore = .shared, session: URLSession? = nil) {
         self.store = store
+        self.session = session
     }
 
     var selectedConnection: WidgetConnection? {
@@ -95,7 +99,7 @@ final class MomentTrayModel {
             phase = .signedOut
             return
         }
-        let api = APIClient(baseURL: baseURL)
+        let api = APIClient(baseURL: baseURL, session: session)
         do {
             connections = try await api.widgetConnections(token: token)
         } catch let error as APIError where error.isCancellation {
@@ -140,11 +144,19 @@ final class MomentTrayModel {
     /// switch would put *another connection's* numbers under the new
     /// connection's name, which is worse than showing none; a failure falls back
     /// to the built-in moments and an empty summary.
+    ///
+    /// For the same reason, a feed is only kept if its connection is still the
+    /// selected one when it arrives. Switching A then B quickly sends two
+    /// requests, and nothing makes them answer in order: A's landing last would
+    /// put A's numbers under B's name, which is the very thing clearing up
+    /// front is for.
     private func loadFeed() async {
         feed = nil
-        guard let token = store.widgetToken, let baseURL = store.apiBaseURL, let selectedID else { return }
-        let api = APIClient(baseURL: baseURL)
-        feed = try? await api.widgetFeed(token: token, pairID: selectedID)
+        guard let token = store.widgetToken, let baseURL = store.apiBaseURL, let requestedID = selectedID else { return }
+        let api = APIClient(baseURL: baseURL, session: session)
+        let loaded = try? await api.widgetFeed(token: token, pairID: requestedID)
+        guard selectedID == requestedID else { return }
+        feed = loaded
     }
 
     // MARK: Summary
@@ -209,7 +221,7 @@ final class MomentTrayModel {
         guard case .idle = status else { return false }
         status = .logging(moment.id)
 
-        let logged = await MomentLogging.perform(
+        let outcome = await MomentLogging.perform(
             kind: moment.kind,
             // Always explicit now. The old nil meant "whichever the server
             // thinks is liveliest", which is a guess the tray then could not
@@ -218,10 +230,14 @@ final class MomentTrayModel {
             pairID: selectedID,
             emoji: moment.emoji,
             label: moment.label,
-            store: store
+            store: store,
+            // No inbox: a failure here is shown as a failure and no bubble goes
+            // into the conversation, so sending the moment later anyway would
+            // log something the person was told had not been.
+            inbox: nil
         )
 
-        guard logged else {
+        guard outcome == .logged else {
             status = .failed
             return false
         }
