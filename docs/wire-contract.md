@@ -582,10 +582,15 @@ already be a member, or the answer is `403`.
 `pair` is echoed back only for a group invite, and is what the client uses to
 word the share sheet as "Join my group" rather than "Pear up with me".
 
+One person can have at most five unused codes. Minting a sixth deletes their
+oldest pending one, so a code shared long ago can stop working before its day
+is up.
+
 `POST /api/peard/pairs/accept` with `{ "code": "AB12CD" }` → `{ "pair": "<id>" }`,
 which is either the newly created connection or the one the invite targeted.
 Accepting your own invite, an expired one, or an invite into a connection you are
-already in all answer `400`.
+already in all answer `400`. Attempts are limited to ten per client IP every
+ten minutes; past that the answer is `429`.
 
 `POST /api/peard/pairs/leave` with an optional body:
 
