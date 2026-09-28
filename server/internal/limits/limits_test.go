@@ -215,3 +215,34 @@ func TestAcceptingInvitesIsLimited(t *testing.T) {
 	}
 	t.Fatal("no rule for /api/peard/pairs/accept — only the /api/ catch-all applies")
 }
+
+// The invite page says whether a code is live, so it would be a way round the
+// accept limit if it had none of its own. The catch-alls are all under /api/,
+// so without this rule the pages have no limit at all.
+func TestInvitePagesAreLimitedLikeAccepting(t *testing.T) {
+	var accept, page core.RateLimitRule
+	for _, r := range rules() {
+		switch r.Label {
+		case "/api/peard/pairs/accept":
+			accept = r
+		case "/c/":
+			page = r
+		}
+	}
+	if page.Label == "" {
+		t.Fatal("no rule for /c/ — the invite page can test codes without limit")
+	}
+	perHour := func(r core.RateLimitRule) float64 { return float64(r.MaxRequests) * 3600 / float64(r.Duration) }
+	if perHour(page) > perHour(accept) {
+		t.Errorf("/c/ allows %.0f an hour, more than accepting's %.0f", perHour(page), perHour(accept))
+	}
+
+	// The rule has to be the one PocketBase actually picks for an invite
+	// path: a prefix rule is matched against the path with a trailing slash.
+	app := newApp(t)
+	app.Settings().RateLimits.Rules = rules()
+	got, ok := app.Settings().RateLimits.FindRateLimitRule([]string{"GET /c/AB12CD", "/c/AB12CD"})
+	if !ok || got.Label != "/c/" {
+		t.Errorf("an invite path matched %q, want /c/", got.Label)
+	}
+}

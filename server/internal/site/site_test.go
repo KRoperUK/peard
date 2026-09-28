@@ -11,16 +11,30 @@ import (
 	"strconv"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/pocketbase/pocketbase/apis"
 	"github.com/pocketbase/pocketbase/core"
 	"github.com/pocketbase/pocketbase/tests"
+	"github.com/pocketbase/pocketbase/tools/types"
 	"github.com/pocketbase/pocketbase/ui"
 
 	"peard/internal/site"
+	_ "peard/migrations"
 )
 
 func newSiteMux(t *testing.T) http.Handler {
+	t.Helper()
+	_, mux := newSiteApp(t)
+	return mux
+}
+
+// newSiteApp is newSiteMux with the app kept, for the tests that change what is
+// in the database or in the settings.
+//
+// The codes the other tests use, AB12CD and ABC123, are seeded as live invites:
+// the invite page looks its code up, and an unseeded one is a dead invite.
+func newSiteApp(t *testing.T) (*tests.TestApp, http.Handler) {
 	t.Helper()
 
 	dir, err := os.MkdirTemp("", "peard-site-test-*")
@@ -41,6 +55,9 @@ func newSiteMux(t *testing.T) http.Handler {
 	// write it, and the absolute URLs in the pages must not double it.
 	app.Settings().Meta.AppURL = "https://peard.example/"
 	site.Register(app)
+	for _, code := range []string{"AB12CD", "ABC123"} {
+		seedInvite(t, app, code, "pending", time.Now().Add(time.Hour))
+	}
 
 	router, err := apis.NewRouter(app)
 	if err != nil {
@@ -64,7 +81,34 @@ func newSiteMux(t *testing.T) http.Handler {
 	}); err != nil {
 		t.Fatalf("build mux: %v", err)
 	}
-	return mux
+	return app, mux
+}
+
+// seedInvite saves an invite from a fresh inviter, as the pairs routes would.
+func seedInvite(t *testing.T, app core.App, code, status string, expires time.Time) {
+	t.Helper()
+	users, err := app.FindCollectionByNameOrId("users")
+	if err != nil {
+		t.Fatalf("users collection: %v", err)
+	}
+	inviter := core.NewRecord(users)
+	inviter.SetEmail(strings.ToLower(code) + "@example.com")
+	inviter.SetPassword("password-for-" + code)
+	if err := app.Save(inviter); err != nil {
+		t.Fatalf("save inviter: %v", err)
+	}
+	invites, err := app.FindCollectionByNameOrId("pair_invites")
+	if err != nil {
+		t.Fatalf("pair_invites collection: %v", err)
+	}
+	inv := core.NewRecord(invites)
+	inv.Set("code", code)
+	inv.Set("inviter", inviter.Id)
+	inv.Set("status", status)
+	inv.Set("expires", expires.UTC().Format(types.DefaultDateLayout))
+	if err := app.Save(inv); err != nil {
+		t.Fatalf("save invite %s: %v", code, err)
+	}
 }
 
 func get(t *testing.T, mux http.Handler, path string) *httptest.ResponseRecorder {
@@ -146,6 +190,90 @@ func TestInvitePageUpperCasesTheCode(t *testing.T) {
 
 	if !strings.Contains(body, "AB12CD") {
 		t.Fatal("expected the code upper-cased")
+	}
+}
+
+// Somebody already on their phone, whose universal link fell through to Safari,
+// needs a way into the app that isn't "tap the link again". The custom scheme is
+// the one the app parses as a pairing link, with the code filled in.
+func TestInvitePageOffersToOpenTheApp(t *testing.T) {
+	mux := newSiteMux(t)
+
+	body := get(t, mux, "/c/ab12cd").Body.String()
+
+	if !strings.Contains(body, `href="peard://pair/AB12CD"`) {
+		t.Fatal("expected an Open in Pear'd link to peard://pair/AB12CD")
+	}
+	if !strings.Contains(body, "Open in Pear'd") {
+		t.Fatal("expected the link to say Open in Pear'd")
+	}
+	if !strings.Contains(body, "testflight.apple.com") {
+		t.Fatal("the TestFlight link went missing")
+	}
+}
+
+// A code that can no longer be accepted says so, rather than inviting somebody
+// through a two-step install that ends in "that code has expired".
+func TestInvitePageSaysWhenTheInviteIsDead(t *testing.T) {
+	app, mux := newSiteApp(t)
+	seedInvite(t, app, "USED12", "accepted", time.Now().Add(time.Hour))
+	seedInvite(t, app, "LATE12", "pending", time.Now().Add(-time.Minute))
+
+	for _, code := range []string{"USED12", "LATE12", "NEVER1"} {
+		rec := get(t, mux, "/c/"+code)
+		if rec.Code != http.StatusNotFound {
+			t.Errorf("%s: got %d, want 404", code, rec.Code)
+		}
+		body := rec.Body.String()
+		if !strings.Contains(body, "This invite has expired or been used") {
+			t.Errorf("%s: no expired message", code)
+		}
+		// Nothing to open or install for: the code is no use to them.
+		if strings.Contains(body, code) || strings.Contains(body, "peard://") {
+			t.Errorf("%s: a dead invite still offers its code", code)
+		}
+	}
+}
+
+// The lookup answers a question — is this code live? — that a script guessing
+// codes would like answered, so it is only asked while the visitor is under the
+// /c/ rate limit. Past it, every code gets the page a live one gets, which
+// tells a guesser nothing, and a real person over the limit (a link-preview
+// fetcher behind one address, say) still gets a working page rather than a
+// JSON error.
+func TestInviteLookupStopsAtTheRateLimit(t *testing.T) {
+	app, mux := newSiteApp(t)
+	app.Settings().RateLimits.Enabled = true
+	app.Settings().RateLimits.Rules = []core.RateLimitRule{
+		{Label: "/c/", MaxRequests: 2, Duration: 600},
+	}
+
+	for i := 1; i <= 2; i++ {
+		if code := get(t, mux, "/c/NEVER1").Code; code != http.StatusNotFound {
+			t.Fatalf("attempt %d: got %d, want 404 while under the limit", i, code)
+		}
+	}
+
+	rec := get(t, mux, "/c/NEVER1")
+	if rec.Code != http.StatusOK {
+		t.Fatalf("over the limit: got %d, want the unverified page's 200", rec.Code)
+	}
+	body := rec.Body.String()
+	if !strings.Contains(body, "You've been invited") || !strings.Contains(body, `href="peard://pair/NEVER1"`) {
+		t.Fatal("over the limit: expected the same page a live code gets")
+	}
+	// Still a page from this site, with its headers, not PocketBase's.
+	if got := rec.Header().Get("Cache-Control"); got != "no-store" {
+		t.Errorf("over the limit: Cache-Control %q, want no-store", got)
+	}
+	if got := rec.Header().Get("Content-Security-Policy"); got == "" {
+		t.Error("over the limit: no Content-Security-Policy")
+	}
+
+	// A malformed code is still refused past the limit: the fallback is the
+	// unverified page, not a way round the format check.
+	if code := get(t, mux, "/c/AB-12").Code; code != http.StatusNotFound {
+		t.Fatalf("malformed code over the limit: got %d, want 404", code)
 	}
 }
 
