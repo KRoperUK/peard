@@ -469,6 +469,42 @@ final class HistoryModel {
         await loadReactions(for: page.posts.map(\.id))
     }
 
+    /// Brings the top of the timeline up to date without losing what has been
+    /// scrolled into (issue #113).
+    ///
+    /// The tab stays alive while somebody is on Home, so the page it loaded first
+    /// was all it ever showed: a moment logged a second ago was missing until a
+    /// pull to refresh. This runs whenever Home's recent moments change and each
+    /// time the tab appears. A timeline no longer than a page is simply re-read.
+    /// A longer one keeps its older pages: the fresh first page replaces
+    /// everything down to the old position of that page's last moment, and the
+    /// rest stays. If more has landed than a page holds, that position is gone
+    /// and it starts again from the top.
+    func refreshNewest() async {
+        guard !posts.isEmpty else {
+            await loadFirstPage()
+            return
+        }
+        guard posts.count > Self.pageSize else {
+            await reload()
+            return
+        }
+        guard let page = await fetchPage(1) else { return }
+        guard let boundary = page.posts.last,
+              let cut = posts.firstIndex(where: { $0.id == boundary.id }) else {
+            posts = page.posts
+            totalItems = page.totalItems
+            hasMore = page.hasMore
+            nextPage = page.nextPage
+            await loadReactions(for: page.posts.map(\.id))
+            return
+        }
+        let fresh = Set(page.posts.map(\.id))
+        posts = page.posts + posts[(cut + 1)...].filter { !fresh.contains($0.id) }
+        totalItems = page.totalItems
+        await loadReactions(for: page.posts.map(\.id))
+    }
+
     /// Called as the last row appears. Guarded against re-entry so a fast scroll
     /// cannot fire several requests for the same page.
     func loadMoreIfNeeded() async {
@@ -628,11 +664,14 @@ struct HistoryView: View {
     @State private var searchText = ""
     private let serverURL: URL
     private let title: String
+    /// Changes whenever the timeline may be out of date; see `refreshNewest`.
+    private let refreshKey: String
 
-    init(model: HistoryModel, serverURL: URL, title: String) {
+    init(model: HistoryModel, serverURL: URL, title: String, refreshKey: String = "") {
         _model = State(initialValue: model)
         self.serverURL = serverURL
         self.title = title
+        self.refreshKey = refreshKey
     }
 
     var body: some View {
@@ -653,7 +692,11 @@ struct HistoryView: View {
                     }
                 }
                 .refreshable { await model.reload() }
-                .task { await model.loadFirstPage() }
+                // Runs on first appearance, on every return to the tab, and
+                // whenever Home's newest moments change, which is how a moment
+                // logged on Home, by a widget or Siri, or by somebody else gets
+                // here without a pull to refresh (issue #113).
+                .task(id: refreshKey) { await model.refreshNewest() }
                 // Searched on the server, so it finds a note from last spring,
                 // not only what has been scrolled into memory.
                 .searchable(text: $searchText, prompt: "Notes, captions, moments")

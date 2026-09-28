@@ -111,9 +111,18 @@ private struct TimelineTab: View {
                 unreadWatermark: app.unreadWatermark(forConnection: model.pairID)
             ),
             serverURL: model.serverURL,
-            title: model.connectionTitle
+            title: model.connectionTitle,
+            refreshKey: newestMoments
         )
         .id(historyIdentity)
+    }
+
+    /// Home's few most recent moments, as a fingerprint. Home re-reads them after
+    /// a send, a queue flush, a push, a foreground and every poll, so a change
+    /// here is the timeline's cue to fetch its top page again (issue #113).
+    /// `updated` catches an edit or a rewind of one of them.
+    private var newestMoments: String {
+        model.posts.map { "\($0.id):\($0.updated.timeIntervalSince1970)" }.joined(separator: ",")
     }
 
     /// Rebuilds the paged model when what it renders with changes, and only then:
