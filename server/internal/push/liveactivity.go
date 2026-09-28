@@ -37,6 +37,7 @@ type liveTarget struct {
 	token  string
 	start  bool
 	record *core.Record // the live_activities row an update goes to; nil for a start
+	device *core.Record // the device a start goes to; nil for an update
 }
 
 // photoDropTargets decides, for one recipient in one connection, whether to
@@ -64,7 +65,7 @@ func photoDropTargets(app core.App, userID, pairID string, devices []*core.Recor
 	}
 	for _, d := range devices {
 		if token := d.GetString("activity_start_token"); token != "" {
-			targets = append(targets, liveTarget{token: token, start: true})
+			targets = append(targets, liveTarget{token: token, start: true, device: d})
 		}
 	}
 	return targets
@@ -127,11 +128,32 @@ func notifyPhotoDrop(app core.App, post *core.Record, recipientID string, device
 	content := photoDropContent(app, post, authorName, now)
 	title := photoDropTitle(app, pairID, authorName)
 	for _, t := range targets {
-		n.sendLive(t.token, photoDropPayload(t.start, content, pairID, title, alertTitle, alertBody, now))
+		if n.sendLive(t.token, photoDropPayload(t.start, content, pairID, title, alertTitle, alertBody, now)) {
+			forgetActivityToken(app, t)
+			continue
+		}
 		if t.record != nil {
 			t.record.Set("expires", now.Add(photoDropWindow))
 			_ = app.SaveWithContext(context.WithValue(context.Background(), extendingWindow{}, true), t.record)
 		}
+	}
+}
+
+// forgetActivityToken drops a Live Activity token APNs has disowned. A dead
+// update token means the activity has gone, so its row goes. A dead
+// push-to-start token only clears that token: the device's ordinary push token
+// is a different thing and may be fine.
+func forgetActivityToken(app core.App, t liveTarget) {
+	var err error
+	switch {
+	case t.record != nil:
+		err = app.Delete(t.record)
+	case t.device != nil:
+		t.device.Set("activity_start_token", "")
+		err = app.Save(t.device)
+	}
+	if err != nil {
+		app.Logger().Error("push: could not forget a dead live activity token", "start", t.start, "error", err)
 	}
 }
 
@@ -159,7 +181,9 @@ func stampActivityExpiry(record *core.Record) {
 
 // sendLive sends to the Live Activity topic, which is the bundle id with
 // `.push-type.liveactivity` on the end.
-func (nt *notifier) sendLive(token string, p *payload.Payload) {
+//
+// Like send, it reports whether APNs said the token is dead.
+func (nt *notifier) sendLive(token string, p *payload.Payload) (dead bool) {
 	res, err := nt.client.Push(&apns2.Notification{
 		DeviceToken: token,
 		Topic:       nt.bundleID + ".push-type.liveactivity",
@@ -169,9 +193,10 @@ func (nt *notifier) sendLive(token string, p *payload.Payload) {
 	})
 	if err != nil {
 		log.Printf("[push] live activity send error: %v\n", err)
-		return
+		return false
 	}
 	if res.StatusCode != 200 {
 		log.Printf("[push] live activity APNs status %d: %s\n", res.StatusCode, res.Reason)
 	}
+	return tokenIsDead(res)
 }
