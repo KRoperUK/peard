@@ -39,6 +39,7 @@ peard/
 │   ├── PearWidget/        widget extension target (home screen + Lock Screen)
 │   ├── PearMessages/      iMessage extension target
 │   ├── PearNotificationService/  notification service extension (photo in the alert)
+│   ├── PearShare/         share extension (send a photo from the share sheet)
 │   ├── PeardTests/        app-target XCTest bundle
 │   ├── PeardCore/         shared Swift package (models, API client, App Group)
 │   ├── Tools/             icon generators, run by `make icons`

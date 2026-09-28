@@ -60,7 +60,7 @@ project: hooks
 # their names ("iMessage App Icon.stickersiconset"), which make splits into
 # three prerequisites it then cannot find. Correctness and robustness happen to
 # want the same prune.
-SOURCE_DIRS := $(shell find ios/Peard ios/PearWidget ios/PearMessages ios/PeardTests \
+SOURCE_DIRS := $(shell find ios/Peard ios/PearWidget ios/PearMessages ios/PearShare ios/PeardTests \
                         ios/PeardCore/Sources ios/PeardCore/Tests ios/Shared \
                         -name '*.xcassets' -prune -o -type d -print 2>/dev/null)
 

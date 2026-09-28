@@ -16,6 +16,10 @@ enum PhotoSquare {
     /// thing to send from a train.
     static let side: CGFloat = 1080
 
+    /// The JPEG quality the square is sent at, from the app and from the share
+    /// extension alike, so a photo costs the same to send either way.
+    static let jpegQuality: CGFloat = 0.6
+
     /// How hard the letterbox backdrop is blurred, in pixels at `side`.
     static let backdropBlur: CGFloat = 48
 

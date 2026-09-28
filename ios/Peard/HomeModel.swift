@@ -923,7 +923,7 @@ final class HomeModel {
     /// always been displayed and editable as a caption, so this only adds the
     /// point at which it can first be written.
     func upload(image: UIImage, moment: Moment? = nil, caption: String = "") async {
-        guard let data = image.jpegData(compressionQuality: 0.6), !data.isEmpty else {
+        guard let data = image.jpegData(compressionQuality: PhotoSquare.jpegQuality), !data.isEmpty else {
             alert = AlertContent(title: "Upload failed", message: "The photo couldn't be prepared for upload.")
             return
         }

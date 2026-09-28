@@ -337,13 +337,16 @@ final class AppModel {
     /// the network coming back and a background push — each a moment the
     /// extensions' leftovers could go out too. A moment that named no
     /// connection goes to the one the app last showed, which survives an
-    /// offline launch where the connection list does not.
+    /// offline launch where the connection list does not. Photos from the
+    /// share extension move into `pendingPhotos` on the way, so the flush that
+    /// follows uploads them like any photo shared in the app.
     private func absorbMomentInbox() async {
         guard let userID = sessionStore.userID else { return }
         let added = await sendQueue.absorb(
             momentInbox,
             authorID: userID,
-            fallbackPairID: sharedStore.selectedConnectionID
+            fallbackPairID: sharedStore.selectedConnectionID,
+            photos: pendingPhotos
         )
         if added > 0 { await refreshPendingSends() }
     }
