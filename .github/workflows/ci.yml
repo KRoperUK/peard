@@ -1,9 +1,16 @@
 name: CI
 
-# Everything here was already runnable locally and only ran when somebody
-# remembered. The split into three jobs is deliberate: the Go job needs no macOS
-# runner and finishes in seconds, so a server-only change gets feedback without
-# waiting on Xcode.
+# Two shapes, on purpose.
+#
+# Pull requests get the fast checks only — SwiftLint, PeardCore's unit tests and
+# the server's — three small jobs in parallel, none of which builds the app or
+# boots a simulator. Every merge is gated on them.
+#
+# main gets the release: one fastlane lane (`ci_release`) lints, runs the unit
+# tests including the app target's, archives, and uploads to TestFlight for
+# internal testers; a second job sends that same build to external testers
+# once somebody approves it. The server's checks, Docker image and deploy run
+# alongside.
 
 on:
   push:
@@ -13,18 +20,32 @@ on:
 
 concurrency:
   # One run per branch or pull request, and a newer push cancels the older run —
-  # on main as well as on pull requests. That includes a main run waiting for
-  # the external TestFlight approval, or midway through an upload or deploy: the
-  # newer commit's run does all of it again, for the newer code. The deploy and
-  # TestFlight jobs also have job-level groups so two runs never do either at
-  # once. CI still running for a pull request when it merges is cancelled by
-  # cancel-merged-pr-ci.yml, since the merge's push runs on main instead.
+  # on main as well as on pull requests, including a run waiting for the
+  # external TestFlight approval: the newer run offers a newer build. The deploy
+  # and TestFlight jobs also have job-level groups so two runs never do either
+  # at once. CI still running for a pull request when it merges is cancelled by
+  # cancel-merged-pr-ci.yml.
   group: ${{ github.workflow }}-${{ github.ref }}
   cancel-in-progress: true
 
 jobs:
+  lint:
+    name: SwiftLint
+    runs-on: ubuntu-latest
+    # On main, fastlane's `ci_release` lints as its first step.
+    if: github.event_name == 'pull_request'
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+
+      # Linux and SwiftLint's own image: no macOS runner to wait for, and the
+      # same version .swiftlint.yml was written against.
+      - name: Lint
+        run: |
+          docker run --rm -v "$PWD:/work" -w /work ghcr.io/realm/swiftlint:0.65.1 \
+            swiftlint lint --config .swiftlint.yml --reporter github-actions-logging
+
   server:
-    name: Server (Go)
+    name: Server unit tests
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
@@ -57,9 +78,30 @@ jobs:
             exit 1
           fi
 
+  core:
+    name: PeardCore unit tests
+    runs-on: macos-15
+    # On main, fastlane's `ci_release` runs these before it builds anything.
+    if: github.event_name == 'pull_request'
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+
+      - name: Toolchain
+        # The newest Xcode on the image, not its default — see the script.
+        run: scripts/select-newest-xcode && swift --version
+
+      - name: Test
+        working-directory: ios/PeardCore
+        # PeardCore builds for macOS as well as iOS precisely so this needs no
+        # simulator. The integration test skips itself without a server.
+        run: swift test
+
   docker:
     name: Docker image + compose
     runs-on: ubuntu-latest
+    # Main only: it gates the server deploy, and a pull request's job is to be
+    # quick. The Dockerfile and compose files are also checked before commit.
+    if: github.event_name != 'pull_request'
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
 
@@ -103,132 +145,9 @@ jobs:
           docker compose logs
           exit 1
 
-  core:
-    name: PeardCore (swift test)
+  ios-release:
+    name: iOS release (lint, test, internal TestFlight)
     runs-on: macos-15
-    steps:
-      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
-
-      - name: Toolchain
-        # The newest Xcode on the image, not its default — see the script.
-        run: scripts/select-newest-xcode && swift --version
-
-      - name: Test
-        working-directory: ios/PeardCore
-        # PeardCore builds for macOS as well as iOS precisely so this needs no
-        # simulator. The integration test skips itself without a server.
-        run: swift test
-
-  app:
-    name: App (build + tests)
-    runs-on: macos-15
-    steps:
-      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
-
-      - name: Toolchain
-        id: xcode
-        # The newest release Xcode on the image rather than its default, found by
-        # version rather than by a pinned Xcode_NN.app path: those paths come and
-        # go with the runner image, and a hard-coded one turns an image update
-        # into a red build for a reason that has nothing to do with the code.
-        # Tests build with the SDK that ships.
-        run: |
-          scripts/select-newest-xcode
-          echo "version=$(xcodebuild -version | tr '\n' ' ' | tr -s ' ')" >> "$GITHUB_OUTPUT"
-
-      # The first simulator command after switching Xcode starts the simulator
-      # service and loads its runtime, which took nearly two minutes on a fresh
-      # runner — and then the simulator still has to boot. None of that needs the
-      # app, so it all happens in the background while the app compiles, and the
-      # build below targets a generic simulator so it does not wait for a device.
-      - name: Start a simulator (background)
-        run: |
-          # Single-quoted on purpose: the variables belong to the background shell.
-          # shellcheck disable=SC2016
-          nohup bash -c '
-            id=$(scripts/pick-simulator) || exit 1
-            echo "$id" > "$RUNNER_TEMP/sim-id"
-            xcrun simctl boot "$id"
-          ' > "$RUNNER_TEMP/sim.log" 2>&1 &
-
-      # Clang's module cache: the SDK's modules, precompiled. The same for every
-      # run on one Xcode, so it is keyed on nothing else, and rebuilding it is a
-      # fixed cost every cold run otherwise pays.
-      - uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
-        with:
-          path: ios/build/ModuleCache.noindex
-          key: module-cache-${{ runner.os }}-${{ runner.arch }}-${{ steps.xcode.outputs.version }}
-
-      - name: Install XcodeGen
-        # ios/Peard.xcodeproj is generated from ios/project.yml and is not
-        # committed, so this is a hard requirement rather than a convenience.
-        run: brew install xcodegen
-
-      - name: Generate project
-        run: make project
-
-      # Everything CI does not need is off: coverage (instrumentation slows both
-      # the build and the run, and nothing reads it here — the scheme still
-      # gathers it locally), the index store (nobody jumps to a definition on a
-      # runner), and Intel slices (the runner and its simulator are arm64, and a
-      # generic destination would otherwise build both).
-      - name: Build for testing
-        run: |
-          xcodebuild -project ios/Peard.xcodeproj -scheme Peard \
-            -configuration Debug \
-            -destination "generic/platform=iOS Simulator" \
-            -derivedDataPath ios/build \
-            -enableCodeCoverage NO \
-            -skipMacroValidation \
-            -skipPackagePluginValidation \
-            COMPILER_INDEX_STORE_ENABLE=NO \
-            ARCHS=arm64 ONLY_ACTIVE_ARCH=NO \
-            build-for-testing
-
-      - name: Wait for the simulator
-        id: sim
-        timeout-minutes: 10
-        run: |
-          until [ -s "$RUNNER_TEMP/sim-id" ]; do
-            if ! pgrep -f "simctl boot|pick-simulator" >/dev/null && [ ! -s "$RUNNER_TEMP/sim-id" ]; then
-              echo "No simulator was picked:"; cat "$RUNNER_TEMP/sim.log"
-              xcrun simctl list devices available
-              exit 1
-            fi
-            sleep 2
-          done
-          id=$(cat "$RUNNER_TEMP/sim-id")
-          echo "Using $id"
-          xcrun simctl bootstatus "$id" -b
-          echo "id=$id" >> "$GITHUB_OUTPUT"
-
-      # The whole suite, against what was just built. One simulator: parallel
-      # testing clones it, which costs more than it saves for a suite that runs
-      # in seconds.
-      - name: App-target tests
-        run: |
-          xcodebuild -project ios/Peard.xcodeproj -scheme Peard \
-            -destination "platform=iOS Simulator,id=${{ steps.sim.outputs.id }}" \
-            -derivedDataPath ios/build \
-            -resultBundlePath ios/build/PeardTests.xcresult \
-            -enableCodeCoverage NO \
-            -parallel-testing-enabled NO \
-            test-without-building
-
-      - name: Upload test results
-        if: failure()
-        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
-        with:
-          name: xcresult
-          path: ios/build/PeardTests.xcresult
-          retention-days: 7
-
-  testflight:
-    name: TestFlight (internal)
-    runs-on: macos-15
-    # The same gate as the server deploy: a build only goes to testers from a
-    # commit on main whose every check passed.
-    needs: [server, docker, core, app]
     if: github.event_name == 'push' && github.ref == 'refs/heads/main'
     environment:
       name: testflight-internal
@@ -236,64 +155,46 @@ jobs:
       group: testflight-internal
       cancel-in-progress: false
     outputs:
-      build_number: ${{ steps.upload.outputs.build_number }}
+      build_number: ${{ steps.release.outputs.build_number }}
+      version: ${{ steps.release.outputs.version }}
     env:
       APP_STORE_CONNECT_API_KEY_ID: ${{ secrets.APP_STORE_CONNECT_API_KEY_ID }}
       APP_STORE_CONNECT_API_ISSUER_ID: ${{ secrets.APP_STORE_CONNECT_API_ISSUER_ID }}
       APP_STORE_CONNECT_API_KEY_BASE64: ${{ secrets.APP_STORE_CONNECT_API_KEY_BASE64 }}
     steps:
-      # Skipped with a warning, not failed, until the secrets exist: a red main
-      # for a setup step nobody has done yet would teach people to ignore red.
-      - name: Credentials
-        id: creds
-        run: |
-          if [ -n "$APP_STORE_CONNECT_API_KEY_ID" ] && [ -n "$APP_STORE_CONNECT_API_ISSUER_ID" ] && [ -n "$APP_STORE_CONNECT_API_KEY_BASE64" ]; then
-            echo "ready=true" >> "$GITHUB_OUTPUT"
-          else
-            echo "::warning title=TestFlight skipped::Add APP_STORE_CONNECT_API_KEY_ID, APP_STORE_CONNECT_API_ISSUER_ID and APP_STORE_CONNECT_API_KEY_BASE64 as secrets (repository or the testflight-internal environment) to upload builds from main."
-            echo "ready=false" >> "$GITHUB_OUTPUT"
-          fi
-
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
-        if: steps.creds.outputs.ready == 'true'
+
+      - name: Toolchain
+        # App Store Connect refuses anything built with an SDK older than iOS
+        # 26, and the image's default Xcode is older than that.
+        run: scripts/select-newest-xcode
 
       - uses: ruby/setup-ruby@14594264cd68ce8a2345dd349bc3d138a4ef85c8 # v1.327.0
-        if: steps.creds.outputs.ready == 'true'
         with:
           # fastlane's supported range; the Gemfile pins fastlane itself.
           ruby-version: "3.3"
           bundler-cache: true
 
-      - name: Toolchain
-        if: steps.creds.outputs.ready == 'true'
-        # App Store Connect refuses anything built with an SDK older than iOS
-        # 26, and the image's default Xcode is older than that.
-        run: scripts/select-newest-xcode
-
-      - name: Install XcodeGen
-        if: steps.creds.outputs.ready == 'true'
-        run: brew install xcodegen
-
-      - name: Archive and upload
-        id: upload
-        if: steps.creds.outputs.ready == 'true'
-        # Every upload needs a build number App Store Connect has not seen. The
-        # upload time in Unix seconds: it only goes up, and it is the scheme the
-        # builds uploaded by hand already use (build 1785639368 was one), so CI's
-        # numbers carry on from them rather than starting below.
+      - name: Tools
+        # XcodeGen generates the project, which is not committed; SwiftLint is
+        # usually on the image already.
         run: |
-          PEARD_BUILD_NUMBER=$(date +%s)
-          export PEARD_BUILD_NUMBER
-          echo "Build number $PEARD_BUILD_NUMBER"
-          bundle exec fastlane beta
-          echo "build_number=$PEARD_BUILD_NUMBER" >> "$GITHUB_OUTPUT"
+          brew install xcodegen
+          command -v swiftlint >/dev/null || brew install swiftlint
+
+      # Everything in one lane, in the order that matters: lint, PeardCore and
+      # app unit tests, then archive and upload for internal testers. Nothing
+      # uploads unless everything before it passed. The build number is the
+      # upload time in Unix seconds, the scheme every upload has used.
+      - name: Lint, test, build and upload
+        id: release
+        run: bundle exec fastlane ci_release
 
   testflight-external:
     name: TestFlight (external)
     runs-on: macos-15
-    needs: testflight
-    # Only once the internal job actually uploaded something.
-    if: needs.testflight.outputs.build_number != ''
+    needs: ios-release
+    if: needs.ios-release.outputs.build_number != ''
     # The approval. The testflight-external environment requires a reviewer, so
     # the run pauses here until somebody approves it in the Actions tab. The
     # next push to main cancels an unapproved one, and its own run offers the
@@ -306,41 +207,30 @@ jobs:
       APP_STORE_CONNECT_API_ISSUER_ID: ${{ secrets.APP_STORE_CONNECT_API_ISSUER_ID }}
       APP_STORE_CONNECT_API_KEY_BASE64: ${{ secrets.APP_STORE_CONNECT_API_KEY_BASE64 }}
       PEARD_TESTFLIGHT_EXTERNAL_GROUP: ${{ vars.PEARD_TESTFLIGHT_EXTERNAL_GROUP }}
-      PEARD_PROMOTE_BUILD: ${{ needs.testflight.outputs.build_number }}
+      PEARD_PROMOTE_BUILD: ${{ needs.ios-release.outputs.build_number }}
+      PEARD_PROMOTE_VERSION: ${{ needs.ios-release.outputs.version }}
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
 
       - uses: ruby/setup-ruby@14594264cd68ce8a2345dd349bc3d138a4ef85c8 # v1.327.0
         with:
-          # fastlane's supported range; the Gemfile pins fastlane itself.
           ruby-version: "3.3"
           bundler-cache: true
 
-      # Adds that build to the external group, waiting for App Store Connect
-      # to finish processing it if it has not yet. The first build of each
-      # version is submitted for Beta App Review on the way.
+      # Waits for App Store Connect to finish processing that build, then adds
+      # it to the external group. The first build of each version is submitted
+      # for Beta App Review on the way.
       - name: Send to external testers
         run: bundle exec fastlane promote_external
 
   deploy:
     name: Deploy server
     runs-on: ubuntu-latest
-    # Every check, not only the two that judge the server.
-    #
-    # This used to be [server, docker], on the argument that a broken Xcode build
-    # cannot make a Go binary wrong. True in isolation, and the wrong unit: the
-    # thing being deployed is a commit on main, and the app and the server ship
-    # against each other. Deploying a server from a commit whose app tests are
-    # red is how the two drift — routes live that the app was reverted from, or
-    # the reverse — and that drift surfaces as requests failing for no stated
-    # reason, which is the failure this job was added to end.
-    #
-    # The cost is real and worth naming: a server-only fix now waits on a macOS
-    # job that takes six minutes and cannot have broken it. The mitigation is
-    # that the trigger below is scoped — an iOS-only push reaches this job and
-    # deliberately rebuilds nothing — so the wait is paid on the pushes that
-    # actually change what is running.
-    needs: [server, docker, core, app]
+    # The server's own checks. The iOS release job is deliberately not here: it
+    # waits on App Store Connect, and a server fix should not wait on Apple's
+    # upload queue — or fail because TestFlight is slow. The app's unit tests
+    # still gate every merge, on the pull request that brought it.
+    needs: [server, docker]
 
     # Records the deploy against a named environment, so the Environments tab
     # carries the history and the current revision instead of it living only in

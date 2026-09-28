@@ -165,6 +165,37 @@ platform :ios do
       # placeholder nobody updates.
       changelog: changelog_or_nil
     )
+    # Handed to the external job, which promotes exactly this build.
+    if (output = ENV["GITHUB_OUTPUT"])
+      File.open(output, "a") do |file|
+        file.puts("build_number=#{build_number}")
+        file.puts("version=#{marketing_version}")
+      end
+    end
+  end
+
+  desc "SwiftLint, with the repository's .swiftlint.yml; errors fail, warnings do not"
+  lane :lint do
+    swiftlint(
+      mode: :lint,
+      config_file: File.expand_path("../.swiftlint.yml", __dir__),
+      executable: `which swiftlint`.strip.then { |path| path.empty? ? nil : path },
+      raise_if_swiftlint_error: true,
+      quiet: true
+    )
+  end
+
+  desc "Main's iOS pipeline: lint, unit tests, then archive and upload to internal TestFlight"
+  # One lane so CI runs one thing, and so the order — nothing uploads unless the
+  # lint and every unit test passed — lives in one place a person can also run.
+  lane :ci_release do
+    # Fixed once, here: `archive` stamps it into the IPA and `beta` reports it
+    # to the external job, and two calls to Time.now would disagree.
+    ENV["PEARD_BUILD_NUMBER"] = build_number
+    lint
+    test_core
+    test_app
+    beta
   end
 
   desc "Send a build already on TestFlight to the external testers' group"
@@ -179,17 +210,29 @@ platform :ios do
 
     build = options[:build_number].to_s.strip
     build = ENV["PEARD_PROMOTE_BUILD"].to_s.strip if build.empty?
+    version = options[:version].to_s.strip
+    version = ENV["PEARD_PROMOTE_VERSION"].to_s.strip if version.empty?
     if build.empty?
       build = latest_testflight_build_number(app_identifier: "com.peard.app").to_s
-      version = lane_context[SharedValues::LATEST_TESTFLIGHT_VERSION]
-    else
-      # The version that build belongs to, from App Store Connect itself, so a
-      # build number is enough to name exactly one build.
-      found = Spaceship::ConnectAPI::Build.all(app_id: APP_STORE_APP_ID, build_number: build).first
-      UI.user_error!("No TestFlight build #{build} for app #{APP_STORE_APP_ID}") if found.nil?
-      version = found.app_version
+      version = lane_context[SharedValues::LATEST_TESTFLIGHT_VERSION].to_s if version.empty?
     end
+    version = marketing_version if version.empty?
     UI.message("Sending #{version} (#{build}) to #{group}")
+
+    # A build uploaded minutes ago is not visible to the API straight away, and
+    # an external group only takes one that has finished processing. pilot's
+    # distribute looks it up once and gives up ("No build to distribute!" — or
+    # this lane's own earlier lookup: "No TestFlight build … for app …"), so
+    # wait here first, for this exact build.
+    FastlaneCore::BuildWatcher.wait_for_build_processing_to_be_complete(
+      app_id: APP_STORE_APP_ID,
+      platform: "IOS",
+      app_version: version,
+      build_version: build,
+      poll_interval: 30,
+      timeout_duration: 45 * 60,
+      return_spaceship_testflight_build: false
+    )
 
     upload_to_testflight(
       app_identifier: "com.peard.app",
@@ -331,6 +374,13 @@ platform :ios do
     body = `git log -1 --format=%b 2>/dev/null`.strip
     text = [subject, body].reject(&:empty?).join("\n\n")
     text.empty? ? "Latest changes from main." : text[0, 4000]
+  end
+
+  # The app's MARKETING_VERSION, from the project spec that sets it.
+  def marketing_version
+    require "yaml"
+    spec = YAML.load_file(File.expand_path("../ios/project.yml", __dir__))
+    spec.dig("targets", "Peard", "settings", "base", "MARKETING_VERSION").to_s
   end
 
   def changelog_or_nil

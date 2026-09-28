@@ -1,0 +1,62 @@
+# SwiftLint for Pear'd. Run by CI on every pull request and by fastlane on main.
+#
+# Fitted to how this codebase is written rather than to the defaults: trailing
+# commas are a house style (they keep diffs to one line), and several files are
+# long because they are documented at length, not because they do too much.
+# Length rules stay on as warnings — worth seeing, not worth failing a build.
+# Anything reported as an error fails CI.
+
+included:
+  - ios/Peard
+  - ios/PearWidget
+  - ios/PearMessages
+  - ios/PearNotificationService
+  - ios/PeardTests
+  - ios/PeardCore/Sources
+  - ios/PeardCore/Tests
+
+excluded:
+  - ios/build
+  - ios/PeardCore/.build
+  - ios/Tools
+
+disabled_rules:
+  - trailing_comma
+  - todo
+
+line_length:
+  warning: 160
+  error: 300
+  ignores_comments: true
+  ignores_urls: true
+
+file_length:
+  warning: 900
+  error: 2500
+
+type_body_length:
+  warning: 500
+  error: 1500
+
+function_body_length:
+  warning: 80
+  error: 200
+
+identifier_name:
+  min_length: 1
+  max_length: 60
+  excluded: [id, x, y, i, j, n, s, t, u, a, b, m, o, to]
+
+type_name:
+  max_length: 60
+
+nesting:
+  type_level: 3
+
+large_tuple:
+  warning: 4
+  error: 6
+
+function_parameter_count:
+  warning: 8
+  error: 12
