@@ -208,7 +208,7 @@ struct ConnectionSettingsView: View {
     private var photoSubtitle: String {
         if model.connectionHasOwnAvatar { return model.connection?.subtitle ?? "" }
         if !model.isGroup, model.connectionAvatar.hasImage {
-            return "Using \(model.shortPartnerName)'s photo"
+            return "Using \(model.partnerName)'s photo"
         }
         return model.connection?.subtitle ?? ""
     }

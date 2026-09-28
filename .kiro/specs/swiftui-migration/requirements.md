@@ -216,7 +216,7 @@ and the server packages `internal/auth`, `internal/pairs`, `internal/widget`,
 5. WHEN the current pair has no Post records, THE Peard_App SHALL display the text "No moments yet — send a pear!".
 6. THE Peard_App SHALL label a Post authored by the signed-in user "You" and a Post authored by the other member with that member's display name.
 7. THE Peard_App SHALL derive the partner label from the `display_name` field of the partner's user record, from the local part of the partner's email when `display_name` is empty, and "Partner" when both are empty.
-8. THE Peard_App SHALL truncate a displayed partner label longer than 8 characters to its first 7 characters followed by an ellipsis.
+8. THE Peard_App SHALL display the full partner label, truncating it with an ellipsis only where it does not fit the available width, and SHALL use the full label in accessibility labels and share titles.
 9. THE Peard_App SHALL display the 3 Post records that follow the most recent Post as a history list, each showing the author label, the type or Event_Kind emoji, the `note` value, and an elapsed-time label.
 10. THE Peard_App SHALL render the elapsed-time label as "now" below 1 minute, whole minutes with suffix "m" below 60 minutes, whole hours with suffix "h" below 24 hours, and whole days with suffix "d" thereafter.
 11. WHEN the user performs a pull-to-refresh gesture, THE Peard_App SHALL re-request the pair's posts and recompute the tallies.

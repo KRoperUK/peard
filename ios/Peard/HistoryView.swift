@@ -81,7 +81,7 @@ final class HistoryModel {
     }
 
     func memberLabel(_ member: Connection.Member) -> String {
-        member.user == signedInUserID ? "You" : PartnerLabel.short(member.name)
+        member.user == signedInUserID ? "You" : member.name
     }
 
     /// What the active filter is called, for the chip under the title.
@@ -365,7 +365,7 @@ final class HistoryModel {
     func authorLabel(for post: Post) -> String {
         if post.author == signedInUserID { return "You" }
         if let name = connection?.name(forUser: post.author) {
-            return PartnerLabel.short(name)
+            return name
         }
         // Not a current member: they have left, but their moments stay in the
         // shared timeline. "Partner" would be wrong in a group.
@@ -872,6 +872,7 @@ struct HistoryView: View {
                     Text(model.authorLabel(for: post))
                         .font(.subheadline.bold())
                         .foregroundStyle(PearColor.textPrimary)
+                        .lineLimit(1)
                 }
                 HStack(spacing: 4) {
                     Text(model.detail(for: post))

@@ -254,7 +254,7 @@ scope for this migration, so `PartnerDirectory` resolves the label by asking
 computes with exactly the R11.7 precedence (`display_name` → email local part →
 "Partner", see `internal/widget/widget.go`). It falls back to an `expand=user`
 read (correct if the rule is ever relaxed) and finally to "Partner".
-`PartnerLabel.short(_:)` applies the 8-character truncation (R11.8).
+Views pass the full label and truncate it to the available width with `lineLimit` (R11.8).
 
 ### App — Widget sync (R16) and Push (R18)
 
