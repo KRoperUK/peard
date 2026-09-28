@@ -31,7 +31,7 @@ struct MainTabView: View {
 
     var body: some View {
         TabView(selection: $selection) {
-            HomeView(model: model, onShowTallies: { selection = .tallies })
+            HomeTab(model: model, onShowTallies: { selection = .tallies })
                 .tag(Tab.home)
                 .tabItem { Label("Home", systemImage: "house.fill") }
 
@@ -63,6 +63,38 @@ struct MainTabView: View {
 /// `HistoryModel` resolves author names and emoji from those, and it is handed them
 /// at init because the `users` view rule means member names are only available from
 /// `GET /api/peard/connections`.
+/// Home, and on a wide screen the timeline beside it (issue #6).
+///
+/// On an iPad the phone layout stretched across the screen: a moment grid of
+/// enormous tiles and a timeline hidden behind a tab while half the display sat
+/// empty. With room for both, logging and history share the screen — the home
+/// column kept to a phone's reading width, the timeline taking the rest. The
+/// Timeline tab stays, for anybody who wants it full width. Compact width —
+/// an iPhone, or an iPad in a narrow split view — is the phone layout exactly.
+private struct HomeTab: View {
+    @Environment(\.horizontalSizeClass) private var sizeClass
+
+    let model: HomeModel
+    let onShowTallies: () -> Void
+
+    /// About a large phone's width: the grid and the hero card were designed
+    /// for it, and read badly much wider.
+    private let homeColumnWidth: CGFloat = 520
+
+    var body: some View {
+        if sizeClass == .regular {
+            HStack(spacing: 0) {
+                HomeView(model: model, onShowTallies: onShowTallies)
+                    .frame(maxWidth: homeColumnWidth)
+                Divider()
+                TimelineTab(model: model)
+            }
+        } else {
+            HomeView(model: model, onShowTallies: onShowTallies)
+        }
+    }
+}
+
 private struct TimelineTab: View {
     @Environment(AppModel.self) private var app
 
