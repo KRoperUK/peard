@@ -168,4 +168,33 @@ struct PhotoEditTests {
         #expect(PhotoEdit(fit: .fit).scale(for: square, side: side) == 0.5)
         #expect(PhotoEdit(fit: .fill).panLimit(for: square, side: side) == .zero)
     }
+
+    // MARK: Getting back (issue #13)
+
+    @Test("A double-tap goes from filling to the whole photo, and back")
+    func toggleFitFlipsTheMode() {
+        var edit = PhotoEdit.identity
+        edit.toggleFit()
+        #expect(edit.fit == .fit)
+        edit.toggleFit()
+        #expect(edit.fit == .fill)
+    }
+
+    @Test("Toggling only changes the mode, so the sheet can keep the framing")
+    func toggleFitLeavesTheFramingToTheSheet() {
+        var edit = PhotoEdit(fit: .fill, quarterTurns: 1, zoom: 2, offset: CGSize(width: 30, height: 0))
+        edit.toggleFit()
+        #expect(edit.zoom == 2)
+        #expect(edit.offset == CGSize(width: 30, height: 0))
+        #expect(edit.quarterTurns == 1)
+    }
+
+    @Test("Toggling there and back with nothing else changed is still untouched")
+    func aRoundTripIsStillIdentity() {
+        var edit = PhotoEdit.identity
+        edit.toggleFit()
+        #expect(!edit.isIdentity, "the reset button shows while the photo is fitted")
+        edit.toggleFit()
+        #expect(edit.isIdentity, "and goes again once it is back as taken")
+    }
 }

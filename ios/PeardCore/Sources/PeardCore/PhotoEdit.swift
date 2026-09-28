@@ -55,6 +55,18 @@ public struct PhotoEdit: Equatable, Sendable {
     /// can skip the re-encode and keep its original quality.
     public var isIdentity: Bool { self == .identity }
 
+    // MARK: Framing
+
+    /// Fill to Fit or back — the double-tap on the square.
+    ///
+    /// Only the mode, like the Fill/Fit picker, so both reach the same place:
+    /// the sheet watching `fit` drops the zoom and pan on the way into Fit (Fit
+    /// means "the whole photo", and a leftover zoom would undo that) and puts
+    /// them back on the way out.
+    public mutating func toggleFit() {
+        fit = fit == .fill ? .fit : .fill
+    }
+
     // MARK: Rotation
 
     /// A quarter turn clockwise.
