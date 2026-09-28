@@ -88,7 +88,25 @@ func appleSignInHandler(app core.App) func(e *core.RequestEvent) error {
 		}
 		email := strings.ToLower(strings.TrimSpace(claims.Email))
 
-		user, err := app.FindFirstRecordByFilter("users", "email = {:email}", dbx.Params{"email": email})
+		// The Apple user id is the identity; the email is only a fallback for
+		// accounts that have not been linked yet.
+		var user *core.Record
+		link, err := app.FindFirstExternalAuthByExpr(dbx.HashExp{"provider": "apple", "providerId": claims.Subject})
+		if err == nil {
+			user, err = app.FindRecordById("users", link.RecordRef())
+		} else {
+			user, err = app.FindFirstRecordByFilter("users", "email = {:email}", dbx.Params{"email": email})
+			if err == nil && user != nil && !user.Verified() {
+				// Anyone can sign up with an email they do not own. Apple has
+				// just proved who owns it, so a password set before that proof
+				// must stop working, as PocketBase's own OAuth2 flow does.
+				user.SetRandomPassword()
+				user.SetVerified(true)
+				if err := app.Save(user); err != nil {
+					return e.InternalServerError("failed to secure account", err)
+				}
+			}
+		}
 		if err != nil || user == nil {
 			// First time we have seen this email: create the account.
 			usersCol, err := app.FindCollectionByNameOrId("users")
