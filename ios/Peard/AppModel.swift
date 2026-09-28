@@ -509,7 +509,7 @@ final class AppModel {
             try await api.leave(pairID: connectionID, deleteMoments: deletingMoments)
         } catch {
             if await handleIfUnauthorized(error) { return }
-            banner = (error as? APIError)?.localizedDescription ?? error.localizedDescription
+            banner = APIError.userMessage(for: error)
         }
         if sharedStore.selectedConnectionID == connectionID {
             sharedStore.selectedConnectionID = nil
@@ -608,7 +608,7 @@ final class AppModel {
             try await api.setMuted(pairID: connectionID, muted: muted)
         } catch {
             if await handleIfUnauthorized(error) { return }
-            banner = (error as? APIError)?.localizedDescription ?? error.localizedDescription
+            banner = APIError.userMessage(for: error)
             return
         }
         await refreshConnections()
@@ -620,7 +620,7 @@ final class AppModel {
             try await api.removeMember(pairID: connectionID, userID: userID)
         } catch {
             if await handleIfUnauthorized(error) { return }
-            banner = (error as? APIError)?.localizedDescription ?? error.localizedDescription
+            banner = APIError.userMessage(for: error)
             return
         }
         await refreshConnections()
@@ -636,7 +636,7 @@ final class AppModel {
             profile = try await api.profile()
         } catch {
             if await handleIfUnauthorized(error) { return }
-            banner = (error as? APIError)?.localizedDescription ?? error.localizedDescription
+            banner = APIError.userMessage(for: error)
         }
     }
 
@@ -647,7 +647,7 @@ final class AppModel {
             profile = try await api.updateDisplayName(name)
         } catch {
             if await handleIfUnauthorized(error) { return }
-            banner = (error as? APIError)?.localizedDescription ?? error.localizedDescription
+            banner = APIError.userMessage(for: error)
             return
         }
         // Every connection carries the caller's own name in its member list.
@@ -684,7 +684,7 @@ final class AppModel {
             }
         } catch {
             if await handleIfUnauthorized(error) { return }
-            banner = (error as? APIError)?.localizedDescription ?? error.localizedDescription
+            banner = APIError.userMessage(for: error)
         }
     }
 
@@ -696,7 +696,7 @@ final class AppModel {
             profile = try await api.uploadProfileAvatar(jpeg: data)
         } catch {
             if await handleIfUnauthorized(error) { return }
-            banner = (error as? APIError)?.localizedDescription ?? error.localizedDescription
+            banner = APIError.userMessage(for: error)
             return
         }
         await refreshConnections()
@@ -708,7 +708,7 @@ final class AppModel {
             profile = try await api.removeProfileAvatar()
         } catch {
             if await handleIfUnauthorized(error) { return }
-            banner = (error as? APIError)?.localizedDescription ?? error.localizedDescription
+            banner = APIError.userMessage(for: error)
             return
         }
         await refreshConnections()
@@ -721,7 +721,7 @@ final class AppModel {
             _ = try await api.uploadConnectionAvatar(pairID: connectionID, jpeg: data)
         } catch {
             if await handleIfUnauthorized(error) { return }
-            banner = (error as? APIError)?.localizedDescription ?? error.localizedDescription
+            banner = APIError.userMessage(for: error)
             return
         }
         await refreshConnections()
@@ -734,7 +734,7 @@ final class AppModel {
             _ = try await api.removeConnectionAvatar(pairID: connectionID)
         } catch {
             if await handleIfUnauthorized(error) { return }
-            banner = (error as? APIError)?.localizedDescription ?? error.localizedDescription
+            banner = APIError.userMessage(for: error)
             return
         }
         await refreshConnections()
@@ -774,7 +774,7 @@ final class AppModel {
             banner = "This server can't delete accounts in-app yet. Email \(PeardLinks.supportEmail) and we'll do it for you."
             return false
         } catch {
-            banner = (error as? APIError)?.localizedDescription ?? error.localizedDescription
+            banner = APIError.userMessage(for: error)
             return false
         }
         // Deliberately not `signOut()`: that deletes the push registration again

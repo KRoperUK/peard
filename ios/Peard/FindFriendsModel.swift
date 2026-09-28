@@ -104,7 +104,7 @@ final class FindFriendsModel {
                 matchesByHash[match.hash] = match
             }
         } catch {
-            errorMessage = (error as? APIError)?.localizedDescription ?? error.localizedDescription
+            errorMessage = APIError.userMessage(for: error)
         }
 
         rows = Self.rows(from: contacts, matchesByHash: matchesByHash)
@@ -157,7 +157,7 @@ final class FindFriendsModel {
             let invite = try await api.createInvite()
             return ComposeTarget(recipient: target.value, isPhone: target.isPhone, message: invite.shareMessage)
         } catch {
-            errorMessage = (error as? APIError)?.localizedDescription ?? error.localizedDescription
+            errorMessage = APIError.userMessage(for: error)
             return nil
         }
     }

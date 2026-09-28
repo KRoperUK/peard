@@ -190,7 +190,7 @@ struct PairView: View {
                 invite = try await app.api.createInvite()
             } catch {
                 if await app.handleIfUnauthorized(error) { return }
-                errorMessage = (error as? APIError)?.localizedDescription ?? error.localizedDescription
+                errorMessage = APIError.userMessage(for: error)
             }
         }
     }
@@ -219,7 +219,7 @@ struct PairView: View {
                 await app.resolveMembership()
             } catch {
                 if await app.handleIfUnauthorized(error) { return }
-                errorMessage = (error as? APIError)?.localizedDescription ?? error.localizedDescription
+                errorMessage = APIError.userMessage(for: error)
             }
         }
     }

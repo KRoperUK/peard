@@ -668,7 +668,7 @@ struct ConnectionSettingsView: View {
             try data.write(to: url, options: .atomic)
             exportFileURL = url
         } catch {
-            exportError = (error as? APIError)?.localizedDescription ?? error.localizedDescription
+            exportError = APIError.userMessage(for: error)
         }
     }
 
