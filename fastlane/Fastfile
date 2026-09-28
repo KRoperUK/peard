@@ -122,6 +122,7 @@ platform :ios do
   desc "Signed archive for distribution. Needs a real signing identity."
   lane :archive do
     require_distribution_credentials!
+    revoke_ci_development_certificates! if ENV["CI"]
     generate
     number = build_number
     UI.message("Build number #{number}")
@@ -302,6 +303,26 @@ platform :ios do
 
   # xcodebuild's own flags for signing with the API key. Empty without one, so a
   # local archive still signs with the Apple ID in Xcode.
+  # Cloud-managed signing on a CI runner creates an "Apple Development: Created
+  # via API" certificate for the archive every run, because the runner's
+  # keychain starts empty, and its private key goes when the runner does. They
+  # pile up until Apple refuses another ("Your account has reached the maximum
+  # number of certificates") and the archive fails. None is any use once its
+  # run is over, and nothing uploaded depends on one: the IPA is signed for
+  # distribution at export. So the ones the API made are cleared before each
+  # archive. Certificates made in Xcode carry a person's name and are left
+  # alone. A failure here is reported, not fatal: the archive may still have
+  # room.
+  def revoke_ci_development_certificates!
+    Spaceship::ConnectAPI.token = Spaceship::ConnectAPI::Token.from(hash: lane_context[SharedValues::APP_STORE_CONNECT_API_KEY])
+    stale = Spaceship::ConnectAPI::Certificate.all(filter: { certificateType: "DEVELOPMENT" })
+      .select { |cert| cert.display_name == "Created via API" }
+    stale.each(&:delete!)
+    UI.message("Revoked #{stale.count} development certificate(s) left by earlier CI runs") unless stale.empty?
+  rescue StandardError => e
+    UI.important("Could not clear old CI development certificates: #{e.message}")
+  end
+
   def xcodebuild_auth_args
     return [] unless @auth_key && @auth_key[:path]
 
