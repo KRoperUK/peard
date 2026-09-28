@@ -295,6 +295,39 @@ final class QuickSendFlowTests: XCTestCase {
         XCTAssertNil(queued.first?.happenedAt)
     }
 
+    // MARK: VoiceOver (issue #5)
+
+    /// With VoiceOver the note field is a swipe or three away; the moment must
+    /// wait for it rather than send itself after three seconds.
+    func testWithVoiceOverRunningTheSendWaits() {
+        model.assistiveTechnologyIsRunning = { true }
+
+        model.tap(moment: beer)
+
+        XCTAssertEqual(model.quickSend?.isHeld, true)
+        XCTAssertEqual(model.quickSendCaption, "Tap send when ready")
+        XCTAssertFalse(model.quickSend!.shouldSend(now: Date().addingTimeInterval(60)))
+    }
+
+    func testWithVoiceOverRunningSendStillSends() async {
+        model.assistiveTechnologyIsRunning = { true }
+        model.tap(moment: beer)
+
+        await model.sendNow()
+
+        let queued = await queue.pending
+        XCTAssertEqual(queued.count, 1)
+    }
+
+    func testWithoutVoiceOverTheCountdownRuns() {
+        model.assistiveTechnologyIsRunning = { false }
+
+        model.tap(moment: beer)
+
+        XCTAssertEqual(model.quickSend?.isHeld, false)
+        XCTAssertEqual(model.quickSendCaption, "Sending in 3…")
+    }
+
     // MARK: Photos (issue #2)
 
     /// A photo taken with no way to send it is kept — on disk and queued —
