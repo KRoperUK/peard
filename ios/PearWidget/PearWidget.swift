@@ -573,6 +573,7 @@ struct PearWidget: Widget {
 struct PearWidgetBundle: WidgetBundle {
     var body: some Widget {
         PearWidget()
+        PhotoDropLiveActivity()
         // Control Centre, iOS 18 and later. `@Widget` builders support
         // availability directly, so an iOS 17 device gets a bundle with just
         // the home-screen widget in it rather than failing to load.

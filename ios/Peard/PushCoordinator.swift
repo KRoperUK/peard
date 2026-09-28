@@ -18,6 +18,9 @@ final class PushCoordinator {
     /// timeline, and a notification tap can focus a post.
     var onBackgroundRefresh: (@MainActor () async -> Void)?
     var onOpenPost: (@MainActor (String) -> Void)?
+    /// Called once this device's `devices` row exists, for anything that has to
+    /// hang off it — the Live Activity push-to-start token.
+    var onRegistered: (@MainActor () async -> Void)?
 
     private(set) var authorizationStatus: UNAuthorizationStatus = .notDetermined
 
@@ -144,6 +147,7 @@ final class PushCoordinator {
             } else {
                 let _: Device = try await api.create("devices", fields: fields)
             }
+            await onRegistered?()
         } catch {
             // Registration is retried the next time APNs hands us a token.
         }

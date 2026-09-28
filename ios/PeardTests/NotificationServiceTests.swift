@@ -1,3 +1,4 @@
+import PeardCore
 import UIKit
 import UserNotifications
 import XCTest
@@ -18,6 +19,9 @@ final class NotificationServiceTests: XCTestCase {
 
     override func tearDown() {
         URLProtocol.unregisterClass(ImageStub.self)
+        // didReceive also caches for the Live Activity; leave the app's real
+        // App Group as it was.
+        if let cached = PhotoDropCache.url(forPost: "p1") { try? FileManager.default.removeItem(at: cached) }
         super.tearDown()
     }
 

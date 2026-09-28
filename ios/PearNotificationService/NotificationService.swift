@@ -9,6 +9,10 @@ import UserNotifications
 /// It is downloaded and attached, so the Lock Screen shows the picture instead
 /// of "Fresh pear from Ada".
 ///
+/// It also leaves a copy in the App Group, named by `post_id`, for the photo
+/// drop Live Activity to show: that activity is started by its own push and has
+/// no network, so this is the only way the picture reaches it.
+///
 /// Deliberately small, and without PeardCore: a service extension gets about
 /// 24 MB and 30 seconds. Anything that goes wrong — no URL, a failed or slow
 /// download, an expired token — delivers the notification exactly as it arrived.
@@ -37,10 +41,13 @@ final class NotificationService: UNNotificationServiceExtension {
         lock.unlock()
 
         let task = URLSession.shared.downloadTask(with: url) { [weak self] location, response, _ in
-            if let location,
-               (response as? HTTPURLResponse)?.statusCode == 200,
-               let attachment = Self.attachment(movingFrom: location) {
-                content.attachments = [attachment]
+            if let location, (response as? HTTPURLResponse)?.statusCode == 200 {
+                if let postID = request.content.userInfo["post_id"] as? String {
+                    Self.cacheForLiveActivity(location, postID: postID)
+                }
+                if let attachment = Self.attachment(movingFrom: location) {
+                    content.attachments = [attachment]
+                }
             }
             self?.deliver(content)
         }
@@ -69,6 +76,37 @@ final class NotificationService: UNNotificationServiceExtension {
         contentHandler = nil
         lock.unlock()
         handler?(content)
+    }
+
+    // Kept in step with PeardCore's PhotoDropCache by PhotoDropCacheTests.
+    static let appGroup = "group.com.peard.app"
+    static let cacheDirectoryName = "PhotoDrops"
+    /// Long enough to outlive any activity (which goes stale in thirty
+    /// minutes), short enough that the folder never becomes a photo library.
+    static let cacheLifetime: TimeInterval = 24 * 60 * 60
+
+    static func cacheFileName(forPost postID: String) -> String {
+        postID.filter { $0.isLetter || $0.isNumber } + ".jpg"
+    }
+
+    /// Copies the photo into the App Group and clears out old ones. Best
+    /// effort: the notification matters more than the activity's picture.
+    static func cacheForLiveActivity(_ location: URL, postID: String, now: Date = Date()) {
+        let files = FileManager.default
+        guard let directory = files.containerURL(forSecurityApplicationGroupIdentifier: appGroup)?
+            .appendingPathComponent(cacheDirectoryName, isDirectory: true) else { return }
+        try? files.createDirectory(at: directory, withIntermediateDirectories: true)
+        let destination = directory.appendingPathComponent(cacheFileName(forPost: postID))
+        try? files.removeItem(at: destination)
+        try? files.copyItem(at: location, to: destination)
+
+        let old = (try? files.contentsOfDirectory(at: directory, includingPropertiesForKeys: [.contentModificationDateKey])) ?? []
+        for file in old {
+            let modified = (try? file.resourceValues(forKeys: [.contentModificationDateKey]))?.contentModificationDate
+            if let modified, now.timeIntervalSince(modified) > cacheLifetime {
+                try? files.removeItem(at: file)
+            }
+        }
     }
 
     /// The downloaded file is removed when the completion handler returns, and
