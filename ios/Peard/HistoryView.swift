@@ -81,7 +81,7 @@ final class HistoryModel {
     }
 
     func memberLabel(_ member: Connection.Member) -> String {
-        member.user == signedInUserID ? "You" : PartnerLabel.short(member.name)
+        member.user == signedInUserID ? "You" : member.name
     }
 
     /// What the active filter is called, for the chip under the title.
@@ -138,6 +138,36 @@ final class HistoryModel {
             seen.append(reaction.kind)
         }
         return seen
+    }
+
+    /// Who reacted with what, for VoiceOver — the row draws the emoji alone,
+    /// which says nothing about who they came from.
+    func spokenReactions(for post: Post) -> String? {
+        Self.spokenReactions(reactionsByPost[post.id] ?? []) { user in
+            if user == signedInUserID { return "you" }
+            // The full name rather than the row's shortened one: the ellipsis
+            // is there to fit the width, and is meaningless read aloud.
+            return connection?.name(forUser: user) ?? PartnerLabel.unknown
+        }
+    }
+
+    /// "Reactions: Heart from Sam and you; Cheers from Alex", grouped by kind in
+    /// the order the kinds were first used, as the row draws them.
+    static func spokenReactions(_ reactions: [Reaction], name: (String) -> String) -> String? {
+        var kinds: [ReactionKind] = []
+        var people: [String: [String]] = [:]
+        for reaction in reactions {
+            if people[reaction.kind.rawValue] == nil { kinds.append(reaction.kind) }
+            let who = name(reaction.user)
+            if people[reaction.kind.rawValue]?.contains(who) != true {
+                people[reaction.kind.rawValue, default: []].append(who)
+            }
+        }
+        guard !kinds.isEmpty else { return nil }
+        let phrases = kinds.map { kind in
+            "\(kind.accessibilityLabel) from \((people[kind.rawValue] ?? []).formatted(.list(type: .and)))"
+        }
+        return "Reactions: " + phrases.joined(separator: "; ")
     }
 
     /// Requirement 14.1 — reactions are offered on other people's moments only.
@@ -365,7 +395,7 @@ final class HistoryModel {
     func authorLabel(for post: Post) -> String {
         if post.author == signedInUserID { return "You" }
         if let name = connection?.name(forUser: post.author) {
-            return PartnerLabel.short(name)
+            return name
         }
         // Not a current member: they have left, but their moments stay in the
         // shared timeline. "Partner" would be wrong in a group.
@@ -804,6 +834,10 @@ struct HistoryView: View {
                 }
             }
 
+            // The footer rows are not moments, so they draw no separators of
+            // their own, like the "New" divider. Left on, the list aligned each
+            // one to the row's text, which put a half-width line under the
+            // centred count.
             if model.hasMore {
                 HStack {
                     Spacer()
@@ -811,6 +845,7 @@ struct HistoryView: View {
                     Spacer()
                 }
                 .listRowBackground(Color.clear)
+                .listRowSeparator(.hidden)
                 .task { await model.loadMoreIfNeeded() }
             } else if model.totalItems > 0 {
                 Text(model.totalItems == 1 ? "1 moment" : "\(model.totalItems) moments")
@@ -818,6 +853,7 @@ struct HistoryView: View {
                     .foregroundStyle(PearColor.textTertiary)
                     .frame(maxWidth: .infinity, alignment: .center)
                     .listRowBackground(Color.clear)
+                    .listRowSeparator(.hidden)
             }
 
             if let error = model.error, !model.posts.isEmpty {
@@ -825,6 +861,7 @@ struct HistoryView: View {
                     .font(.footnote)
                     .foregroundStyle(PearColor.error)
                     .listRowBackground(Color.clear)
+                    .listRowSeparator(.hidden)
             }
         }
         .listStyle(.plain)
@@ -872,6 +909,7 @@ struct HistoryView: View {
                     Text(model.authorLabel(for: post))
                         .font(.subheadline.bold())
                         .foregroundStyle(PearColor.textPrimary)
+                        .lineLimit(1)
                 }
                 HStack(spacing: 4) {
                     Text(model.detail(for: post))
@@ -921,8 +959,10 @@ struct HistoryView: View {
         .accessibilityLabel(accessibilityLabel(for: post))
         // The combined element swallows the thumbnail's own tap target, so
         // VoiceOver gets the photo as a named action instead of losing it.
-        .accessibilityAction(named: "Open photo") {
-            if post.hasMedia { viewing = post }
+        .accessibilityActions {
+            if post.hasMedia {
+                Button("Open photo") { viewing = post }
+            }
         }
         .modifier(MomentActions(
             post: post,
@@ -943,6 +983,7 @@ struct HistoryView: View {
         if post.rewound { parts.append(RewoundChip.accessibilityLabel(loggedAt: post.created)) }
         let time = model.time(for: post)
         if !time.isEmpty { parts.append(time) }
+        if let reactions = model.spokenReactions(for: post) { parts.append(reactions) }
         return parts.joined(separator: ", ")
     }
 

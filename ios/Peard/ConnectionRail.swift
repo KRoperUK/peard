@@ -90,7 +90,7 @@ struct ConnectionRail: View {
                 // Dimmed rather than hidden: an unselected connection is still
                 // one you are in, and greying the label out entirely made the rail
                 // read as disabled.
-                Text(PartnerLabel.short(connection.title()))
+                Text(connection.title())
                     .font(.caption2.weight(isSelected ? .bold : .regular))
                     .foregroundStyle(isSelected ? PearColor.textPrimary : PearColor.textSecondary)
                     .lineLimit(1)

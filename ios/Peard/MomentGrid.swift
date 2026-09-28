@@ -35,6 +35,20 @@ struct MomentGrid: View {
     /// Both nil where pinning is not offered.
     var isPinned: ((Moment) -> Bool)? = nil
     var onTogglePin: ((Moment) -> Void)? = nil
+    /// What a tap does here, which is what the VoiceOver hint has to say.
+    var purpose: Purpose = .send
+
+    /// Home sends; the photo sheet only picks what a picture is of.
+    enum Purpose {
+        case send
+        case pick
+    }
+
+    // The same two checks `HomeModel.assistiveTechnologyIsRunning` makes to
+    // decide the send starts held, read from the environment so the hint
+    // follows VoiceOver being switched on or off without a redraw of Home.
+    @Environment(\.accessibilityVoiceOverEnabled) private var voiceOverEnabled
+    @Environment(\.accessibilitySwitchControlEnabled) private var switchControlEnabled
 
     @ScaledMetric(relativeTo: .caption) private var tileWidth: CGFloat = 80
 
@@ -68,11 +82,15 @@ struct MomentGrid: View {
             VStack(spacing: 4) {
                 Text(moment.emoji)
                     .font(.largeTitle)
+                // Two lines, centred, before any shrinking: a connection's own
+                // moments can be 40 characters in an 80-point tile, and one line
+                // at 80% scale either touched the edges or cut the name short.
                 Text(moment.label)
                     .font(.caption.bold())
                     .foregroundStyle(PearColor.textSecondary)
-                    .lineLimit(1)
-                    .minimumScaleFactor(0.8)
+                    .multilineTextAlignment(.center)
+                    .lineLimit(2)
+                    .minimumScaleFactor(0.7)
                 // Held open even when there is nothing to say, so a grid of
                 // mixed tiles does not come out ragged — the same reason the
                 // Messages tray holds its status line.
@@ -81,7 +99,10 @@ struct MomentGrid: View {
                     .foregroundStyle(PearColor.textTertiary)
                     .lineLimit(1)
             }
-            .frame(maxWidth: .infinity)
+            .padding(.horizontal, 6)
+            // Fills the row's height, so a two-line name beside one-line names
+            // does not leave its neighbours as shorter tiles.
+            .frame(maxWidth: .infinity, maxHeight: .infinity)
             .padding(.vertical, 14)
             .background(
                 isPending ? PearColor.accent.opacity(0.18) : PearColor.surface,
@@ -117,8 +138,14 @@ struct MomentGrid: View {
                 }
             }
         }
-        .accessibilityAction(named: isPinned?(moment) == true ? "Unpin" : "Pin to front") {
-            onTogglePin?(moment)
+        // Only where pinning is offered: an action that does nothing when
+        // activated is worse than no action at all.
+        .accessibilityActions {
+            if let onTogglePin {
+                Button(isPinned?(moment) == true ? "Unpin" : "Pin to front") {
+                    onTogglePin(moment)
+                }
+            }
         }
         // The age is drawn as a bare "3w" under the label, which means nothing
         // read aloud on its own.
@@ -129,7 +156,28 @@ struct MomentGrid: View {
         )
         // Requirement 12.10.
         .disabled(isBusy)
-        .accessibilityHint("Sends in \(Int(QuickSend.delay)) seconds unless you add a note")
+        .accessibilityHint(Self.hint(
+            purpose: purpose,
+            isPending: isPending,
+            sendIsHeld: voiceOverEnabled || switchControlEnabled
+        ))
+    }
+
+    /// What activating a tile will do. The countdown only runs without
+    /// VoiceOver or Switch Control — with either, the send starts held until
+    /// Send is activated (issue #5) — and in the photo sheet a tap only picks
+    /// the moment, or clears it if it was already the choice.
+    static func hint(purpose: Purpose, isPending: Bool, sendIsHeld: Bool) -> String {
+        switch purpose {
+        case .pick:
+            return isPending ? "Clears the choice" : "Chooses this moment for the photo"
+        case .send:
+            // Tapping the moment already counting down sends it at once.
+            if isPending { return "Sends it now" }
+            return sendIsHeld
+                ? "Gets it ready, so you can add a note before sending"
+                : "Sends in \(Int(QuickSend.delay)) seconds unless you add a note"
+        }
     }
 
     /// Invent a moment. Last in the grid rather than pinned beside it: the grid
@@ -147,7 +195,7 @@ struct MomentGrid: View {
                     .foregroundStyle(PearColor.textSecondary)
                     .lineLimit(1)
             }
-            .frame(maxWidth: .infinity)
+            .frame(maxWidth: .infinity, maxHeight: .infinity)
             .padding(.vertical, 14)
             .background(PearColor.surface.opacity(0.6), in: RoundedRectangle(cornerRadius: 14))
             .overlay {

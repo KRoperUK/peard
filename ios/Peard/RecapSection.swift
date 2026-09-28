@@ -54,6 +54,9 @@ struct RecapSection: View {
                 .foregroundStyle(PearColor.textSecondary)
                 .monospacedDigit()
                 .lineLimit(1)
+                // Cut from the middle so a long name costs its own letters, not
+                // the count at the end of the line.
+                .truncationMode(.middle)
         }
         .accessibilityElement(children: .combine)
         .accessibilityLabel(

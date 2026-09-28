@@ -240,11 +240,15 @@ struct PhotoViewer: View {
                 Text(authorLabel)
                     .font(.subheadline.bold())
                     .foregroundStyle(.white)
+                    .lineLimit(1)
                 if !timestamp.isEmpty {
+                    // The name gives way first: a long one is still recognisable
+                    // cut short, a clipped time is not.
                     Text(timestamp)
                         .font(.caption)
                         .foregroundStyle(.white.opacity(0.7))
                         .monospacedDigit()
+                        .layoutPriority(1)
                 }
             }
             if let note = post.displayNote {

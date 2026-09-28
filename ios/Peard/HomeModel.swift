@@ -85,16 +85,14 @@ final class HomeModel {
     /// The other person's name in a 1:1. Groups have no single partner, so the
     /// per-author name is used instead.
     var partnerName: String { connection?.partnerName ?? PartnerLabel.fallback }
-    var shortPartnerName: String { PartnerLabel.short(partnerName) }
 
     /// The pinned header's title: the connection's name, or who is in it.
     var connectionTitle: String { connection?.title() ?? PartnerLabel.fallback }
 
     /// Who the second tally row belongs to. The rule lives on `Connection`, where
-    /// it is pure; this only applies the row's width limit, which is a no-op on
-    /// both neutral labels.
+    /// it is pure; the row itself truncates it to fit.
     var othersLabel: String {
-        PartnerLabel.short(connection?.othersLabel ?? PartnerLabel.unknown)
+        connection?.othersLabel ?? PartnerLabel.unknown
     }
 
     // MARK: Tallies
@@ -241,12 +239,12 @@ final class HomeModel {
     func authorLabel(for post: Post) -> String {
         if post.author == signedInUserID { return "You" }
         if let name = connection?.name(forUser: post.author) {
-            return PartnerLabel.short(name)
+            return name
         }
         // Not a current member: they have left, but their moments stay. Naming
         // them "Partner" is only right when there is exactly one other person.
         if let partnerName = connection?.partnerName {
-            return PartnerLabel.short(partnerName)
+            return partnerName
         }
         return PartnerLabel.unknown
     }
