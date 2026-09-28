@@ -16,7 +16,7 @@ import (
 )
 
 // weeklyRecapCron fires Sunday evening UTC. No per-user timezone handling and
-// no opt-out yet — the simplest version that is still worth sending, with
+// no opt-out beyond muting the connection yet — the simplest version that is still worth sending, with
 // both named as the first things to revisit if the day/time turns out wrong
 // or somebody asks to turn it off.
 const weeklyRecapCron = "0 18 * * 0"
@@ -77,8 +77,10 @@ func sendRecapFor(app core.App, pair *core.Record, weekStart time.Time) {
 		title = "This week in " + name
 	}
 
+	// Muted members are left out, as they are for moment pushes: the recap is
+	// that connection making a noise, which is what muting it asked to stop.
 	members, err := app.FindRecordsByFilter("pair_members",
-		"pair = {:pair}", "", maxFanOut, 0, dbx.Params{"pair": pair.Id})
+		"pair = {:pair} && muted != true", "", maxFanOut, 0, dbx.Params{"pair": pair.Id})
 	if err != nil {
 		return
 	}
