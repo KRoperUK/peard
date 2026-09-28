@@ -18,7 +18,7 @@ import (
 	"encoding/base64"
 	"errors"
 	"fmt"
-	"log"
+	"log/slog"
 	"net/http"
 	"net/url"
 	"os"
@@ -40,6 +40,17 @@ import (
 type notifier struct {
 	client   *apns2.Client
 	bundleID string
+	// logger is the app's, so delivery failures land in PocketBase's logs
+	// alongside everything else rather than only on stderr.
+	logger *slog.Logger
+}
+
+// log is the notifier's logger, or slog's default for one built without it.
+func (nt *notifier) log() *slog.Logger {
+	if nt.logger != nil {
+		return nt.logger
+	}
+	return slog.Default()
 }
 
 // maxFanOut is how many other members one post can notify. It has to be at least
@@ -62,11 +73,11 @@ var n *notifier
 
 // Register configures the APNs client and binds the record hooks.
 func Register(app core.App) {
-	n = newNotifier()
+	n = newNotifier(app.Logger())
 	if n == nil {
-		log.Println("[push] APNs not configured (PEARD_APNS_* missing); push disabled")
+		app.Logger().Warn("push: APNs not configured (PEARD_APNS_* missing); push disabled")
 	} else {
-		log.Println("[push] APNs configured for bundle", n.bundleID)
+		app.Logger().Info("push: APNs configured", "bundle", n.bundleID)
 	}
 
 	// Delivery happens after the request has been answered, so the poster does
@@ -108,7 +119,7 @@ func Register(app core.App) {
 	registerWeeklyRecap(app)
 }
 
-func newNotifier() *notifier {
+func newNotifier(logger *slog.Logger) *notifier {
 	keyID := os.Getenv("PEARD_APNS_KEY_ID")
 	teamID := os.Getenv("PEARD_APNS_TEAM_ID")
 	bundleID := os.Getenv("PEARD_APNS_BUNDLE_ID")
@@ -120,7 +131,7 @@ func newNotifier() *notifier {
 	}
 	keyBytes, err := apnsKeyBytes(os.Getenv("PEARD_APNS_KEY_CONTENT"), os.Getenv("PEARD_APNS_KEY_PATH"))
 	if err != nil {
-		log.Println("[push] cannot read APNs key:", err)
+		logger.Error("push: cannot read APNs key", "error", err)
 		return nil
 	}
 	if keyBytes == nil {
@@ -128,7 +139,7 @@ func newNotifier() *notifier {
 	}
 	authKey, err := token.AuthKeyFromBytes(keyBytes)
 	if err != nil {
-		log.Println("[push] cannot parse APNs key:", err)
+		logger.Error("push: cannot parse APNs key", "error", err)
 		return nil
 	}
 	t := &token.Token{AuthKey: authKey, KeyID: keyID, TeamID: teamID}
@@ -138,7 +149,7 @@ func newNotifier() *notifier {
 	} else {
 		client = client.Development()
 	}
-	return &notifier{client: client, bundleID: bundleID}
+	return &notifier{client: client, bundleID: bundleID, logger: logger}
 }
 
 // apnsKeyBytes resolves the APNs signing key from either its content or a file
@@ -418,11 +429,14 @@ func (nt *notifier) send(deviceToken string, p *payload.Payload, pushType apns2.
 		CollapseID:  collapseID,
 	})
 	if err != nil {
-		log.Println("[push] send error:", err)
+		nt.log().Error("push: APNs send failed",
+			"pushType", string(pushType), "collapseId", collapseID, "error", err)
 		return false
 	}
 	if res.StatusCode != 200 {
-		log.Printf("[push] APNs status %d: %s\n", res.StatusCode, res.Reason)
+		nt.log().Warn("push: APNs refused a notification",
+			"status", res.StatusCode, "reason", res.Reason,
+			"pushType", string(pushType), "collapseId", collapseID)
 	}
 	return tokenIsDead(res)
 }

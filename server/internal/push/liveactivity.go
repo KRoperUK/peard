@@ -2,7 +2,6 @@ package push
 
 import (
 	"context"
-	"log"
 	"time"
 
 	"github.com/pocketbase/dbx"
@@ -192,11 +191,12 @@ func (nt *notifier) sendLive(token string, p *payload.Payload) (dead bool) {
 		Priority:    apns2.PriorityHigh,
 	})
 	if err != nil {
-		log.Printf("[push] live activity send error: %v\n", err)
+		nt.log().Error("push: live activity send failed", "error", err)
 		return false
 	}
 	if res.StatusCode != 200 {
-		log.Printf("[push] live activity APNs status %d: %s\n", res.StatusCode, res.Reason)
+		nt.log().Warn("push: APNs refused a live activity push",
+			"status", res.StatusCode, "reason", res.Reason)
 	}
 	return tokenIsDead(res)
 }

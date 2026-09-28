@@ -1,7 +1,6 @@
 package push
 
 import (
-	"log"
 	"sort"
 	"strconv"
 	"strings"
@@ -47,7 +46,7 @@ func sendWeeklyRecaps(app core.App) {
 
 	pairs, err := app.FindRecordsByFilter("pairs", "", "", maxPairsPerRecap, 0, dbx.Params{})
 	if err != nil {
-		log.Println("[push] weekly recap: could not list pairs:", err)
+		app.Logger().Error("push: weekly recap could not list pairs", "error", err)
 		return
 	}
 
