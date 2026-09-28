@@ -217,6 +217,26 @@ certificates through the API key (`-authenticationKeyPath` and friends, passed b
 the `archive` lane). `bundle exec fastlane ci_release` runs the same pipeline
 locally.
 
+#### TestFlight feedback to issues
+
+`.github/workflows/testflight-feedback.yml` runs daily at 08:00 UTC (or by hand,
+with a dry-run option). It pulls new TestFlight beta feedback — tester comments
+and screenshots — from App Store Connect, has an OpenRouter model triage each one
+into a `bug:` or `feat:` issue with a brief that points at the likely files
+(system prompt: `.github/prompts/testflight-triage.md`), then deletes the
+submission so it is only picked up once. Screenshots are committed to the orphan
+`testflight-feedback-assets` branch for the issue to link to, and purged when the
+issue closes (`testflight-feedback-cleanup.yml`). A second job does the same for
+diagnostic signatures (hangs, disk writes, slow launches) with
+`.github/prompts/testflight-diagnostics-triage.md`.
+
+It reuses the App Store Connect secrets above, plus:
+
+| Where | Name | What |
+|---|---|---|
+| Secret | `OPENROUTER_API_KEY` | OpenRouter API key |
+| Variable | `OPENROUTER_MODEL` | Model slug; defaults to `deepseek/deepseek-v4.1-flash`; `minimax/minimax-m3` also works. Use a vision-capable model so screenshots are read |
+
 No macOS job pins an `Xcode_NN.app` path or names a simulator: both come and go
 with the runner image, and hard-coding either turns an image update into a red
 build for a reason that has nothing to do with the code. `scripts/select-newest-xcode`
