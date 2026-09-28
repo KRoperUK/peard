@@ -718,18 +718,19 @@ final class AppModel {
     /// because the alternative — signing somebody out of an account that still
     /// exists while telling them it is gone — is worse than an error message.
     ///
-    /// The push registration is deleted first, and separately, so an account
-    /// that has gone cannot leave a `devices` row pointed at this handset. It
-    /// cascades server-side too; doing both means neither has to be trusted
-    /// alone.
+    /// Push and Live Activities are only torn down once the server has said
+    /// yes. Doing it first meant a delete that failed — offline, a 500 — left
+    /// somebody signed in to an account that still exists and silently no
+    /// longer notified. The `devices` row goes with the account server-side,
+    /// so all that is left to do here is forget the token locally; asking the
+    /// server to delete it again would be a request made with the credentials
+    /// of an account that no longer exists.
     ///
     /// Returns true when the account is gone, so the caller knows whether to
     /// dismiss its confirmation.
     @discardableResult
     func deleteAccount() async -> Bool {
         do {
-            await liveActivities.endAll()
-            await push.deleteRegistration()
             try await api.deleteAccount()
         } catch let error as APIError where error.status == 404 {
             // The route is missing, which means the app is talking to a server
@@ -747,8 +748,14 @@ final class AppModel {
         }
         // Deliberately not `signOut()`: that deletes the push registration again
         // against an account that no longer exists, which just produces a 404.
+        await liveActivities.endAll()
+        push.forgetRegistration()
         await sendQueue.removeAll()
         await refreshPendingSends()
+        // The queue is empty now, so this removes every queued photo: they were
+        // the deleted account's, and leaving them in the App Group container is
+        // exactly what deleting an account is meant to prevent.
+        prunePendingPhotos()
         sessionStore.clear()
         widgetSync.clear()
         connections = []
