@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"net/http"
 	"net/url"
+	"strings"
 	"testing"
 	"time"
 
@@ -249,11 +250,27 @@ func (w *world) create(t *testing.T, token, extra string) *core.Record {
 }
 
 // createRaw writes an event through the collection endpoint, the way the app
-// does. `extra` is spliced into the JSON body and may override event_kind.
+// does. `extra` is a fragment of further fields (",\"key\":value,…") that is
+// merged over the defaults, so it may override event_kind. Merged, not spliced
+// on: splicing sent event_kind twice, and PocketBase 0.40 rejects a body with a
+// duplicate key.
 func (w *world) createRaw(t *testing.T, token, extra string) (int, string) {
 	t.Helper()
-	body := `{"pair":"` + w.pair.Id + `","author":"` + w.alice.Id + `","type":"event","event_kind":"beer"` + extra + `}`
-	return w.do(t, http.MethodPost, "/api/collections/posts/records", token, body)
+	fields := map[string]any{"pair": w.pair.Id, "author": w.alice.Id, "type": "event", "event_kind": "beer"}
+	if extra != "" {
+		var more map[string]any
+		if err := json.Unmarshal([]byte("{"+strings.TrimPrefix(extra, ",")+"}"), &more); err != nil {
+			t.Fatalf("extra fields %q: %v", extra, err)
+		}
+		for k, v := range more {
+			fields[k] = v
+		}
+	}
+	body, err := json.Marshal(fields)
+	if err != nil {
+		t.Fatalf("encode create: %v", err)
+	}
+	return w.do(t, http.MethodPost, "/api/collections/posts/records", token, string(body))
 }
 
 func rewound(post *core.Record) bool {
