@@ -118,4 +118,54 @@ final class TimelineFilterTests: XCTestCase {
 
         XCTAssertEqual(filter.clauses, [#"author = "u\"1""#])
     }
+
+    // MARK: Search (issue #9)
+
+    private let catalogue = [
+        Moment(kind: .beer, emoji: "🍺", label: "Beer"),
+        Moment(kind: EventKind(rawValue: "flat_white"), emoji: "☕", label: "Flat white", origin: .custom(recordID: nil)),
+        Moment(kind: EventKind(rawValue: "whisky"), emoji: "🥃", label: "Whisky", origin: .custom(recordID: nil)),
+    ]
+
+    func testSearchMatchesNotesAndSlugsOnTheServer() {
+        let filter = TimelineFilter.none.searching("  pub  ", catalogue: catalogue)
+        XCTAssertEqual(filter.search, "pub")
+        XCTAssertTrue(filter.isActive)
+        XCTAssertEqual(filter.clauses, ["(note ~ \"pub\" || event_kind ~ \"pub\")"])
+    }
+
+    /// "white" is in the label "Flat white", whose slug is flat_white — found by
+    /// name, not only by the slug happening to contain it.
+    func testSearchFindsAMomentByItsName() {
+        let filter = TimelineFilter.none.searching("WHITE", catalogue: catalogue)
+        XCTAssertEqual(filter.searchKinds, ["flat_white"])
+        XCTAssertTrue(filter.clauses[0].contains("event_kind = \"flat_white\""))
+    }
+
+    func testSearchComposesWithTheOtherFilters() {
+        let filter = TimelineFilter(author: "u1", photosOnly: true).searching("pub", catalogue: catalogue)
+        XCTAssertEqual(filter.clauses.count, 3)
+        XCTAssertEqual(filter.author, "u1")
+    }
+
+    /// Picking a person or a kind used to rebuild the filter from three fields,
+    /// which would have silently dropped the search.
+    func testChoosingAnotherFilterKeepsTheSearch() {
+        let searched = TimelineFilter.none.searching("pub", catalogue: catalogue)
+        XCTAssertEqual(searched.choosing(author: "u1").search, "pub")
+        XCTAssertEqual(searched.choosing(kind: .beer).search, "pub")
+        XCTAssertEqual(searched.choosingPhotos(true).search, "pub")
+    }
+
+    func testAnEmptySearchIsNoSearch() {
+        let filter = TimelineFilter.none.searching("   ", catalogue: catalogue)
+        XCTAssertFalse(filter.isActive)
+        XCTAssertTrue(filter.clauses.isEmpty)
+    }
+
+    /// A quote in the search box must not end the string in the filter.
+    func testSearchTextIsEscaped() {
+        let filter = TimelineFilter.none.searching("the \"local\"", catalogue: catalogue)
+        XCTAssertTrue(filter.clauses[0].contains("note ~ \"the \\\"local\\\"\""))
+    }
 }

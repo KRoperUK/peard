@@ -198,7 +198,8 @@ environment's required reviewer). Approving it adds *that* build to the external
 group (`fastlane promote_external`), waiting for App Store Connect to finish
 processing it first. Nothing is rebuilt, so what goes out is exactly what
 internal testers ran. The first build of each version goes through Beta App
-Review. A run nobody approves just waits; it holds up nothing else.
+Review. The next push to `main` cancels an unapproved run, and offers its newer
+build for approval instead.
 
 To switch these on (until then the internal job skips itself with a warning):
 

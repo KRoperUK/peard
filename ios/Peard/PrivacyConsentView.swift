@@ -17,6 +17,9 @@ struct PrivacyConsentView: View {
     @Environment(AppModel.self) private var app
 
     @State private var isAgreeing = false
+    /// The points' icons, scaled with the text beside them (issue #4).
+    @ScaledMetric(relativeTo: .subheadline) private var iconSize: CGFloat = 18
+    @ScaledMetric(relativeTo: .subheadline) private var iconColumn: CGFloat = 26
 
     var body: some View {
         VStack(spacing: 0) {
@@ -91,9 +94,9 @@ struct PrivacyConsentView: View {
     private func point(icon: String, title: String, body: String) -> some View {
         HStack(alignment: .top, spacing: 14) {
             Image(systemName: icon)
-                .font(.system(size: 18))
+                .font(.system(size: iconSize))
                 .foregroundStyle(PearColor.accent)
-                .frame(width: 26)
+                .frame(width: iconColumn)
                 .accessibilityHidden(true)
             VStack(alignment: .leading, spacing: 3) {
                 Text(title)

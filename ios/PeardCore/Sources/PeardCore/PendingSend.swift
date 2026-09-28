@@ -25,6 +25,12 @@ public struct PendingSend: Codable, Hashable, Sendable, Identifiable {
     public let label: String
     public let note: String
     public let queuedAt: Date
+    /// `.photo` for a photo with no moment attached; `.event` otherwise,
+    /// including a moment that carries a photo. Only events count in tallies.
+    public let postType: PostType
+    /// A JPEG waits in `PendingPhotoStore` under this send's id, and goes up
+    /// with it as a multipart upload.
+    public let hasPhoto: Bool
     /// When the moment happened, if somebody rewound it. `nil` means it
     /// happened when it was tapped, and the server stamps it on arrival.
     public let happenedAt: Date?
@@ -40,6 +46,8 @@ public struct PendingSend: Codable, Hashable, Sendable, Identifiable {
         case pairID = "pair"
         case authorID = "author"
         case queuedAt = "queued_at"
+        case postType = "post_type"
+        case hasPhoto = "has_photo"
         case happenedAt = "happened_at"
         case lastAttemptAt = "last_attempt_at"
         case lastError = "last_error"
@@ -54,6 +62,8 @@ public struct PendingSend: Codable, Hashable, Sendable, Identifiable {
         label: String,
         note: String = "",
         queuedAt: Date = Date(),
+        postType: PostType = .event,
+        hasPhoto: Bool = false,
         happenedAt: Date? = nil,
         attempts: Int = 0,
         lastAttemptAt: Date? = nil,
@@ -67,10 +77,34 @@ public struct PendingSend: Codable, Hashable, Sendable, Identifiable {
         self.label = label
         self.note = note
         self.queuedAt = queuedAt
+        self.postType = postType
+        self.hasPhoto = hasPhoto
         self.happenedAt = happenedAt
         self.attempts = attempts
         self.lastAttemptAt = lastAttemptAt
         self.lastError = lastError
+    }
+
+    /// Written by hand so a queue saved by an older build still loads: it has
+    /// no `post_type` or `has_photo`, and the synthesized decoder would reject
+    /// the whole file — losing every moment in it, which is the one thing the
+    /// queue exists to prevent.
+    public init(from decoder: any Decoder) throws {
+        let c = try decoder.container(keyedBy: CodingKeys.self)
+        id = try c.decode(String.self, forKey: .id)
+        pairID = try c.decode(String.self, forKey: .pairID)
+        authorID = try c.decode(String.self, forKey: .authorID)
+        kind = try c.decode(EventKind.self, forKey: .kind)
+        emoji = try c.decode(String.self, forKey: .emoji)
+        label = try c.decode(String.self, forKey: .label)
+        note = try c.decodeIfPresent(String.self, forKey: .note) ?? ""
+        queuedAt = try c.decode(Date.self, forKey: .queuedAt)
+        postType = try c.decodeIfPresent(PostType.self, forKey: .postType) ?? .event
+        hasPhoto = try c.decodeIfPresent(Bool.self, forKey: .hasPhoto) ?? false
+        happenedAt = try c.decodeIfPresent(Date.self, forKey: .happenedAt)
+        attempts = try c.decodeIfPresent(Int.self, forKey: .attempts) ?? 0
+        lastAttemptAt = try c.decodeIfPresent(Date.self, forKey: .lastAttemptAt)
+        lastError = try c.decodeIfPresent(String.self, forKey: .lastError)
     }
 
     /// Fields for the `posts` record this send becomes.
@@ -88,13 +122,13 @@ public struct PendingSend: Codable, Hashable, Sendable, Identifiable {
         var fields = [
             "pair": pairID,
             "author": authorID,
-            "type": PostType.event.rawValue,
-            "event_kind": kind.rawValue,
+            "type": postType.rawValue,
             "note": note,
             // Written to the record so a retry after a lost response can find
             // the row it already created instead of making a second one.
             "client_id": id,
         ]
+        if postType == .event { fields["event_kind"] = kind.rawValue }
         if let happenedAt {
             fields["happened_at"] = Rewind.wireString(happenedAt)
             fields["rewound"] = "true"
@@ -161,8 +195,8 @@ public struct PendingSend: Codable, Hashable, Sendable, Identifiable {
             id: "pending:" + id,
             pair: pairID,
             author: authorID,
-            type: .event,
-            eventKind: kind,
+            type: postType,
+            eventKind: postType == .event ? kind : nil,
             note: note.isEmpty ? nil : note,
             created: queuedAt,
             happenedAt: happenedOrQueuedAt,
