@@ -547,9 +547,33 @@ email fallback, not an error.
 
 ## Account routes
 
-`GET /api/peard/export` → a JSON snapshot of the caller's own profile,
-connections and authored moments. The app writes it to a file and hands it to the
-share sheet.
+`GET /api/peard/export` → a JSON snapshot of everything held about the caller.
+The app writes it to a file and hands it to the share sheet.
+
+| Key | What it holds |
+| --- | --- |
+| `exported_at` | RFC 3339 UTC time of the export |
+| `media_note`, `token_note` | Plain-language notes: photo links expire, and tokens are masked |
+| `profile` | `id`, `email`, `display_name`, `name`, `phone`, `contact_email`, `discoverable`, `created`, `updated`, and `avatar` / `avatar_url` when there is a profile photo |
+| `connections` | Each membership: connection `id`, `name`, `role`, `joined`, `muted`, `last_seen_at` |
+| `invites` | Invites sent or received: `direction`, `pair`, `status`, `created`, `expires` (never the code) |
+| `moments` | Moments the caller authored: `id`, `pair`, `type`, `event_kind`, `note`, `created`, `happened_at`, `rewound`, and `media_url` for a photo |
+| `reactions` | Reactions the caller left: `id`, `moment`, `kind`, `created` |
+| `moment_kinds` | Custom moment kinds the caller added: `id`, `pair`, `slug`, `emoji`, `label`, `created` |
+| `devices` | `id`, `platform`, `created`, and `push_token` / `activity_start_token` **masked** to their last six characters |
+| `widget_tokens` | `id`, `label`, `created`, `expires`, `revoked` (never the secret) |
+| `live_activities` | `id`, `pair`, `created`, `expires` (never the token) |
+
+Every list is complete: the server pages through the rows rather than stopping
+at a cap. Photo and avatar links (`media_url`, `avatar_url`) are protected files,
+so each carries a file token that expires about **30 minutes** after the export;
+the export says so in `media_note`. Bundling the photos into a zip is a possible
+follow-up. Push tokens, widget secrets and invite codes are credentials, not the
+user's content, and an export is a file that may end up anywhere, so they are
+shown masked or left out, and `token_note` says why.
+
+`email_hash` and `phone_hash` are left out: they are one-way digests of `email`
+and `phone`, held only for contact matching.
 
 `DELETE /api/peard/account` (no body) → `{ "ok": true }`. Deleting the `users`
 record is the whole act: every relation pointing at a user — `pair_members`,
