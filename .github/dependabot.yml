@@ -1,8 +1,10 @@
 version: 2
 updates:
 
+  # The server image's base images (golang, alpine). The Dockerfile is in
+  # server/: pointed at the root, this found nothing and failed every run.
   - package-ecosystem: "docker"
-    directory: "/"
+    directory: "/server"
     schedule:
       interval: "weekly"
     open-pull-requests-limit: 5
