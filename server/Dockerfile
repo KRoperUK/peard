@@ -22,7 +22,7 @@
 #
 # The same golang image as the build stage, which already has git, so nothing
 # extra is pulled.
-FROM golang:1.26.4-alpine AS commit
+FROM golang:1.26.8-alpine AS commit
 
 WORKDIR /repo
 
@@ -45,7 +45,7 @@ RUN git config --global --add safe.directory /repo; \
     cat /commit.txt
 
 # --- build ------------------------------------------------------------------
-FROM golang:1.26.4-alpine AS build
+FROM golang:1.26.8-alpine AS build
 
 WORKDIR /src
 

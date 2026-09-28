@@ -1,6 +1,6 @@
 module peard
 
-go 1.26.4
+go 1.26.8
 
 require (
 	github.com/pocketbase/dbx v1.12.0
