@@ -2,9 +2,12 @@ package site_test
 
 import (
 	"encoding/json"
+	"math"
 	"net/http"
 	"net/http/httptest"
 	"os"
+	"regexp"
+	"strconv"
 	"strings"
 	"testing"
 
@@ -259,5 +262,99 @@ func TestPocketBaseRoutesAreUnaffected(t *testing.T) {
 	admin := get(t, mux, "/_/")
 	if admin.Code != http.StatusOK || strings.Contains(admin.Body.String(), "Nothing here") {
 		t.Fatalf("/_/: got %d, want the superuser UI", admin.Code)
+	}
+}
+
+// Every text colour clears WCAG AA (4.5:1) against every background it is set
+// on, in both colour schemes. The accent is the one that slipped before — as a
+// link colour and as the button fill — so a palette tweak that loses it again
+// should fail here rather than in somebody's eyes.
+func TestColoursMeetWCAGContrast(t *testing.T) {
+	body := get(t, newSiteMux(t), "/").Body.String()
+
+	// The light palette is the first :root block; the dark one is the :root
+	// inside the prefers-color-scheme media query.
+	darkAt := strings.Index(body, "@media (prefers-color-scheme: dark)")
+	if darkAt < 0 {
+		t.Fatal("no dark-mode palette in the page")
+	}
+	schemes := map[string]map[string]string{
+		"light": cssVariables(body[:darkAt]),
+		"dark":  cssVariables(body[darkAt:]),
+	}
+
+	pairs := [][2]string{
+		{"text-primary", "background"},
+		{"text-primary", "surface"},
+		{"text-secondary", "background"},
+		{"text-secondary", "surface"},
+		{"accent", "background"},
+		{"accent", "surface"},
+		{"on-accent", "accent"},
+	}
+	for scheme, vars := range schemes {
+		for _, pair := range pairs {
+			fg, bg := vars[pair[0]], vars[pair[1]]
+			if fg == "" || bg == "" {
+				t.Fatalf("%s: missing --%s or --%s", scheme, pair[0], pair[1])
+			}
+			if ratio := contrast(fg, bg); ratio < 4.5 {
+				t.Errorf("%s: --%s %s on --%s %s is %.2f:1, want at least 4.5:1", scheme, pair[0], fg, pair[1], bg, ratio)
+			}
+		}
+	}
+}
+
+var cssVariablePattern = regexp.MustCompile(`--([a-z-]+):\s*(#[0-9A-Fa-f]{6});`)
+
+// cssVariables returns the first value of each colour custom property in css.
+func cssVariables(css string) map[string]string {
+	vars := map[string]string{}
+	for _, m := range cssVariablePattern.FindAllStringSubmatch(css, -1) {
+		if _, seen := vars[m[1]]; !seen {
+			vars[m[1]] = m[2]
+		}
+	}
+	return vars
+}
+
+// contrast is the WCAG 2 contrast ratio between two #RRGGBB colours.
+func contrast(a, b string) float64 {
+	la, lb := luminance(a), luminance(b)
+	if la < lb {
+		la, lb = lb, la
+	}
+	return (la + 0.05) / (lb + 0.05)
+}
+
+func luminance(hex string) float64 {
+	var rgb [3]float64
+	for i := range rgb {
+		v, _ := strconv.ParseUint(hex[1+2*i:3+2*i], 16, 8)
+		c := float64(v) / 255
+		if c <= 0.04045 {
+			rgb[i] = c / 12.92
+		} else {
+			rgb[i] = math.Pow((c+0.055)/1.055, 2.4)
+		}
+	}
+	return 0.2126*rgb[0] + 0.7152*rgb[1] + 0.0722*rgb[2]
+}
+
+// Content sits in <main> and the links in <footer>, so assistive technology
+// can jump between them.
+func TestPagesHaveLandmarks(t *testing.T) {
+	mux := newSiteMux(t)
+
+	for _, path := range []string{"/", "/privacy", "/c/ABC123", "/c/AB-12"} {
+		body := get(t, mux, path).Body.String()
+		for _, tag := range []string{"<main>", "</main>", "<footer"} {
+			if !strings.Contains(body, tag) {
+				t.Errorf("%s: no %s", path, tag)
+			}
+		}
+		if strings.Index(body, "</main>") > strings.Index(body, "<footer") {
+			t.Errorf("%s: the footer is inside <main>", path)
+		}
 	}
 }
