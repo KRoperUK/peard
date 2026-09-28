@@ -66,6 +66,14 @@ public enum APIError: Error, LocalizedError, Hashable {
             return "That request was cancelled before it finished."
         }
     }
+
+    /// The sentence to put in front of somebody when `error` stopped what they
+    /// asked for: the API's own wording when it is one of ours, otherwise
+    /// whatever the system says. One place, so a screen cannot quietly show a
+    /// bare type name where the others show the server's reason.
+    public static func userMessage(for error: any Error) -> String {
+        (error as? APIError)?.localizedDescription ?? error.localizedDescription
+    }
 }
 
 // MARK: - Typed request fields

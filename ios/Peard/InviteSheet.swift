@@ -101,7 +101,7 @@ struct InviteSheet: View {
             invite = try await app.api.createInvite(pairID: pairID)
         } catch {
             if await app.handleIfUnauthorized(error) { return }
-            errorMessage = (error as? APIError)?.localizedDescription ?? error.localizedDescription
+            errorMessage = APIError.userMessage(for: error)
         }
     }
 }

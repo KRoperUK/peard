@@ -154,7 +154,7 @@ final class ConnectionTests: XCTestCase {
 
     /// The case that produced the bug: everybody else has left, but their moments
     /// are still in the timeline and still counted. "Partner" would be wrong twice
-    /// — there is no partner, and `HistoryModel.authorLabel` already calls that
+    /// — there is no partner, and `Connection.authorLabel` already calls that
     /// same author `PartnerLabel.unknown`. The two screens have to agree.
     func testOthersLabelIsNeutralWhenNobodyElseIsLeft() {
         let alone = connection(otherNames: [])

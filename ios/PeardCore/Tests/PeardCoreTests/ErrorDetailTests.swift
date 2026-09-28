@@ -61,4 +61,20 @@ final class ErrorDetailTests: XCTestCase {
     func testAnEmptyMessageIsNotReported() {
         XCTAssertNil(message(#"{"message":""}"#))
     }
+
+    // MARK: What reaches the screen
+
+    func testAnAPIErrorShowsTheServersReason() {
+        let error = APIError.server(status: 400, message: "email: Taken.")
+        XCTAssertEqual(APIError.userMessage(for: error), "email: Taken.")
+    }
+
+    func testAnAPIErrorWithoutAReasonShowsItsOwnSentence() {
+        XCTAssertEqual(APIError.userMessage(for: APIError.server(status: 503, message: nil)), "Request failed (503).")
+    }
+
+    func testAnyOtherErrorShowsWhatTheSystemSays() {
+        let error = NSError(domain: "test", code: 1, userInfo: [NSLocalizedDescriptionKey: "The disk is full."])
+        XCTAssertEqual(APIError.userMessage(for: error), "The disk is full.")
+    }
 }

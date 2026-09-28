@@ -234,19 +234,10 @@ final class HomeModel {
 
     var isBusy: Bool { busy != nil }
 
-    /// Names the post's author. In a group this is the individual, not "Others",
-    /// so a shared timeline reads as a conversation.
+    /// Names the post's author — see `Connection.authorLabel`, which the
+    /// timeline shares so the two screens cannot disagree about who wrote what.
     func authorLabel(for post: Post) -> String {
-        if post.author == signedInUserID { return "You" }
-        if let name = connection?.name(forUser: post.author) {
-            return name
-        }
-        // Not a current member: they have left, but their moments stay. Naming
-        // them "Partner" is only right when there is exactly one other person.
-        if let partnerName = connection?.partnerName {
-            return partnerName
-        }
-        return PartnerLabel.unknown
+        Connection.authorLabel(for: post.author, in: connection, signedInUserID: signedInUserID)
     }
 
     func emoji(for post: Post) -> String {
@@ -668,7 +659,7 @@ final class HomeModel {
             alert = AlertContent(title: "Couldn't add that moment", message: error.localizedDescription)
             return false
         } catch {
-            alert = AlertContent(title: "Couldn't add that moment", message: message(for: error))
+            alert = AlertContent(title: "Couldn't add that moment", message: APIError.userMessage(for: error))
             return false
         }
     }
@@ -827,7 +818,7 @@ final class HomeModel {
             await app.refreshConnections()
         } catch {
             if await app.handleIfUnauthorized(error) { return }
-            banner = message(for: error)
+            banner = APIError.userMessage(for: error)
         }
     }
 
@@ -870,19 +861,8 @@ final class HomeModel {
     }
 
     /// The avatar for a post's author, for the timeline rows.
-    ///
-    /// A former member is not in the list any more, so there is nothing to draw
-    /// but initials — which is consistent with `authorLabel` naming them "Someone".
     func avatar(forAuthor userID: String) -> Avatar {
-        if let member = connection?.members.first(where: { $0.user == userID }) {
-            return member.avatar
-        }
-        return Avatar(
-            owner: .users,
-            recordID: userID,
-            filename: nil,
-            placeholder: .make(name: PartnerLabel.unknown, key: userID)
-        )
+        Connection.authorAvatar(for: userID, in: connection)
     }
 
     /// Removes somebody from this connection. Their moments stay in the shared
@@ -1007,7 +987,7 @@ final class HomeModel {
             return
         } catch {
             guard isWorthReporting(error) else { return }
-            banner = message(for: error)
+            banner = APIError.userMessage(for: error)
             return
         }
         await loadReactions()
@@ -1046,7 +1026,7 @@ final class HomeModel {
         } catch {
             guard isWorthReporting(error) else { return }
             reactions = []
-            banner = message(for: error)
+            banner = APIError.userMessage(for: error)
         }
     }
 
@@ -1063,14 +1043,7 @@ final class HomeModel {
     private func report(_ error: Error) async {
         if await app.handleIfUnauthorized(error) { return }
         guard isWorthReporting(error) else { return }
-        banner = message(for: error)
-    }
-
-    private func message(for error: Error) -> String {
-        if let apiError = error as? APIError {
-            return apiError.localizedDescription
-        }
-        return error.localizedDescription
+        banner = APIError.userMessage(for: error)
     }
 
     /// Whether this error is worth putting in front of somebody.
