@@ -76,6 +76,24 @@ func Register(app core.App) {
 		notifyPostAuthor(app, e.Record)
 		return e.Next()
 	})
+	// Registered whether or not APNs is configured: the window is data, and a
+	// row without one would read as already expired.
+	app.OnRecordCreate("live_activities").BindFunc(func(e *core.RecordEvent) error {
+		stampActivityExpiry(e.Record)
+		return e.Next()
+	})
+	app.OnRecordUpdate("live_activities").BindFunc(func(e *core.RecordEvent) error {
+		// A client rewriting its row cannot extend the window; only a photo can,
+		// and notifyPhotoDrop sets it with a context flag rather than through
+		// here. Read from storage, not Original(): a record saved and edited in
+		// the same process carries a stale original.
+		if e.Context == nil || e.Context.Value(extendingWindow{}) == nil {
+			if stored, err := e.App.FindRecordById("live_activities", e.Record.Id); err == nil {
+				e.Record.Set("expires", stored.GetDateTime("expires"))
+			}
+		}
+		return e.Next()
+	})
 
 	registerWeeklyRecap(app)
 }
@@ -211,6 +229,7 @@ func notifyPairMembers(app core.App, post *core.Record) {
 			// drop the nudge that tells the app to refresh.
 			n.send(t, silent, apns2.PushTypeBackground, apns2.PriorityLow, "")
 		}
+		notifyPhotoDrop(app, post, memberID, devices, name, title, body)
 	}
 }
 

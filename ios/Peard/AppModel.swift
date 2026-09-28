@@ -57,6 +57,7 @@ final class AppModel {
     }
     let widgetSync: WidgetSync
     let push: PushCoordinator
+    let liveActivities: LiveActivityCoordinator
     /// Moments logged on the device but not yet accepted by the server.
     let sendQueue: SendQueue
     let reachability: Reachability
@@ -120,6 +121,7 @@ final class AppModel {
         self.fileTokens = FileTokenStore(api: api)
         self.widgetSync = WidgetSync(api: api, store: sharedStore, baseURL: config.serverURL)
         self.push = PushCoordinator(api: api, session: sessionStore, store: sharedStore)
+        self.liveActivities = LiveActivityCoordinator(api: api, session: sessionStore, store: sharedStore)
         self.sendQueue = sendQueue ?? SendQueue(store: FilePendingSendStore.appGroup())
         self.reachability = reachability
 
@@ -130,6 +132,9 @@ final class AppModel {
         }
         push.onBackgroundRefresh = { [weak self] in
             await self?.performBackgroundRefresh()
+        }
+        push.onRegistered = { [weak self] in
+            await self?.liveActivities.uploadStartToken()
         }
     }
 
@@ -698,6 +703,7 @@ final class AppModel {
     @discardableResult
     func deleteAccount() async -> Bool {
         do {
+            await liveActivities.endAll()
             await push.deleteRegistration()
             try await api.deleteAccount()
         } catch let error as APIError where error.status == 404 {
@@ -755,6 +761,7 @@ final class AppModel {
     /// and always completes; the remote device-registration delete is best
     /// effort and its failure is reported rather than blocking sign-out.
     func signOut() async {
+        await liveActivities.endAll()
         await push.deleteRegistration()
         // Queued moments are discarded here but deliberately *not* in
         // clearSessionAndReturnToAuth: a 401 can just be an expired token, and
@@ -779,6 +786,7 @@ final class AppModel {
     private func requestPushIfFirstHomeOfSession() async {
         guard !hasRequestedPushThisSession else { return }
         hasRequestedPushThisSession = true
+        liveActivities.start()
         await push.requestAuthorizationIfNeeded()
     }
 

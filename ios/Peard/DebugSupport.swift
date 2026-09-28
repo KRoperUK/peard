@@ -1,4 +1,5 @@
 #if DEBUG
+import ActivityKit
 import Foundation
 import OSLog
 import PeardCore
@@ -43,6 +44,33 @@ enum DebugSupport {
             logger.info("server reachable at \(api.baseURL.absoluteString, privacy: .public): \(code)")
         } catch {
             logger.warning("server unreachable at \(api.baseURL.absoluteString, privacy: .public): \(error.localizedDescription, privacy: .public)")
+        }
+    }
+
+    /// Starts the photo-drop Live Activity locally, the way the server's start
+    /// push would, so its Lock Screen and Dynamic Island views can be seen
+    /// without APNs. Uses the newest cached photo, if the notification service
+    /// extension has saved one.
+    static func startTestPhotoDrop(pairID: String, title: String) {
+        let newest = PhotoDropCache.directory().flatMap {
+            try? FileManager.default.contentsOfDirectory(at: $0, includingPropertiesForKeys: nil).first
+        }
+        let postID = newest?.deletingPathExtension().lastPathComponent ?? "none"
+        let state = PhotoDropAttributes.ContentState(
+            postID: postID,
+            authorName: "Test Partner",
+            caption: "the view from up here",
+            count: 2,
+            updatedAt: Date().timeIntervalSince1970
+        )
+        do {
+            _ = try Activity.request(
+                attributes: PhotoDropAttributes(pairID: pairID, title: title),
+                content: ActivityContent(state: state, staleDate: Date().addingTimeInterval(30 * 60)),
+                pushType: nil
+            )
+        } catch {
+            logger.error("test photo drop failed: \(error.localizedDescription, privacy: .public)")
         }
     }
 
