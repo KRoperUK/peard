@@ -84,6 +84,17 @@ services:
       # Keys the stored contact-matching hashes. Unset stores plain SHA-256;
       # see server/.env.example.
       - PEARD_CONTACT_HASH_KEY
+      # Scheduled backups of pb_data, off the box to an S3-compatible bucket.
+      # Nothing is scheduled while PEARD_BACKUP_CRON is unset; see
+      # server/.env.example and the README's restore runbook.
+      - PEARD_BACKUP_CRON
+      - PEARD_BACKUP_MAX_KEEP
+      - PEARD_BACKUP_S3_ENDPOINT
+      - PEARD_BACKUP_S3_BUCKET
+      - PEARD_BACKUP_S3_REGION
+      - PEARD_BACKUP_S3_ACCESS_KEY
+      - PEARD_BACKUP_S3_SECRET
+      - PEARD_BACKUP_S3_FORCE_PATH_STYLE
       - TZ=${TZ:-Etc/UTC}
 
     volumes:

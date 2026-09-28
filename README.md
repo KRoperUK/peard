@@ -370,6 +370,69 @@ prefers. `PEARD_APNS_PRODUCTION=true` is the one that is easy to miss and silent
 when wrong: TestFlight builds carry `aps-environment=production`, so their device
 tokens only resolve on Apple's production APNs host.
 
+### Backups and restoring
+
+`pb_data` is the only state the server has, and PocketBase can back it up on a
+schedule to any S3-compatible bucket. That is configured from the environment
+(`server/internal/backups`) rather than the dashboard, so a rebuilt or restored
+server backs itself up from its first boot. Nothing is scheduled while
+`PEARD_BACKUP_CRON` is unset, and whatever the dashboard says stands.
+
+| Env | Value |
+|---|---|
+| `PEARD_BACKUP_CRON` | When to back up, e.g. `0 3 * * *` (daily, 03:00 in the container's `TZ`) |
+| `PEARD_BACKUP_MAX_KEEP` | Scheduled backups to keep; older ones are deleted. Default `7` |
+| `PEARD_BACKUP_S3_BUCKET` | The bucket. Setting it switches the S3 target on and makes the four below required |
+| `PEARD_BACKUP_S3_ENDPOINT` | e.g. `https://<account id>.r2.cloudflarestorage.com` (R2) or `https://s3.<region>.backblazeb2.com` (B2) |
+| `PEARD_BACKUP_S3_REGION` | `auto` for R2; the bucket's region elsewhere |
+| `PEARD_BACKUP_S3_ACCESS_KEY` / `PEARD_BACKUP_S3_SECRET` | A key scoped to this bucket: list, read, write and delete (for retention) |
+| `PEARD_BACKUP_S3_FORCE_PATH_STYLE` | `true` for MinIO and most self-hosted stores |
+
+Each backup is a zip of `pb_data` — both SQLite databases and the uploaded media
+— minus the backups folder and the Let's Encrypt cache, which is reissued on
+demand. Without a bucket, backups land in `pb_data/backups`, which survives a bad
+migration or a mistaken delete but not the disk; the server says so at boot.
+
+A bad value (a cron expression that isn't one, a bucket without its keys) is
+logged as an error at boot and leaves backups unconfigured rather than stopping
+the server. Either way, the server checks the newest backup at boot and daily at
+09:17, and logs a warning when there is none or it is more than two days old.
+Those land in the dashboard's **Logs**. A backup that fails outright also gets
+PocketBase's own error log and an email to superusers, if mail is set up.
+
+#### Restoring
+
+Test this once before you need it: a backup nobody has restored is a hope.
+
+1. **Find the backup.** In the bucket (or `pb_data/backups`), scheduled ones are
+   named `@auto_pb_backup_pear_d_<UTC timestamp>.zip`.
+2. **Stop the server** (`docker compose stop server`) so nothing writes while the
+   files are swapped.
+3. **Replace `pb_data` with the zip's contents.** The zip holds `data.db`,
+   `auxiliary.db` and, once anything has been uploaded, `storage/`, all at
+   its top level. With the named volume (`peard_pb_data` for this compose
+   project):
+
+   ```bash
+   docker run --rm -v peard_pb_data:/pb_data -v "$PWD":/restore alpine sh -c \
+     'mkdir -p /pb_data/pre-restore && find /pb_data -mindepth 1 -maxdepth 1 ! -name pre-restore ! -name backups -exec mv {} /pb_data/pre-restore/ \; &&
+      unzip -o /restore/@auto_pb_backup_pear_d_20261001030000.zip -d /pb_data && chown -R 1000:1000 /pb_data'
+   ```
+
+   On a bare-metal host it is the same with `mv pb_data pb_data.pre-restore`
+   and `unzip <backup>.zip -d pb_data`.
+4. **Start the server** with the same environment. If `PEARD_PB_ENCRYPTION_KEY`
+   was set when the backup was taken it must be the same key, or the boot stops
+   at `invalid settings db data or missing encryption key`. Migrations newer
+   than the backup apply on start.
+5. **Check it:** sign in from the app, open a connection with photos, and
+   compare `GET /api/peard/status` with what you expect to be running. Then delete
+   `pre-restore`: it is inside `pb_data`, so every backup would carry it.
+
+While the old server is still up, **Settings → Backups** in the dashboard also
+lists every backup and can restore one in place (it restarts the process
+itself). The steps above are the ones that work when the old server is gone.
+
 ### Rate limiting
 
 On by default, configured in code (`server/internal/limits`) rather than in the
@@ -556,8 +619,9 @@ over TLS — which is spelled out in `server/internal/contacts`.
 
 **`pb_data` is a named volume.** It holds the SQLite databases, uploaded media,
 and the Let's Encrypt certificate if TLS is managed here — the only state that
-matters, and the only thing to back up. A fresh named volume inherits uid 1000
-from the image; a *bind* mount does not, so a host directory has to be
+matters, and the only thing to back up — see
+[Backups and restoring](#backups-and-restoring). A fresh named volume inherits
+uid 1000 from the image; a *bind* mount does not, so a host directory has to be
 `chown 1000:1000`'d by hand or the server cannot write.
 
 The image is two-stage: `CGO_ENABLED=0` (PocketBase's SQLite driver is pure Go)
