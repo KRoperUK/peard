@@ -358,3 +358,83 @@ func TestPagesHaveLandmarks(t *testing.T) {
 		}
 	}
 }
+
+// Every page the site serves carries the policy and the right caching and
+// referrer headers for what it is. Invite pages hold a code that is the invite
+// itself, so they are never cached and never leak it in a Referer.
+func TestPagesSendSecurityAndCachingHeaders(t *testing.T) {
+	mux := newSiteMux(t)
+
+	const csp = "default-src 'none'; style-src 'unsafe-inline'; img-src 'self' data:; base-uri 'none'; form-action 'none'; frame-ancestors 'none'"
+	for _, tc := range []struct {
+		path, referrer, cache string
+	}{
+		{"/", "strict-origin-when-cross-origin", "public, max-age=300"},
+		{"/privacy", "strict-origin-when-cross-origin", "public, max-age=300"},
+		{"/nope", "strict-origin-when-cross-origin", "public, max-age=300"},
+		{"/c/AB12CD", "no-referrer", "no-store"},
+		{"/c/AB-12", "no-referrer", "no-store"},
+		{"/.well-known/apple-app-site-association", "strict-origin-when-cross-origin", "public, max-age=3600"},
+	} {
+		h := get(t, mux, tc.path).Header()
+		want := map[string]string{
+			"Content-Security-Policy": csp,
+			"X-Content-Type-Options":  "nosniff",
+			"X-Frame-Options":         "DENY",
+			"Referrer-Policy":         tc.referrer,
+			"Cache-Control":           tc.cache,
+		}
+		for name, value := range want {
+			if got := h.Get(name); got != value {
+				t.Errorf("%s: %s is %q, want %q", tc.path, name, got, value)
+			}
+		}
+		// httptest requests are plain HTTP, and HSTS over HTTP means nothing.
+		if got := h.Get("Strict-Transport-Security"); got != "" {
+			t.Errorf("%s: HSTS %q over plain HTTP", tc.path, got)
+		}
+	}
+}
+
+// HSTS goes out when the visitor reached the site over HTTPS, which behind the
+// tunnel or a proxy is only visible in X-Forwarded-Proto.
+func TestPagesSendHSTSOverHTTPS(t *testing.T) {
+	mux := newSiteMux(t)
+
+	req := httptest.NewRequest("GET", "/", nil)
+	req.Header.Set("X-Forwarded-Proto", "https")
+	rec := httptest.NewRecorder()
+	mux.ServeHTTP(rec, req)
+	if got := rec.Header().Get("Strict-Transport-Security"); got != "max-age=31536000" {
+		t.Fatalf("behind a proxy: HSTS %q", got)
+	}
+
+	rec = get(t, mux, "https://peard.kroper.uk/privacy")
+	if got := rec.Header().Get("Strict-Transport-Security"); got != "max-age=31536000" {
+		t.Fatalf("direct TLS: HSTS %q", got)
+	}
+}
+
+// The superuser UI runs scripts, and the API is not a page, so neither gets the
+// site's headers — including an unknown API path that falls to the catch-all.
+// (A real server gives /_/ PocketBase's own, script-allowing policy; this test
+// mux doesn't, so the check is that the site's never replaces it.)
+func TestPocketBaseRoutesDoNotGetThePageHeaders(t *testing.T) {
+	mux := newSiteMux(t)
+
+	for _, path := range []string{"/api/health", "/api/nope", "/_/"} {
+		req := httptest.NewRequest("GET", path, nil)
+		req.Header.Set("X-Forwarded-Proto", "https")
+		rec := httptest.NewRecorder()
+		mux.ServeHTTP(rec, req)
+		h := rec.Header()
+		if got := h.Get("Content-Security-Policy"); strings.Contains(got, "default-src 'none'") {
+			t.Errorf("%s: got the site's policy %q", path, got)
+		}
+		for _, name := range []string{"Referrer-Policy", "Strict-Transport-Security"} {
+			if got := h.Get(name); got != "" {
+				t.Errorf("%s: %s is %q, want none", path, name, got)
+			}
+		}
+	}
+}

@@ -24,17 +24,70 @@ const (
 // Register binds the public site routes.
 func Register(app core.App) {
 	app.OnServe().BindFunc(func(se *core.ServeEvent) error {
+		// The site's routes share a group so that pageHeaders reaches them and
+		// nothing else: PocketBase's /api/ and the /_/ superuser UI are
+		// registered outside it, and the UI in particular needs the scripts the
+		// policy below forbids.
+		pages := se.Router.Group("")
+		pages.BindFunc(pageHeaders)
+
 		// "/{$}" is the root and nothing else. A bare "/" is a prefix match in
 		// net/http, so the home page used to answer every unknown path with a
 		// 200, which search engines read as a soft 404. "/" is kept, but only
 		// to say so properly.
-		se.Router.GET("/{$}", homeHandler)
-		se.Router.GET("/", notFoundHandler)
-		se.Router.GET("/privacy", privacyHandler)
-		se.Router.GET("/c/{code}", inviteHandler)
-		se.Router.GET("/.well-known/apple-app-site-association", associationHandler)
+		pages.GET("/{$}", homeHandler)
+		pages.GET("/", notFoundHandler)
+		pages.GET("/privacy", privacyHandler)
+		pages.GET("/c/{code}", inviteHandler)
+		pages.GET("/.well-known/apple-app-site-association", associationHandler)
 		return se.Next()
 	})
+}
+
+// contentSecurityPolicy allows exactly what the pages use: the inline <style>
+// block and the data: URL favicon. There are no scripts, fonts, frames or
+// forms, so everything else is refused, and nobody may frame the pages.
+const contentSecurityPolicy = "default-src 'none'; style-src 'unsafe-inline'; img-src 'self' data:; " +
+	"base-uri 'none'; form-action 'none'; frame-ancestors 'none'"
+
+// pageHeaders sets the security and caching headers for the site's pages.
+//
+// Invite pages are treated differently from the rest. The code in the URL is
+// the invite itself, so it must not leave in a Referer when somebody taps
+// through to TestFlight, and a shared or proxy cache must not keep a copy of
+// it. Everything else is the same for every visitor and can be cached briefly.
+//
+// HSTS is only sent on a request that arrived over HTTPS, directly or through
+// the TLS-terminating proxy or Cloudflare tunnel the deploy puts in front.
+// Browsers ignore it over plain HTTP anyway, and a self-hosted server on plain
+// HTTP shouldn't claim otherwise. Once a browser has it, the domain has to stay
+// on HTTPS, which universal links already require. No includeSubDomains: the
+// other hosts under the parent domain aren't this server's to promise for.
+func pageHeaders(e *core.RequestEvent) error {
+	path := e.Request.URL.Path
+	// An unknown /api/ path reaches the catch-all and gets PocketBase's JSON
+	// error, which should look like every other API response.
+	if strings.HasPrefix(path, "/api/") {
+		return e.Next()
+	}
+
+	h := e.Response.Header()
+	h.Set("Content-Security-Policy", contentSecurityPolicy)
+	h.Set("X-Content-Type-Options", "nosniff")
+	// PocketBase sets SAMEORIGIN for everything. frame-ancestors supersedes it
+	// in current browsers; this keeps older ones in agreement.
+	h.Set("X-Frame-Options", "DENY")
+	if strings.HasPrefix(path, "/c/") {
+		h.Set("Referrer-Policy", "no-referrer")
+		h.Set("Cache-Control", "no-store")
+	} else {
+		h.Set("Referrer-Policy", "strict-origin-when-cross-origin")
+		h.Set("Cache-Control", "public, max-age=300")
+	}
+	if e.Request.TLS != nil || e.Request.Header.Get("X-Forwarded-Proto") == "https" {
+		h.Set("Strict-Transport-Security", "max-age=31536000")
+	}
+	return e.Next()
 }
 
 // associationHandler serves the file iOS fetches to decide whether this domain
