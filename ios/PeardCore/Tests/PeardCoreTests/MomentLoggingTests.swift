@@ -58,10 +58,10 @@ final class MomentLoggingTests: XCTestCase {
         XCTAssertFalse(logged)
     }
 
-    /// The optimistic marker exists so a widget can acknowledge a tap before the
-    /// round trip finishes. It must not be left behind by a failed attempt, or
-    /// the widget keeps showing a moment that never landed.
-    func testAFailedAttemptLeavesNoPendingMarker() async {
+    /// The widget says how a tap went. A failure must never read as a moment
+    /// that landed: it is kept, marked failed, so the widget can say "Couldn't
+    /// log" instead of going quiet.
+    func testAFailedAttemptIsMarkedFailed() async {
         store.widgetToken = "a-token"
         // Port 1 refuses immediately, so this exercises the request path and its
         // failure rather than the signed-out guard.
@@ -72,6 +72,38 @@ final class MomentLoggingTests: XCTestCase {
         )
 
         XCTAssertFalse(logged, "an unreachable server must not report success")
-        XCTAssertNil(store.pendingWidgetLog)
+        XCTAssertEqual(store.pendingWidgetLog?.outcome, .failed)
+        XCTAssertNotNil(store.pendingWidgetLog?.finishedAt)
+    }
+
+    // MARK: How long the widget shows it
+
+    private let tapped = Date(timeIntervalSince1970: 1_790_000_000)
+
+    func testAnOutcomeShowsForAFewSecondsAfterItIsKnown() {
+        let log = PendingWidgetLog(pairID: "p", emoji: "🍺", label: "Beer", at: tapped)
+            .finished(.logged, at: tapped.addingTimeInterval(0.4))
+
+        XCTAssertEqual(log.visibleUntil, tapped.addingTimeInterval(0.4 + PendingWidgetLog.outcomeDisplay))
+        XCTAssertTrue(log.isVisible(now: tapped.addingTimeInterval(2)))
+        XCTAssertFalse(log.isVisible(now: tapped.addingTimeInterval(5)))
+    }
+
+    /// The extension was suspended before it heard back: "Logging…" must not
+    /// stay up for ever.
+    func testAnUnfinishedLogGivesUp() {
+        let log = PendingWidgetLog(pairID: "p", emoji: "🍺", label: "Beer", at: tapped)
+
+        XCTAssertNil(log.outcome)
+        XCTAssertTrue(log.isVisible(now: tapped.addingTimeInterval(5)))
+        XCTAssertFalse(log.isVisible(now: tapped.addingTimeInterval(PendingWidgetLog.maxAge + 1)))
+    }
+
+    /// A marker written by the previous build has no outcome fields.
+    func testAnOlderMarkerStillDecodes() throws {
+        let json = #"{"pairID":"p","emoji":"🍺","label":"Beer","at":0}"#
+        let log = try JSONDecoder().decode(PendingWidgetLog.self, from: Data(json.utf8))
+        XCTAssertNil(log.outcome)
+        XCTAssertNil(log.finishedAt)
     }
 }

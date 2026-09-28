@@ -1148,30 +1148,62 @@ public struct WidgetMomentResult: Codable, Hashable, Sendable {
     }
 }
 
-/// A moment a widget button just fired off, kept in the App Group container
-/// only long enough to give the tap an instant visual acknowledgement before
-/// the real, server-confirmed refresh replaces it.
+/// A moment a widget button just fired off, and how it went — kept in the App
+/// Group container so the widget can say so.
+///
+/// It used to be deleted the moment the request finished. The widget's own
+/// timeline builds its entry after a network fetch of its own, so by the time
+/// it looked, the log had usually finished and gone: the acknowledgement almost
+/// never drew, and a tap looked like it did nothing. Now the outcome stays, and
+/// the widget shows it until `visibleUntil`, then schedules itself back.
 public struct PendingWidgetLog: Codable, Hashable, Sendable {
+    public enum Outcome: String, Codable, Sendable {
+        case logged, failed
+    }
+
     public let pairID: String?
     public let emoji: String
     public let label: String
     public let at: Date
+    /// `nil` while the request is in flight.
+    public var outcome: Outcome?
+    public var finishedAt: Date?
 
-    public init(pairID: String?, emoji: String, label: String, at: Date) {
+    public init(pairID: String?, emoji: String, label: String, at: Date, outcome: Outcome? = nil, finishedAt: Date? = nil) {
         self.pairID = pairID
         self.emoji = emoji
         self.label = label
         self.at = at
+        self.outcome = outcome
+        self.finishedAt = finishedAt
     }
 
-    /// Stale after this long, so a widget that never got a chance to clear it
-    /// (the extension was suspended, the reload was dropped) does not show a
-    /// "just logged" badge from an hour ago.
+    /// An unfinished log is dropped after this long, so a widget that never
+    /// heard the outcome (the extension was suspended mid-request) does not say
+    /// "logging…" for an hour.
     public static let maxAge: TimeInterval = 10
 
-    public var isFresh: Bool {
-        Date().timeIntervalSince(at) < Self.maxAge
+    /// How long the outcome stays up once known: long enough to read at a
+    /// glance, short enough that the tallies are back before anyone looks again.
+    public static let outcomeDisplay: TimeInterval = 4
+
+    public func finished(_ outcome: Outcome, at date: Date = Date()) -> PendingWidgetLog {
+        var copy = self
+        copy.outcome = outcome
+        copy.finishedAt = date
+        return copy
     }
+
+    /// When the widget should go back to its usual content.
+    public var visibleUntil: Date {
+        if let finishedAt { return finishedAt.addingTimeInterval(Self.outcomeDisplay) }
+        return at.addingTimeInterval(Self.maxAge)
+    }
+
+    public func isVisible(now: Date = Date()) -> Bool { now < visibleUntil }
+
+    /// Kept for callers that only ask whether to show it at all.
+    public var isFresh: Bool { isVisible() }
 }
 
 /// Response of the auth endpoints (`/api/peard/auth/apple`,
