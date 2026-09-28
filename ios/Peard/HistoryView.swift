@@ -140,6 +140,36 @@ final class HistoryModel {
         return seen
     }
 
+    /// Who reacted with what, for VoiceOver — the row draws the emoji alone,
+    /// which says nothing about who they came from.
+    func spokenReactions(for post: Post) -> String? {
+        Self.spokenReactions(reactionsByPost[post.id] ?? []) { user in
+            if user == signedInUserID { return "you" }
+            // The full name rather than the row's shortened one: the ellipsis
+            // is there to fit the width, and is meaningless read aloud.
+            return connection?.name(forUser: user) ?? PartnerLabel.unknown
+        }
+    }
+
+    /// "Reactions: Heart from Sam and you; Cheers from Alex", grouped by kind in
+    /// the order the kinds were first used, as the row draws them.
+    static func spokenReactions(_ reactions: [Reaction], name: (String) -> String) -> String? {
+        var kinds: [ReactionKind] = []
+        var people: [String: [String]] = [:]
+        for reaction in reactions {
+            if people[reaction.kind.rawValue] == nil { kinds.append(reaction.kind) }
+            let who = name(reaction.user)
+            if people[reaction.kind.rawValue]?.contains(who) != true {
+                people[reaction.kind.rawValue, default: []].append(who)
+            }
+        }
+        guard !kinds.isEmpty else { return nil }
+        let phrases = kinds.map { kind in
+            "\(kind.accessibilityLabel) from \((people[kind.rawValue] ?? []).formatted(.list(type: .and)))"
+        }
+        return "Reactions: " + phrases.joined(separator: "; ")
+    }
+
     /// Requirement 14.1 — reactions are offered on other people's moments only.
     func canReact(to post: Post) -> Bool { post.author != signedInUserID }
 
@@ -928,8 +958,10 @@ struct HistoryView: View {
         .accessibilityLabel(accessibilityLabel(for: post))
         // The combined element swallows the thumbnail's own tap target, so
         // VoiceOver gets the photo as a named action instead of losing it.
-        .accessibilityAction(named: "Open photo") {
-            if post.hasMedia { viewing = post }
+        .accessibilityActions {
+            if post.hasMedia {
+                Button("Open photo") { viewing = post }
+            }
         }
         .modifier(MomentActions(
             post: post,
@@ -950,6 +982,7 @@ struct HistoryView: View {
         if post.rewound { parts.append(RewoundChip.accessibilityLabel(loggedAt: post.created)) }
         let time = model.time(for: post)
         if !time.isEmpty { parts.append(time) }
+        if let reactions = model.spokenReactions(for: post) { parts.append(reactions) }
         return parts.joined(separator: ", ")
     }
 
