@@ -61,6 +61,7 @@ jobs:
           ASC_BUNDLE_ID: ${{ vars.ASC_BUNDLE_ID }}
           OPENROUTER_API_KEY: ${{ secrets.OPENROUTER_API_KEY }}
           OPENROUTER_MODEL: ${{ vars.OPENROUTER_MODEL }}
+          PUBLISH_SCREENSHOTS: ${{ vars.TESTFLIGHT_PUBLISH_SCREENSHOTS }}
           DRY_RUN: ${{ inputs.dry_run }}
         with:
           script: |
