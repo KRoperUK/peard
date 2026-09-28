@@ -76,11 +76,6 @@ struct HomeView: View {
         .task { await model.load() }
         .task(id: app.focusedPostID) { await model.focus(postID: app.focusedPostID) }
         .task { await pollWhileVisible() }
-        .onChange(of: scenePhase) { _, phase in
-            // Requirement 11.13.
-            guard phase == .active else { return }
-            Task { await model.refreshAll() }
-        }
         .onChange(of: model.quickSend?.moment.kind) { _, kind in
             noteFocused = kind != nil
         }
@@ -626,10 +621,12 @@ struct HomeView: View {
         }
     }
 
-    /// Requirement 11.12 — refresh every 30 seconds while in the foreground.
+    /// Requirement 11.12 — refresh on a timer while in the foreground, less
+    /// often when pushes are doing the same job (see `HomePoll`). Returning to
+    /// the foreground is handled once, by `AppModel.applicationDidBecomeActive`.
     private func pollWhileVisible() async {
         while !Task.isCancelled {
-            try? await Task.sleep(nanoseconds: 30_000_000_000)
+            try? await Task.sleep(for: HomePoll.interval(pushAuthorised: app.push.notificationsAvailable))
             guard !Task.isCancelled, scenePhase == .active else { continue }
             await model.refreshAll()
         }

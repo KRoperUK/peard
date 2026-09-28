@@ -279,11 +279,10 @@ final class HomeModel {
         app.onHomeRefreshRequested = { [weak self] in
             await self?.refreshAll()
         }
-        await refreshCustomKinds()
-        await refresh()
-        await refreshTallies()
-        await refreshRecap()
-        await refreshYearAgo()
+        app.onHomeForegrounded = { [weak self] in
+            await self?.refreshContent()
+        }
+        await refreshContent()
         isLoading = false
         // After the posts are in, not before: the stamp means "you have seen up
         // to here", and claiming it while the request that fetches them could
@@ -389,19 +388,40 @@ final class HomeModel {
     func refreshAll() async {
         // The connection list is part of what the header shows, and it changes
         // from outside this screen: somebody renames the group, a member joins,
-        // another connection is added on another device.
-        await app.refreshConnections()
+        // another connection is added on another device. Nothing below reads it
+        // — this model's requests are all keyed by `pairID` — so it runs
+        // alongside the rest rather than ahead of it.
+        async let connections: Void = app.refreshConnections()
         // Also drain the queue. Reachability covers the network coming back and
         // foregrounding covers everything that changed while the app was away, but
         // neither fires when the *server* is briefly unreachable with the app open —
         // the path is fine, so nothing changes. Without this a queued moment would
         // sit there until the app was backgrounded and reopened.
+        //
+        // Awaited before the content, not beside it: a moment that lands mid-way
+        // leaves the queue, and posts or tallies read before it landed would
+        // then show neither the queued copy nor the delivered one until the
+        // next refresh.
         await app.flushSendQueueAndWait()
-        await refreshCustomKinds()
-        await refresh()
-        await refreshTallies()
-        await refreshRecap()
-        await refreshYearAgo()
+        await refreshContent()
+        await connections
+    }
+
+    /// Everything on the screen that comes from this connection, fetched side
+    /// by side (issue #169).
+    ///
+    /// These used to go one after another, so every poll paid for five round
+    /// trips in a row. None of them reads what another writes: the catalogue
+    /// only matters when a row is drawn, and each of the others fills its own
+    /// card. The one ordering that does matter — the "seen" stamp after the
+    /// posts — lives in `load`, after this returns.
+    func refreshContent() async {
+        async let kinds: Void = refreshCustomKinds()
+        async let timeline: Void = refresh()
+        async let tallies: Void = refreshTallies()
+        async let recap: Void = refreshRecap()
+        async let yearAgo: Void = refreshYearAgo()
+        _ = await (kinds, timeline, tallies, recap, yearAgo)
     }
 
     func focus(postID: String?) async {
