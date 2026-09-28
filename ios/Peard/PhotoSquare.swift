@@ -19,8 +19,18 @@ enum PhotoSquare {
     /// How hard the letterbox backdrop is blurred, in pixels at `side`.
     static let backdropBlur: CGFloat = 48
 
+    /// The backdrop is blurred until nothing in it is recognisable, so it is
+    /// made from a copy this size rather than from the photo itself. Blurring a
+    /// 48MP capture took over a second on the main thread (issue #1); a 270px
+    /// copy blurs in milliseconds and, scaled back up under a 48px blur, looks
+    /// the same.
+    static let backdropSide: CGFloat = 270
+
     /// Renders the edited photo as a square.
-    static func render(_ image: UIImage, edit: PhotoEdit) -> UIImage {
+    ///
+    /// Safe off the main thread, and called from there: `UIGraphicsImageRenderer`
+    /// and Core Image are, and nothing here touches views.
+    nonisolated static func render(_ image: UIImage, edit: PhotoEdit) -> UIImage {
         let side = PhotoSquare.side
         let format = UIGraphicsImageRendererFormat.default()
         // The maths is in pixels already, so a 3× scale here would render a
@@ -31,7 +41,7 @@ enum PhotoSquare {
         // Only a letterboxed photo leaves anything to see behind it, and the
         // blur is the expensive part of this — so it is not paid for by the
         // default case, which covers the square completely.
-        let backdrop = edit.fit == .fit ? blurred(image) : nil
+        let backdrop = edit.fit == .fit ? blurred(downscaled(image, longestSide: backdropSide)) : nil
 
         return UIGraphicsImageRenderer(
             size: CGSize(width: side, height: side),
@@ -61,7 +71,7 @@ enum PhotoSquare {
     /// Translate, rotate, then draw about the centre — the same order the
     /// preview's `.frame` / `.rotationEffect` / `.offset` produces, which is
     /// what keeps the two agreeing.
-    private static func draw(
+    nonisolated private static func draw(
         _ image: UIImage,
         edit: PhotoEdit,
         side: CGFloat,
@@ -91,7 +101,7 @@ enum PhotoSquare {
     /// unclamped image samples transparency past the edges and leaves a soft
     /// grey border — which, on a backdrop whose entire purpose is to fill the
     /// gap, is the one artefact that would show.
-    private static func blurred(_ image: UIImage) -> UIImage? {
+    nonisolated private static func blurred(_ image: UIImage) -> UIImage? {
         guard let input = CIImage(image: image) else { return nil }
         let filter = CIFilter.gaussianBlur()
         filter.inputImage = input.clampedToExtent()
@@ -105,6 +115,21 @@ enum PhotoSquare {
             let cgImage = context.createCGImage(output, from: input.extent)
         else { return nil }
         return UIImage(cgImage: cgImage, scale: image.scale, orientation: image.imageOrientation)
+    }
+
+    /// A copy no longer than `longestSide` on its long edge, orientation applied.
+    nonisolated private static func downscaled(_ image: UIImage, longestSide: CGFloat) -> UIImage {
+        let size = image.size
+        let longest = max(size.width, size.height)
+        guard longest > longestSide, longest > 0 else { return image }
+        let factor = longestSide / longest
+        let target = CGSize(width: (size.width * factor).rounded(), height: (size.height * factor).rounded())
+        let format = UIGraphicsImageRendererFormat.default()
+        format.scale = 1
+        format.opaque = true
+        return UIGraphicsImageRenderer(size: target, format: format).image { _ in
+            image.draw(in: CGRect(origin: .zero, size: target))
+        }
     }
 }
 

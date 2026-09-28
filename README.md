@@ -192,11 +192,13 @@ Two more jobs run on pushes to `main` only, after all four pass:
   that pull requests no longer make happens here, so a Release-only break still
   turns `main` red before it reaches a phone.
 
-External testers are a deliberate step: **Actions → TestFlight (external) → Run
-workflow** sends a build already on TestFlight — the latest, or the number typed
-in — to the external group (`fastlane promote_external`). Nothing is rebuilt, so
-what goes out is exactly what internal testers ran. The first build of each
-version goes through Beta App Review first.
+External testers are a deliberate step in the same run: after the internal
+upload, **TestFlight (external)** waits for approval (the `testflight-external`
+environment's required reviewer). Approving it adds *that* build to the external
+group (`fastlane promote_external`), waiting for App Store Connect to finish
+processing it first. Nothing is rebuilt, so what goes out is exactly what
+internal testers ran. The first build of each version goes through Beta App
+Review. A run nobody approves just waits; it holds up nothing else.
 
 To switch these on (until then the internal job skips itself with a warning):
 
@@ -206,7 +208,7 @@ To switch these on (until then the internal job skips itself with a warning):
 | Secret | `APP_STORE_CONNECT_API_ISSUER_ID` | Issuer id |
 | Secret | `APP_STORE_CONNECT_API_KEY_BASE64` | The `.p8`, base64-encoded (`base64 -i AuthKey_XXXX.p8`) |
 | Variable | `PEARD_TESTFLIGHT_EXTERNAL_GROUP` | The external testers' group name |
-| Environment | `testflight-internal`, `testflight-external` | Add a required reviewer to `testflight-external` so the button asks first |
+| Environment | `testflight-internal`, `testflight-external` | `testflight-external` has a required reviewer: that is the approval |
 
 The key needs the **Admin** role: the runner has no Apple ID signed in, so the
 archive signs with cloud-managed certificates through the key
