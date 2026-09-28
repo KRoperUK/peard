@@ -144,10 +144,19 @@ final class AppModel {
         push.onRegistered = { [weak self] in
             await self?.liveActivities.uploadStartToken()
         }
+        // Every tab of a connection counts as its screen: they share one
+        // `HomeModel`, so the refresh brings all of them up to date at once.
+        push.connectionOnScreen = { [weak self] in
+            guard case .home(let pairID) = self?.phase else { return nil }
+            return pairID
+        }
+        push.onRefreshConnectionOnScreen = { [weak self] in
+            await self?.onHomeRefreshRequested?()
+        }
     }
 
     /// Set by the home screen so a silent push can re-request its posts
-    /// (Requirement 18.6).
+    /// (Requirement 18.6), and so can an alert for the connection on screen.
     var onHomeRefreshRequested: (@MainActor () async -> Void)?
 
     /// Set by the home screen so a return to the foreground re-reads its

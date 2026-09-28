@@ -21,6 +21,11 @@ final class PushCoordinator {
     /// Called once this device's `devices` row exists, for anything that has to
     /// hang off it — the Live Activity push-to-start token.
     var onRegistered: (@MainActor () async -> Void)?
+    /// The connection whose screens are showing, if any, and how to bring them
+    /// up to date — so an alert about it can be folded into the screen rather
+    /// than drawn over it. See `foregroundPresentation(for:)`.
+    var connectionOnScreen: (@MainActor () -> String?)?
+    var onRefreshConnectionOnScreen: (@MainActor () async -> Void)?
 
     private(set) var authorizationStatus: UNAuthorizationStatus = .notDetermined
 
@@ -207,6 +212,33 @@ final class PushCoordinator {
         await refresh()
         WidgetCenter.shared.reloadAllTimelines()
         return .newData
+    }
+
+    /// How an alert that arrives with the app open is shown.
+    ///
+    /// Normally as a banner, as it always was. But one for the connection on
+    /// screen was a banner over the very screen it was about, which then went
+    /// on showing the old moment until the next poll — so that one is not
+    /// shown at all: the screen refreshes and the moment appears in it instead.
+    /// Not added to Notification Centre either, since it has been seen.
+    ///
+    /// A light tap stands in for the banner. Without anything, a moment could
+    /// land while somebody was reading another part of the screen and never be
+    /// noticed; with the alert's sound, a phone that is already in somebody's
+    /// hand chimes at them in a quiet room for something they are looking at.
+    /// A haptic says "that just changed" and nothing more.
+    ///
+    /// The refresh is started, not awaited: the system is waiting on the
+    /// answer, and it has nothing to do with how long a fetch takes.
+    func foregroundPresentation(for push: MomentPush?) -> UNNotificationPresentationOptions {
+        guard let push, push.isFor(connectionOnScreen: connectionOnScreen?()) else {
+            return [.banner, .sound]
+        }
+        UIImpactFeedbackGenerator(style: .light).impactOccurred()
+        if let refresh = onRefreshConnectionOnScreen {
+            Task { await refresh() }
+        }
+        return []
     }
 
     /// The user tapped a notification (Requirement 18.7).

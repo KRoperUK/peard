@@ -232,11 +232,19 @@ final class AppDelegate: NSObject, UIApplicationDelegate, UNUserNotificationCent
         await model?.push.handleNotificationAction(actionIdentifier, postID: postID)
     }
 
-    /// Show alerts while the app is in the foreground.
+    /// Show alerts while the app is in the foreground — except one for the
+    /// connection on screen, which the screen shows instead (see
+    /// `PushCoordinator.foregroundPresentation(for:)`).
     nonisolated func userNotificationCenter(
         _ center: UNUserNotificationCenter,
         willPresent notification: UNNotification
     ) async -> UNNotificationPresentationOptions {
-        [.banner, .sound]
+        let push = MomentPush(userInfo: notification.request.content.userInfo)
+        return await presentation(for: push)
+    }
+
+    private func presentation(for push: MomentPush?) -> UNNotificationPresentationOptions {
+        guard let model else { return [.banner, .sound] }
+        return model.push.foregroundPresentation(for: push)
     }
 }

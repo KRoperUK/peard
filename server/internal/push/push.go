@@ -214,6 +214,9 @@ func notifyPairMembers(app core.App, post *core.Record) {
 	// each rather than one undifferentiated pile.
 	threadID := "pair-" + pairID
 	collapseID := collapseIDFor(pairID, post)
+	// Which moment it was, so the app can act on the alert without asking the
+	// server first. Only an event has one; a photo on its own is not a moment.
+	kind := momentKindOf(post)
 
 	for _, m := range members {
 		memberID := m.GetString("user")
@@ -243,6 +246,9 @@ func notifyPairMembers(app core.App, post *core.Record) {
 				Custom("pair_id", pairID)
 			if media != "" {
 				visible.Custom("media_url", media)
+			}
+			if kind != "" {
+				visible.Custom("event_kind", kind)
 			}
 			if n.send(t, visible, apns2.PushTypeAlert, apns2.PriorityHigh, collapseID) {
 				forgetDevice(app, d)
@@ -302,12 +308,18 @@ func mediaURLFor(app core.App, post *core.Record, recipientID string) string {
 // moments stay separate — and a photo is keyed on its own id, because two photos
 // are never the same moment.
 func collapseIDFor(pairID string, post *core.Record) string {
-	if post.GetString("type") == "event" {
-		if kind := post.GetString("event_kind"); kind != "" {
-			return truncate(pairID+":"+kind, apnsCollapseIDMaxBytes)
-		}
+	if kind := momentKindOf(post); kind != "" {
+		return truncate(pairID+":"+kind, apnsCollapseIDMaxBytes)
 	}
 	return truncate(pairID+":"+post.Id, apnsCollapseIDMaxBytes)
+}
+
+// momentKindOf is the post's moment slug, or "" for anything but an event.
+func momentKindOf(post *core.Record) string {
+	if post.GetString("type") != "event" {
+		return ""
+	}
+	return post.GetString("event_kind")
 }
 
 // truncate keeps a header value inside its byte budget. Slugs are ASCII (see
