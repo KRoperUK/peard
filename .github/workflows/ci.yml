@@ -1,33 +1,35 @@
 name: CI
 
-# Two shapes, on purpose.
+# Every push to a pull request or to main runs the fast checks: SwiftLint,
+# PeardCore's unit tests, the server's, and the Docker image when a change
+# touches it. They are small jobs in parallel, none of which builds the app or
+# boots a simulator, and every merge is gated on them.
 #
-# Pull requests get the fast checks only — SwiftLint, PeardCore's unit tests and
-# the server's — three small jobs in parallel, none of which builds the app or
-# boots a simulator. Every merge is gated on them. A pull request that touches
-# the server image also builds and smoke-tests it; one that does not gets a
-# Docker job that finishes in seconds.
-#
-# main gets the release: one fastlane lane (`ci_release`) lints, runs the unit
-# tests including the app target's, archives, and uploads to TestFlight for
-# internal testers; a second job sends that same build to external testers
-# once somebody approves it. The server's checks, Docker image and deploy run
-# alongside.
+# On main, releasing is two approvals rather than automatic. With the checks
+# green, "TestFlight (internal)" waits for approval (the testflight-internal
+# environment's required reviewer), then runs the app-target tests, archives
+# and uploads for internal testers. "TestFlight (external)" waits for a second
+# approval, then sends that same build to external testers. The server's
+# deploy runs alongside without waiting for either.
 
 on:
   push:
     branches: [main]
   pull_request:
+    # `closed` only so that GitHub's own concurrency cancels a run still going
+    # when a pull request merges or closes (see below). Every job skips it.
+    types: [opened, synchronize, reopened, closed]
   workflow_dispatch:
 
 concurrency:
-  # One run per branch or pull request, and a newer push cancels the older run —
-  # on main as well as on pull requests, including a run waiting for the
-  # external TestFlight approval: the newer run offers a newer build. The deploy
-  # and TestFlight jobs also have job-level groups so two runs never do either
-  # at once. CI still running for a pull request when it merges is cancelled by
-  # cancel-merged-pr-ci.yml.
-  group: ${{ github.workflow }}-${{ github.ref }}
+  # One run per pull request or branch, and a newer run cancels the older one:
+  # on main as well as on pull requests, including a run waiting for a
+  # TestFlight approval, because the newer run offers a newer build. Closing or
+  # merging a pull request starts a run that does nothing but join this group,
+  # which cancels whatever was still running for it. That used to take a
+  # separate workflow calling the API. The deploy and TestFlight jobs also have
+  # job-level groups, so two runs never do either at once.
+  group: ${{ github.workflow }}-${{ github.event.pull_request.number || github.ref }}
   cancel-in-progress: true
 
 # Read-only by default. These jobs hold the App Store Connect and Komodo
@@ -40,8 +42,7 @@ jobs:
   lint:
     name: SwiftLint
     runs-on: ubuntu-latest
-    # On main, fastlane's `ci_release` lints as its first step.
-    if: github.event_name == 'pull_request'
+    if: github.event.action != 'closed'
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
 
@@ -55,6 +56,7 @@ jobs:
   server:
     name: Server unit tests
     runs-on: ubuntu-latest
+    if: github.event.action != 'closed'
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
 
@@ -99,8 +101,7 @@ jobs:
   core:
     name: PeardCore unit tests
     runs-on: macos-15
-    # On main, fastlane's `ci_release` runs these before it builds anything.
-    if: github.event_name == 'pull_request'
+    if: github.event.action != 'closed'
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
 
@@ -125,7 +126,10 @@ jobs:
     # The scope is decided by a step, not by a `paths:` filter or a job-level
     # `if`. A filter would stop the whole workflow, and a job that never starts
     # leaves any required check of this name waiting forever; a job that runs
-    # and skips its steps reports success either way.
+    # and skips its steps reports success either way. The one job-level
+    # condition skips the run a closed pull request starts, which exists only
+    # to cancel (see the concurrency block).
+    if: github.event.action != 'closed'
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
@@ -199,9 +203,14 @@ jobs:
           exit 1
 
   ios-release:
-    name: iOS release (lint, test, internal TestFlight)
+    name: TestFlight (internal)
     runs-on: macos-15
+    needs: [lint, core]
     if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+    # The first approval. The testflight-internal environment requires a
+    # reviewer, so once SwiftLint and PeardCore's tests are green the run pauses
+    # here until somebody approves it in the Actions tab. A newer push to main
+    # cancels an unapproved run and offers its own build instead.
     environment:
       name: testflight-internal
     concurrency:
@@ -235,24 +244,25 @@ jobs:
           brew install xcodegen
           command -v swiftlint >/dev/null || brew install swiftlint
 
-      # Everything in one lane, in the order that matters: lint, PeardCore and
-      # app unit tests, then archive and upload for internal testers. Nothing
-      # uploads unless everything before it passed. The build number is the
-      # upload time in Unix seconds, the scheme every upload has used.
-      - name: Lint, test, build and upload
+      # The app-target tests, which need a simulator and so run only here,
+      # then archive and upload for internal testers. SwiftLint and PeardCore's
+      # tests already passed in their own jobs, so the lane skips them. Nothing
+      # uploads unless the tests pass. The build number is the upload time in
+      # Unix seconds, the scheme every upload has used.
+      - name: Test, build and upload
         id: release
-        run: bundle exec fastlane ci_release
+        run: bundle exec fastlane ci_release skip_checks:true
 
   testflight-external:
     name: TestFlight (external)
     runs-on: macos-15
     needs: ios-release
     if: needs.ios-release.outputs.build_number != ''
-    # The approval. The testflight-external environment requires a reviewer, so
-    # the run pauses here until somebody approves it in the Actions tab. The
-    # next push to main cancels an unapproved one, and its own run offers the
-    # newer build instead. Nothing is rebuilt: the build internal testers have
-    # is the one that goes out.
+    # The second approval. The testflight-external environment requires a
+    # reviewer, so the run pauses here until somebody approves it in the Actions
+    # tab. The next push to main cancels an unapproved one, and its own run
+    # offers the newer build instead. Nothing is rebuilt: the build internal
+    # testers have is the one that goes out.
     environment:
       name: testflight-external
     # The pending release notes below list pull requests. A job-level block

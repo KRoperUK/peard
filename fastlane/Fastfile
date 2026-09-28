@@ -189,12 +189,16 @@ platform :ios do
   desc "Main's iOS pipeline: lint, unit tests, then archive and upload to internal TestFlight"
   # One lane so CI runs one thing, and so the order — nothing uploads unless the
   # lint and every unit test passed — lives in one place a person can also run.
-  lane :ci_release do
+  # `skip_checks:true` leaves out SwiftLint and PeardCore's tests, for CI, where
+  # they already ran in their own jobs before this one was approved.
+  lane :ci_release do |options|
     # Fixed once, here: `archive` stamps it into the IPA and `beta` reports it
     # to the external job, and two calls to Time.now would disagree.
     ENV["PEARD_BUILD_NUMBER"] = build_number
-    lint
-    test_core
+    unless options[:skip_checks].to_s == "true"
+      lint
+      test_core
+    end
     test_app
     beta
   end
