@@ -30,32 +30,32 @@ final class MomentLoggingTests: XCTestCase {
     func testLoggingWithoutATokenReportsFailure() async {
         store.apiBaseURLString = "http://127.0.0.1:8090"
 
-        let logged = await MomentLogging.perform(
+        let outcome = await MomentLogging.perform(
             kind: .beer, pairID: nil, emoji: "🍺", label: "Beer", store: store
         )
 
-        XCTAssertFalse(logged)
+        XCTAssertEqual(outcome, .failed)
     }
 
     func testLoggingWithoutABaseURLReportsFailure() async {
         store.widgetToken = "a-token"
 
-        let logged = await MomentLogging.perform(
+        let outcome = await MomentLogging.perform(
             kind: .beer, pairID: nil, emoji: "🍺", label: "Beer", store: store
         )
 
-        XCTAssertFalse(logged)
+        XCTAssertEqual(outcome, .failed)
     }
 
     func testAnEmptyTokenIsTreatedAsSignedOut() async {
         store.widgetToken = ""
         store.apiBaseURLString = "http://127.0.0.1:8090"
 
-        let logged = await MomentLogging.perform(
+        let outcome = await MomentLogging.perform(
             kind: .beer, pairID: nil, emoji: "🍺", label: "Beer", store: store
         )
 
-        XCTAssertFalse(logged)
+        XCTAssertEqual(outcome, .failed)
     }
 
     /// The widget says how a tap went. A failure must never read as a moment
@@ -67,13 +67,37 @@ final class MomentLoggingTests: XCTestCase {
         // failure rather than the signed-out guard.
         store.apiBaseURLString = "http://127.0.0.1:1"
 
-        let logged = await MomentLogging.perform(
-            kind: .beer, pairID: nil, emoji: "🍺", label: "Beer", store: store
+        let outcome = await MomentLogging.perform(
+            kind: .beer, pairID: nil, emoji: "🍺", label: "Beer", store: store, inbox: nil
         )
 
-        XCTAssertFalse(logged, "an unreachable server must not report success")
+        XCTAssertEqual(outcome, .failed, "an unreachable server must not report success")
         XCTAssertEqual(store.pendingWidgetLog?.outcome, .failed)
         XCTAssertNotNil(store.pendingWidgetLog?.finishedAt)
+    }
+
+    /// The train case: no signal, so the tap goes into the inbox for the app to
+    /// send, and the widget says it was saved rather than that it failed.
+    func testAnUnreachableServerInboxesTheMoment() async throws {
+        store.widgetToken = "a-token"
+        store.apiBaseURLString = "http://127.0.0.1:1"
+        let directory = FileManager.default.temporaryDirectory
+            .appendingPathComponent("moment-logging-\(UUID().uuidString)")
+        defer { try? FileManager.default.removeItem(at: directory) }
+        let inbox = MomentInbox(url: directory.appendingPathComponent("inbox.json"))
+
+        let outcome = await MomentLogging.perform(
+            kind: .beer, pairID: "p1", emoji: "🍺", label: "Beer", store: store, inbox: inbox
+        )
+
+        XCTAssertEqual(outcome, .queued)
+        XCTAssertEqual(store.pendingWidgetLog?.outcome, .queued)
+        let waiting = try XCTUnwrap(inbox.load().first)
+        XCTAssertEqual(inbox.load().count, 1)
+        XCTAssertEqual(waiting.kind, .beer)
+        XCTAssertEqual(waiting.pairID, "p1")
+        let tappedAt = try XCTUnwrap(store.pendingWidgetLog?.at)
+        XCTAssertEqual(waiting.queuedAt.timeIntervalSince(tappedAt), 0, accuracy: 0.01)
     }
 
     // MARK: How long the widget shows it

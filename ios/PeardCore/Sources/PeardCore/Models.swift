@@ -1158,7 +1158,9 @@ public struct WidgetMomentResult: Codable, Hashable, Sendable {
 /// the widget shows it until `visibleUntil`, then schedules itself back.
 public struct PendingWidgetLog: Codable, Hashable, Sendable {
     public enum Outcome: String, Codable, Sendable {
-        case logged, failed
+        /// `queued` is a tap that could not reach the server and is waiting in
+        /// the `MomentInbox` for the app to send.
+        case logged, queued, failed
     }
 
     public let pairID: String?

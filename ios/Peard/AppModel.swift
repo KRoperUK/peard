@@ -60,6 +60,9 @@ final class AppModel {
     let liveActivities: LiveActivityCoordinator
     /// Moments logged on the device but not yet accepted by the server.
     let sendQueue: SendQueue
+    /// Moments the widget, Control Centre and Siri could not send, waiting to be
+    /// taken into `sendQueue`; see `MomentInbox`.
+    let momentInbox: MomentInbox
     /// The JPEGs behind queued photo moments; see `PendingPhotoStore`.
     let pendingPhotos: PendingPhotoStore
     let reachability: Reachability
@@ -112,6 +115,7 @@ final class AppModel {
         sessionStore: KeychainSessionStore = KeychainSessionStore(),
         sharedStore: SharedStore = .shared,
         sendQueue: SendQueue? = nil,
+        momentInbox: MomentInbox = .appGroup(),
         reachability: Reachability = Reachability()
     ) {
         self.config = config
@@ -125,6 +129,7 @@ final class AppModel {
         self.push = PushCoordinator(api: api, session: sessionStore, store: sharedStore)
         self.liveActivities = LiveActivityCoordinator(api: api, session: sessionStore, store: sharedStore)
         self.sendQueue = sendQueue ?? SendQueue(store: FilePendingSendStore.appGroup())
+        self.momentInbox = momentInbox
         self.pendingPhotos = PendingPhotoStore.appGroup()
         self.reachability = reachability
 
@@ -283,6 +288,7 @@ final class AppModel {
 
     @discardableResult
     private func performFlush() async -> FlushResult {
+        await absorbMomentInbox()
         let api = self.api
         let photos = self.pendingPhotos
         let result = await sendQueue.flush { send in
@@ -310,6 +316,24 @@ final class AppModel {
             widgetSync.reloadTimelines()
         }
         return result
+    }
+
+    /// Takes what the extensions could not send into the queue.
+    ///
+    /// Done at the top of every flush rather than only at launch and on
+    /// foreground, which are the two that matter: those both flush, and so do
+    /// the network coming back and a background push — each a moment the
+    /// extensions' leftovers could go out too. A moment that named no
+    /// connection goes to the one the app last showed, which survives an
+    /// offline launch where the connection list does not.
+    private func absorbMomentInbox() async {
+        guard let userID = sessionStore.userID else { return }
+        let added = await sendQueue.absorb(
+            momentInbox,
+            authorID: userID,
+            fallbackPairID: sharedStore.selectedConnectionID
+        )
+        if added > 0 { await refreshPendingSends() }
     }
 
     /// Clears the failure history of abandoned sends so they are tried again.
