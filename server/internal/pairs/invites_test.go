@@ -165,3 +165,39 @@ func (w *lifeWorld) newInviteAt(t *testing.T, code, status, expires string) *cor
 func (w *lifeWorld) hoursAgo(hours int) string {
 	return time.Now().Add(-time.Duration(hours) * time.Hour).UTC().Format(types.DefaultDateLayout)
 }
+
+// Every live code is one more a guess can land on, so making a sixth retires
+// the oldest rather than adding to the pile.
+func TestMakingAnInvitePastTheCapRetiresTheOldest(t *testing.T) {
+	w := newLifeWorld(t)
+
+	var codes []string
+	for i := 0; i < 6; i++ {
+		status, body := w.do(t, "POST", "/api/peard/pairs/invite", w.aliceTok, "")
+		if status != 200 {
+			t.Fatalf("create invite %d: %d %s", i, status, body)
+		}
+		var res struct {
+			Code string `json:"code"`
+		}
+		if err := json.Unmarshal([]byte(body), &res); err != nil {
+			t.Fatalf("decode invite: %v (%s)", err, body)
+		}
+		codes = append(codes, res.Code)
+		time.Sleep(5 * time.Millisecond)
+	}
+
+	pending, err := w.app.FindRecordsByFilter("pair_invites",
+		"inviter = {:u} && status = 'pending'", "", 0, 0, map[string]any{"u": w.alice.Id})
+	if err != nil {
+		t.Fatalf("list invites: %v", err)
+	}
+	if len(pending) != 5 {
+		t.Fatalf("%d pending invites, want 5", len(pending))
+	}
+	for _, inv := range pending {
+		if inv.GetString("code") == codes[0] {
+			t.Error("the oldest invite is still live")
+		}
+	}
+}
