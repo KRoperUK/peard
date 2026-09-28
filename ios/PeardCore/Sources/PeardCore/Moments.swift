@@ -120,10 +120,16 @@ public enum MomentCatalogue {
         return kind.map(MomentSlug.humanised) ?? ""
     }
 
-    /// Emoji for a post: the camera for photo posts, otherwise the moment's.
+    /// Drawn for a reply, which has no moment of its own.
+    public static let replyEmoji = "💬"
+    public static let replyLabel = "Reply"
+
+    /// Emoji for a post: the camera for photo posts, the speech bubble for a
+    /// reply, otherwise the moment's.
     public static func emoji(for post: Post, customKinds: [MomentKind] = []) -> String {
         switch post.type {
         case .photo: return "📸"
+        case .note: return replyEmoji
         default: return emoji(for: post.eventKind, customKinds: customKinds)
         }
     }

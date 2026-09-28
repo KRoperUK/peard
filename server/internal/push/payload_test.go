@@ -96,3 +96,55 @@ func TestAReactionAlertNamesItsConnection(t *testing.T) {
 		}
 	}
 }
+
+// aps is an alert's `aps` dictionary.
+func aps(alert map[string]any) map[string]any {
+	a, _ := alert["aps"].(map[string]any)
+	return a
+}
+
+// "Me too" is only offered where there is a moment to log back, and a
+// category's buttons are fixed on the phone, so which buttons an alert gets is
+// decided by the category it is sent under.
+func TestOnlyAMomentWithAKindOffersMeToo(t *testing.T) {
+	cases := []struct {
+		name   string
+		fields map[string]any
+		want   string
+	}{
+		{"a moment", map[string]any{"type": "event", "event_kind": "beer"}, "MOMENT"},
+		{"a moment with a photo", map[string]any{"type": "event", "event_kind": "coffee", "media": "p.jpg"}, "MOMENT"},
+		{"a photo on its own", map[string]any{"type": "photo", "media": "p.jpg"}, "POST"},
+		{"a reply", map[string]any{"type": "note", "note": "enjoy!"}, "POST"},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			w := newPushWorld(t)
+			tc.fields["pair"], tc.fields["author"] = w.pair.Id, w.ada.Id
+			post := newRecord(t, w.app, "posts", tc.fields)
+
+			notifyPairMembers(w.app, post)
+
+			if got, _ := aps(w.onlyAlert(t))["category"].(string); got != tc.want {
+				t.Errorf("category = %q, want %q", got, tc.want)
+			}
+		})
+	}
+}
+
+func TestAReplyAlertSaysWhoRepliedAndWhat(t *testing.T) {
+	w := newPushWorld(t)
+	post := newRecord(t, w.app, "posts", map[string]any{
+		"pair": w.pair.Id, "author": w.ada.Id, "type": "note", "note": "enjoy!",
+	})
+
+	notifyPairMembers(w.app, post)
+
+	alert, _ := aps(w.onlyAlert(t))["alert"].(map[string]any)
+	if got, _ := alert["title"].(string); got != "💬 ada replied" {
+		t.Errorf("title = %q, want %q", got, "💬 ada replied")
+	}
+	if got, _ := alert["body"].(string); got != "enjoy!" {
+		t.Errorf("body = %q, want enjoy!", got)
+	}
+}
