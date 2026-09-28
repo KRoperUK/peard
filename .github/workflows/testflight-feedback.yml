@@ -1,0 +1,93 @@
+name: TestFlight Feedback to Issues
+
+# Polls App Store Connect for new TestFlight beta feedback (screenshots + tester
+# comments) once a day at 08:00 UTC, opens a triaged + refined GitHub issue for each
+# new submission, then deletes the submission from App Store Connect so it isn't
+# processed twice.
+#
+# A parallel poll-diagnostics job polls diagnostic signatures (hangs, excessive
+# disk writes, slow launches — App Store Connect's DiagnosticSignature resource
+# does not cover crashes) and opens triaged GitHub issues for each new signature.
+# Both jobs share the testflight-feedback concurrency group so App Store Connect
+# writes never race (the API key is rate limited).
+#
+# Required secrets:
+#   APP_STORE_CONNECT_API_KEY_ID      App Store Connect API key id (shared with fastlane)
+#   APP_STORE_CONNECT_API_ISSUER_ID   App Store Connect API issuer id
+#   APP_STORE_CONNECT_API_KEY_BASE64  Base64 of the .p8 private key
+#   OPENROUTER_API_KEY                OpenRouter API key
+# Optional:
+#   vars.ASC_APP_ID    App Store Connect app resource id (defaults to 6795739297)
+#   vars.ASC_BUNDLE_ID Defaults to com.peard.app
+#   vars.OPENROUTER_MODEL  OpenRouter model slug (defaults to deepseek/deepseek-v4-flash;
+#                          pick a vision-capable model to have screenshots analysed)
+
+on:
+  schedule:
+    - cron: '0 8 * * *'
+  workflow_dispatch:
+    inputs:
+      dry_run:
+        description: 'List feedback without creating issues or deleting submissions'
+        required: false
+        type: boolean
+        default: false
+
+concurrency:
+  group: testflight-feedback
+  cancel-in-progress: false
+
+permissions:
+  contents: write   # commit screenshots referenced by the issue body
+  issues: write     # create issues, labels, comments
+
+jobs:
+  poll:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+        with:
+          fetch-depth: 1
+
+      - name: Poll TestFlight feedback
+        uses: actions/github-script@3a2844b7e9c422d3c10d287c895573f7108da1b3 # v9
+        env:
+          ASC_KEY_ID: ${{ secrets.APP_STORE_CONNECT_API_KEY_ID }}
+          ASC_ISSUER_ID: ${{ secrets.APP_STORE_CONNECT_API_ISSUER_ID }}
+          ASC_KEY_CONTENT: ${{ secrets.APP_STORE_CONNECT_API_KEY_BASE64 }}
+          ASC_APP_ID: ${{ vars.ASC_APP_ID || '6795739297' }}
+          ASC_BUNDLE_ID: ${{ vars.ASC_BUNDLE_ID }}
+          OPENROUTER_API_KEY: ${{ secrets.OPENROUTER_API_KEY }}
+          OPENROUTER_MODEL: ${{ vars.OPENROUTER_MODEL }}
+          DRY_RUN: ${{ inputs.dry_run }}
+        with:
+          script: |
+            const run = require('./.github/scripts/testflight-feedback.js');
+            await run({ github, context, core });
+
+  poll-diagnostics:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+        with:
+          fetch-depth: 1
+
+      - name: Poll TestFlight diagnostic signatures
+        uses: actions/github-script@3a2844b7e9c422d3c10d287c895573f7108da1b3 # v9
+        env:
+          ASC_KEY_ID: ${{ secrets.APP_STORE_CONNECT_API_KEY_ID }}
+          ASC_ISSUER_ID: ${{ secrets.APP_STORE_CONNECT_API_ISSUER_ID }}
+          ASC_KEY_CONTENT: ${{ secrets.APP_STORE_CONNECT_API_KEY_BASE64 }}
+          ASC_APP_ID: ${{ vars.ASC_APP_ID || '6795739297' }}
+          ASC_BUNDLE_ID: ${{ vars.ASC_BUNDLE_ID }}
+          OPENROUTER_API_KEY: ${{ secrets.OPENROUTER_API_KEY }}
+          OPENROUTER_MODEL: ${{ vars.OPENROUTER_MODEL }}
+          DRY_RUN: ${{ inputs.dry_run }}
+        with:
+          script: |
+            const run = require('./.github/scripts/testflight-diagnostics.js');
+            await run({ github, context, core });
