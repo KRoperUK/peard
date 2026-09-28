@@ -50,6 +50,7 @@ struct ConnectionSettingsView: View {
                 discoverabilitySection
                 appearanceSection
                 appIconSection
+                MomentsExportSection(model: model)
                 accountSection
                 AboutSection(api: app.api, serverURL: model.serverURL)
                 leaveSection
