@@ -163,7 +163,7 @@ final class HomeModel {
                 result[kind.kind.rawValue] = lastAt
             }
         }
-        for send in pendingSends {
+        for send in pendingSends where send.postType == .event {
             let slug = send.kind.rawValue
             if result[slug].map({ send.happenedOrQueuedAt > $0 }) ?? true {
                 result[slug] = send.happenedOrQueuedAt
@@ -834,40 +834,36 @@ final class HomeModel {
         busy = .photo
         defer { busy = nil }
 
-        var fields = [
-            "pair": pairID,
-            "author": signedInUserID,
-            "type": PostType.photo.rawValue,
-        ]
-        if let moment {
-            fields["type"] = PostType.event.rawValue
-            fields["event_kind"] = moment.kind.rawValue
-        }
-        // The sheet normalises this already; doing it again here means no other
-        // caller can hand the server something it will reject with a 400.
-        let note = PostNote.normalised(caption)
-        if !note.isEmpty {
-            fields["note"] = note
-        }
-
+        // The same path a moment takes (issue #2): on disk first, then queued,
+        // then flushed. It used to post directly and show "Upload failed" on no
+        // signal, by which point the sheet had gone and the photo — framing and
+        // caption included — went with it.
+        let send = PendingSend(
+            pairID: pairID,
+            authorID: signedInUserID,
+            kind: moment?.kind ?? EventKind(rawValue: ""),
+            emoji: moment?.emoji ?? "📸",
+            label: moment?.label ?? "Photo",
+            // The sheet normalises this already; doing it again here means no
+            // other caller can hand the server something it will reject.
+            note: PostNote.normalised(caption),
+            postType: moment == nil ? .photo : .event,
+            hasPhoto: true
+        )
         do {
-            let _: Post = try await api.createMultipart(
-                "posts",
-                fields: fields,
-                file: MultipartFile(
-                    field: "media",
-                    filename: "pear.jpg",
-                    mimeType: "image/jpeg",
-                    data: data
-                )
-            )
+            try app.pendingPhotos.save(data, for: send.id)
         } catch {
-            if await app.handleIfUnauthorized(error) { return }
-            alert = AlertContent(title: "Upload failed", message: message(for: error))
+            alert = AlertContent(title: "Upload failed", message: "The photo couldn't be saved to send.")
             return
         }
+        await app.enqueue(send)
+        showToast(isOffline ? "📸 saved — will send" : "📸 sending…")
 
-        await refresh()
+        let result = await app.flushSendQueueAndWait()
+        if result.sent > 0 {
+            await refresh()
+            await refreshTallies()
+        }
         app.widgetSync.reloadTimelines()
     }
 

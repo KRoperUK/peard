@@ -60,6 +60,8 @@ final class AppModel {
     let liveActivities: LiveActivityCoordinator
     /// Moments logged on the device but not yet accepted by the server.
     let sendQueue: SendQueue
+    /// The JPEGs behind queued photo moments; see `PendingPhotoStore`.
+    let pendingPhotos: PendingPhotoStore
     let reachability: Reachability
 
     // MARK: State
@@ -123,6 +125,7 @@ final class AppModel {
         self.push = PushCoordinator(api: api, session: sessionStore, store: sharedStore)
         self.liveActivities = LiveActivityCoordinator(api: api, session: sessionStore, store: sharedStore)
         self.sendQueue = sendQueue ?? SendQueue(store: FilePendingSendStore.appGroup())
+        self.pendingPhotos = PendingPhotoStore.appGroup()
         self.reachability = reachability
 
         appIcon = AppIconChoice(alternateName: UIApplication.shared.alternateIconName)
@@ -281,10 +284,25 @@ final class AppModel {
     @discardableResult
     private func performFlush() async -> FlushResult {
         let api = self.api
+        let photos = self.pendingPhotos
         let result = await sendQueue.flush { send in
-            let _: Post = try await api.create("posts", fields: send.postFields)
+            guard send.hasPhoto else {
+                let _: Post = try await api.create("posts", fields: send.postFields)
+                return
+            }
+            // A 400, so the queue treats it as permanent: no retry can bring
+            // back a file that is gone, and retrying forever would hide it.
+            guard let data = photos.load(for: send.id) else {
+                throw APIError.server(status: 400, message: MissingPendingPhoto().errorDescription)
+            }
+            let _: Post = try await api.createMultipart(
+                "posts",
+                fields: send.postFields,
+                file: MultipartFile(field: "media", filename: "pear.jpg", mimeType: "image/jpeg", data: data)
+            )
         }
         await refreshPendingSends()
+        prunePendingPhotos()
 
         if result.didChangeAnything {
             // A send that landed changes the timeline, the tallies and the widget.
@@ -307,6 +325,13 @@ final class AppModel {
     func discardPendingSends() async {
         await sendQueue.removeAll()
         await refreshPendingSends()
+        prunePendingPhotos()
+    }
+
+    /// Deletes the photo files of sends that are no longer queued — sent,
+    /// dropped as undeliverable, aged out, or discarded.
+    private func prunePendingPhotos() {
+        pendingPhotos.removeAll(except: Set(pendingSends.map(\.id)))
     }
 
     /// Pending sends for one connection, newest last.
@@ -770,6 +795,7 @@ final class AppModel {
         // account cannot post under anyway.
         await sendQueue.removeAll()
         await refreshPendingSends()
+        prunePendingPhotos()
         sessionStore.clear()
         widgetSync.clear()
         connections = []

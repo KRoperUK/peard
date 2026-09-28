@@ -295,6 +295,31 @@ final class QuickSendFlowTests: XCTestCase {
         XCTAssertNil(queued.first?.happenedAt)
     }
 
+    // MARK: Photos (issue #2)
+
+    /// A photo taken with no way to send it is kept — on disk and queued —
+    /// rather than lost to an "Upload failed" alert after the sheet has gone.
+    func testAPhotoThatCannotBeSentIsKeptAndQueued() async throws {
+        let image = UIGraphicsImageRenderer(size: CGSize(width: 20, height: 20)).image { context in
+            UIColor.green.setFill()
+            context.fill(CGRect(x: 0, y: 0, width: 20, height: 20))
+        }
+
+        await model.upload(image: image, moment: coffee, caption: "  flat white  ")
+
+        let queued = await queue.pending
+        XCTAssertEqual(queued.count, 1)
+        let send = try XCTUnwrap(queued.first)
+        XCTAssertTrue(send.hasPhoto)
+        XCTAssertEqual(send.postType, .event)
+        XCTAssertEqual(send.kind, .coffee)
+        XCTAssertEqual(send.note, "flat white")
+        XCTAssertNotNil(app.pendingPhotos.load(for: send.id), "the JPEG has to be on disk before anything is sent")
+        XCTAssertNil(model.alert, "nothing failed: it is waiting")
+
+        try? FileManager.default.removeItem(at: app.pendingPhotos.url(for: send.id))
+    }
+
     // MARK: Helpers
 
     /// Lets the detached commit tasks that `tap` spawns finish before asserting.
