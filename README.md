@@ -195,7 +195,8 @@ builds the app or boots a simulator, and every merge is gated on them:
   (`fastlane promote_external`). Nothing is rebuilt, so what goes out is exactly
   what internal testers ran. The first build of each version goes through Beta
   App Review. The next push to `main` cancels an unapproved run and offers its
-  newer build instead.
+  newer build instead. Testers' "What to Test" is the pending changelog (see
+  [Releases](#releases-and-changelog)).
 - **Server unit tests**, **Docker** (validate the compose files, build the
   image, start it and wait for `/api/health`) and **Deploy server** (asks Komodo
   to roll the server — see [Deployment](#deployment)). The deploy waits on the
@@ -216,6 +217,43 @@ The runner has no Apple ID signed in, so the archive signs with cloud-managed
 certificates through the API key (`-authenticationKeyPath` and friends, passed by
 the `archive` lane). `bundle exec fastlane ci_release` runs the same pipeline
 locally.
+
+#### Releases and changelog
+
+Versions and `CHANGELOG.md` come from the commit messages, through
+[release-please](https://github.com/googleapis/release-please)
+(`.github/workflows/release-please.yml`). That is why commits follow
+[Conventional Commits](https://www.conventionalcommits.org/):
+
+| Commit | Next version | In the changelog |
+|---|---|---|
+| `feat: …` | minor (1.0.0 → 1.1.0) | Features |
+| `fix: …` | patch (1.0.0 → 1.0.1) | Bug Fixes |
+| `perf:`, `revert:` | patch | Performance, Reverts |
+| `feat!: …`, or a `BREAKING CHANGE:` footer | major | — |
+| `ci:`, `chore:`, `docs:`, `refactor:`, `test:`, `build:`, `style:` | none | hidden |
+
+A scope, as in `fix(ios): …`, is shown in bold in the changelog.
+
+After every push to `main`, release-please updates one open **release pull
+request**. It holds the next `CHANGELOG.md` entry and the `MARKETING_VERSION`
+bump in `ios/project.yml`: each line marked `# x-release-please-version` is
+rewritten. The version it starts from is in `.release-please-manifest.json`.
+Merging that pull request tags `vX.Y.Z` and publishes a GitHub release. The
+merge is a push to `main` like any other, so CI builds and uploads the new
+version.
+
+The release pull request's body is also the **pending changelog**: everything
+merged since the last release, which is what a build from `main` contains.
+`promote_external` sends it to TestFlight as "What to Test", flattened to plain
+text, and `beta` uses it for internal testers. When no release pull request is
+open, either because the build is the release itself or because nothing
+releasable has landed since, it uses `CHANGELOG.md`'s entry for the build's
+version. If that is missing too, it uses the commit message.
+
+| Where | Name | What |
+|---|---|---|
+| Secret | `RELEASE_PLEASE_TOKEN` | Fine-grained token with Contents and Pull requests read/write on this repository. It opens the release pull request. The workflow token can't: Actions may not open pull requests here, and one it opened would never run the checks `main` requires |
 
 #### TestFlight feedback to issues
 
