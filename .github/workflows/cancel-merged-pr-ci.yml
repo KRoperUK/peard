@@ -1,0 +1,31 @@
+name: Cancel CI for merged pull requests
+
+# Once a pull request merges, its own CI no longer matters — the merge's push
+# runs CI on main — but a run still going on the branch keeps a macOS runner
+# busy for up to ten minutes. This cancels whatever is still queued or running
+# for the merged branch.
+on:
+  pull_request:
+    types: [closed]
+
+permissions:
+  actions: write
+
+jobs:
+  cancel:
+    if: github.event.pull_request.merged == true
+    runs-on: ubuntu-latest
+    steps:
+      - name: Cancel the branch's CI runs
+        env:
+          GH_TOKEN: ${{ github.token }}
+          REPO: ${{ github.repository }}
+          BRANCH: ${{ github.event.pull_request.head.ref }}
+        run: |
+          for status in in_progress queued waiting pending; do
+            gh run list --repo "$REPO" --workflow CI --branch "$BRANCH" --status "$status" \
+              --json databaseId,event --jq '.[] | select(.event == "pull_request") | .databaseId'
+          done | sort -u | while read -r id; do
+            echo "Cancelling run $id"
+            gh run cancel "$id" --repo "$REPO" || true
+          done
