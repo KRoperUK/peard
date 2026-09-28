@@ -13,8 +13,10 @@ import (
 	"encoding/json"
 	"net/http"
 	"net/http/httptest"
+	"net/url"
 	"os"
 	"slices"
+	"strconv"
 	"testing"
 	"time"
 
@@ -250,5 +252,96 @@ func TestConnectionsOmitMomentsByDefault(t *testing.T) {
 
 	if _, present := connections[0]["moments"]; present {
 		t.Fatalf("expected no moments key, got %v", connections[0])
+	}
+}
+
+// feedToday fetches the feed with an extra query string and returns how many
+// moments it counted today, in the older beer/loo shape and across tallies.
+func (w *feedWorld) feedToday(t *testing.T, extra string) (beer int, tallied int) {
+	t.Helper()
+	req := httptest.NewRequest("GET", "/api/peard/widget/feed?token="+w.token+extra, nil)
+	rec := httptest.NewRecorder()
+	w.mux.ServeHTTP(rec, req)
+	if rec.Code != 200 {
+		t.Fatalf("feed%s: got %d, body %s", extra, rec.Code, rec.Body.String())
+	}
+	var parsed struct {
+		Counts  map[string]int `json:"counts"`
+		Tallies []struct {
+			Count int `json:"count"`
+		} `json:"tallies"`
+	}
+	if err := json.Unmarshal(rec.Body.Bytes(), &parsed); err != nil {
+		t.Fatalf("decode feed: %v (body %s)", err, rec.Body.String())
+	}
+	for _, tally := range parsed.Tallies {
+		tallied += tally.Count
+	}
+	return parsed.Counts["beer"], tallied
+}
+
+// zoneAtLocalHour finds a fixed-offset zone whose clock currently reads the
+// given hour, so a test can put a moment either side of that zone's midnight
+// whatever time it is run. Etc/GMT's signs are the POSIX way round: Etc/GMT-9
+// is nine hours ahead of UTC.
+func zoneAtLocalHour(t *testing.T, now time.Time, hour int) (string, *time.Location) {
+	t.Helper()
+	for offset := -12; offset <= 13; offset++ {
+		name := "Etc/GMT"
+		switch {
+		case offset > 0:
+			name += "-" + strconv.Itoa(offset)
+		case offset < 0:
+			name += "+" + strconv.Itoa(-offset)
+		}
+		loc, err := time.LoadLocation(name)
+		if err != nil {
+			t.Fatalf("load %s: %v", name, err)
+		}
+		if now.In(loc).Hour() == hour {
+			return name, loc
+		}
+	}
+	t.Fatalf("no zone has local hour %d at %v", hour, now)
+	return "", nil
+}
+
+// The widget's "today" is the phone's. A moment at half past eleven last night,
+// where the phone is, is yesterday's — even though, an hour further east, the
+// same instant is half past midnight today.
+func TestFeedCountsTodayInTheWidgetsZone(t *testing.T) {
+	w := newFeedWorld(t)
+	now := time.Now()
+	justPastMidnight, loc := zoneAtLocalHour(t, now, 0)
+	lastNight := now.Add(-time.Duration(now.In(loc).Minute()+30) * time.Minute)
+	w.newRecord(t, "posts", map[string]any{
+		"pair": w.pair.Id, "author": w.bob.Id, "type": "event", "event_kind": "beer",
+		"happened_at": lastNight.UTC().Format(types.DefaultDateLayout),
+	})
+	anHourAhead, _ := zoneAtLocalHour(t, now, 1)
+
+	if beer, tallied := w.feedToday(t, "&tz="+url.QueryEscape(justPastMidnight)); beer != 0 || tallied != 0 {
+		t.Errorf("tz=%s: counted %d beer, %d tallied; the moment was last night there", justPastMidnight, beer, tallied)
+	}
+	if beer, tallied := w.feedToday(t, "&tz="+url.QueryEscape(anHourAhead)); beer != 1 || tallied != 1 {
+		t.Errorf("tz=%s: counted %d beer, %d tallied; the moment was after midnight there", anHourAhead, beer, tallied)
+	}
+}
+
+// A zone the server does not recognise is not an error: the widget has no
+// screen to show one on. It gets the server's day, as every widget did before
+// it sent a zone.
+func TestFeedIgnoresAZoneItCannotRead(t *testing.T) {
+	w := newFeedWorld(t)
+	w.newRecord(t, "posts", map[string]any{
+		"pair": w.pair.Id, "author": w.bob.Id, "type": "event", "event_kind": "beer",
+		"happened_at": time.Now().UTC().Format(types.DefaultDateLayout),
+	})
+
+	withNone, _ := w.feedToday(t, "")
+	for _, bad := range []string{"Mars%2FOlympus_Mons", "..%2F..%2Fetc%2Fpasswd", "Local", "%2B05%3A30"} {
+		if beer, _ := w.feedToday(t, "&tz="+bad); beer != withNone {
+			t.Errorf("tz=%s: counted %d, want the same %d as no zone", bad, beer, withNone)
+		}
 	}
 }

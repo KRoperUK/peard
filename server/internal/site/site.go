@@ -678,7 +678,7 @@ const privacyBody = `
   <div class="doc">
     <header>
       <h1>Privacy Policy</h1>
-      <div class="updated">Last updated 28 September 2026</div>
+      <div class="updated">Last updated 29 September 2026</div>
     </header>
 
     <p>Pear'd ("we", "us") is a small, independently-run app for sharing moments and tallies with people you choose to connect with. This page explains what we collect, why, and how to get it deleted.</p>
@@ -694,6 +694,7 @@ const privacyBody = `
       <li><strong>Moments</strong> — the events you log, including any note or photo you attach, and the reactions, custom moment kinds, group names and group photos you add.</li>
       <li><strong>Read state</strong> — when you last opened each connection, so the app can show what's new since.</li>
       <li><strong>Push tokens</strong> — a device token used only to deliver notifications from your connections, and, while a Live Activity is running, a token that updates it on your Lock Screen.</li>
+      <li><strong>Time zone</strong> — your phone's time zone name (like "Europe/London"), stored with its push token so the weekly recap arrives on Sunday evening where you are, and sent by the widget so its "today" is your day. It says roughly where in the world you are, and nothing more precise.</li>
       <li><strong>Widget tokens</strong> — a random key the home screen widget uses to fetch your latest moments without your password. You can see them in your data export; they are cancelled if you withdraw Pear'd's access in your Apple Account settings, and deleted with your account.</li>
       <li><strong>Phone number and contact email (optional)</strong> — only ever asked for if you turn on "let people find me" in Settings; nothing else asks for them.</li>
       <li><strong>Server logs</strong> — our server records each request it receives: the time, the address asked for, the result, your IP address and your device's user agent (which names the app and system version), and for some events your account id. They're used only to keep the service running and to investigate faults and abuse, and they're deleted automatically after 5 days.</li>

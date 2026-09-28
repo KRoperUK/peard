@@ -212,6 +212,9 @@ func exportHandler(app core.App) func(e *core.RequestEvent) error {
 			if start := d.GetString("activity_start_token"); start != "" {
 				device["activity_start_token"] = maskToken(start)
 			}
+			if tz := d.GetString("time_zone"); tz != "" {
+				device["time_zone"] = tz
+			}
 			devices = append(devices, device)
 		})
 		if err != nil {

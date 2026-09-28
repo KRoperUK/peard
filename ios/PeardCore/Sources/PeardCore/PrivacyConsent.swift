@@ -23,7 +23,7 @@ public struct PrivacyConsent: Sendable, Equatable {
     /// page (`server/internal/site/site.go`); keep the two in step.
     /// `server/internal/site/privacy_test.go` reads this line and fails when
     /// they drift.
-    public static let currentVersion = "2026-09-28"
+    public static let currentVersion = "2026-09-29"
 
     /// The policy version this installation accepted, or nil on first run.
     public let acceptedVersion: String?
