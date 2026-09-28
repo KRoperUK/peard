@@ -440,6 +440,18 @@ public extension APIClient {
     }
 
     /// The most recent posts of a pair (Requirement 11.1).
+    /// Moments from this day last year, earliest first; see `OnThisDay`.
+    func postsOnThisDay(pairID: String, now: Date = Date(), calendar: Calendar = .current, limit: Int = 5) async throws -> [Post] {
+        guard let window = OnThisDay.window(for: now, calendar: calendar) else { return [] }
+        return try await list(
+            "posts",
+            of: Post.self,
+            filter: PeardFilter.and(PeardFilter.equals("pair", pairID), OnThisDay.clause(for: window)),
+            sort: "happened_at",
+            perPage: limit
+        )
+    }
+
     func recentPosts(pairID: String, limit: Int = 5) async throws -> [Post] {
         try await list(
             "posts",

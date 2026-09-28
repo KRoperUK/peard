@@ -145,7 +145,8 @@ public struct ConnectionTallies: Codable, Hashable, Sendable {
     /// — `ConnectionTallies.zero` does not, and merging into it would silently
     /// discard everything.
     public func adding(pending: [PendingSend], now: Date = Date(), calendar: Calendar = .peardTally) -> ConnectionTallies {
-        let relevant = pending.filter { $0.pairID == pair }
+        // A photo with no moment attached counts in no tally, queued or not.
+        let relevant = pending.filter { $0.pairID == pair && $0.postType == .event }
         guard !relevant.isEmpty else { return self }
 
         let dayStart = calendar.startOfDay(for: now)
