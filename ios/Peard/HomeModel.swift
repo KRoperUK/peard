@@ -70,6 +70,7 @@ final class HomeModel {
         // silently drop every pending moment until the first successful fetch —
         // which is precisely the offline first-launch case.
         self.serverTallies = ConnectionTallies(pair: pairID, mine: .zero, others: .zero, kinds: [])
+        self.pinnedSlugs = app.sharedStore.pinnedMoments(forConnection: pairID)
     }
 
     var signedInUserID: String { app.signedInUserID }
@@ -151,6 +152,20 @@ final class HomeModel {
 
     /// The moments offered on the home screen.
     var moments: [Moment] { MomentCatalogue.available(customKinds: customKinds) }
+
+    /// Slugs pinned to the front of this connection's grid, in pin order
+    /// (issue #11). Read once and written through, so the grid redraws on a pin.
+    private(set) var pinnedSlugs: [String] = []
+
+    /// The grid's order: pinned moments first, then the rest as usual.
+    var gridMoments: [Moment] { MomentPins.ordered(moments, pinned: pinnedSlugs) }
+
+    func isPinned(_ moment: Moment) -> Bool { pinnedSlugs.contains(moment.kind.rawValue) }
+
+    func togglePin(_ moment: Moment) {
+        pinnedSlugs = MomentPins.toggled(moment.kind.rawValue, in: pinnedSlugs)
+        app.sharedStore.setPinnedMoments(pinnedSlugs, forConnection: pairID)
+    }
 
     /// When each moment last happened here, keyed by kind.
     ///

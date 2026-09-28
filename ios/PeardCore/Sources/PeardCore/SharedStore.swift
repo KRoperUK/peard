@@ -17,6 +17,7 @@ public final class SharedStore: @unchecked Sendable {
         public static let privacyPolicyAcceptedVersion = "privacyPolicyAcceptedVersion"
         public static let privacyPolicyAcceptedAt = "privacyPolicyAcceptedAt"
         public static let appearance = "appearance"
+        public static let pinnedMoments = "pinnedMoments"
     }
 
     public static let appGroupIdentifier = "group.com.peard.app"
@@ -98,6 +99,21 @@ public final class SharedStore: @unchecked Sendable {
     public var appearance: AppearancePreference {
         get { AppearancePreference(storedValue: defaults?.string(forKey: Key.appearance)) }
         set { set(newValue.rawValue, forKey: Key.appearance) }
+    }
+
+    // MARK: Pinned moments
+
+    /// The moment slugs pinned to the front of a connection's grid, in pin
+    /// order. See `MomentPins`.
+    public func pinnedMoments(forConnection pairID: String) -> [String] {
+        let all = defaults?.dictionary(forKey: Key.pinnedMoments) as? [String: [String]]
+        return all?[pairID] ?? []
+    }
+
+    public func setPinnedMoments(_ slugs: [String], forConnection pairID: String) {
+        var all = (defaults?.dictionary(forKey: Key.pinnedMoments) as? [String: [String]]) ?? [:]
+        all[pairID] = slugs.isEmpty ? nil : slugs
+        defaults?.set(all, forKey: Key.pinnedMoments)
     }
 
     // MARK: Widget optimistic feedback

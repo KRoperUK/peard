@@ -295,6 +295,23 @@ final class QuickSendFlowTests: XCTestCase {
         XCTAssertNil(queued.first?.happenedAt)
     }
 
+    // MARK: Pins (issue #11)
+
+    func testPinningMovesAMomentToTheFrontAndIsRemembered() {
+        defer { app.sharedStore.setPinnedMoments([], forConnection: Self.pairID) }
+        XCTAssertEqual(model.gridMoments.first?.kind, .beer)
+
+        model.togglePin(coffee)
+
+        XCTAssertEqual(model.gridMoments.first?.kind, .coffee)
+        XCTAssertTrue(model.isPinned(coffee))
+        // A fresh model — the next launch — reads the same pins back.
+        XCTAssertEqual(HomeModel(app: app, pairID: Self.pairID).gridMoments.first?.kind, .coffee)
+
+        model.togglePin(coffee)
+        XCTAssertEqual(model.gridMoments.first?.kind, .beer)
+    }
+
     // MARK: VoiceOver (issue #5)
 
     /// With VoiceOver the note field is a swipe or three away; the moment must
