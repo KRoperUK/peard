@@ -57,7 +57,8 @@ struct PhotoMomentSheet: View {
                         onTap: { moment in
                             chosen = (chosen?.kind == moment.kind) ? nil : moment
                         },
-                        onMore: nil
+                        onMore: nil,
+                        purpose: .pick
                     )
                     explanation
                 }
