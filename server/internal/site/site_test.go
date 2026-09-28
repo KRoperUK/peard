@@ -11,6 +11,7 @@ import (
 	"github.com/pocketbase/pocketbase/apis"
 	"github.com/pocketbase/pocketbase/core"
 	"github.com/pocketbase/pocketbase/tests"
+	"github.com/pocketbase/pocketbase/ui"
 
 	"peard/internal/site"
 )
@@ -38,6 +39,9 @@ func newSiteMux(t *testing.T) http.Handler {
 	if err != nil {
 		t.Fatalf("new router: %v", err)
 	}
+	// The superuser UI is registered by apis.Serve rather than NewRouter, so it
+	// is added here the same way, to prove the site's catch-all leaves it alone.
+	router.GET("/_/{path...}", apis.Static(ui.DistDirFS, false))
 	event := new(core.ServeEvent)
 	event.App = app
 	event.Router = router
@@ -197,5 +201,63 @@ func TestEveryPageLinksTheSource(t *testing.T) {
 		if !strings.Contains(body, `href="https://github.com/KRoperUK/peard"`) {
 			t.Errorf("%s: no link to the repo in the footer", path)
 		}
+	}
+}
+
+// An unknown path is a 404 with a page that leads home, not the home page with
+// a 200 — which search engines treat as a soft 404.
+func TestUnknownPathsAreANotFoundPage(t *testing.T) {
+	mux := newSiteMux(t)
+
+	for _, path := range []string{"/nope", "/privacy.html", "/c", "/privacy/extra"} {
+		rec := get(t, mux, path)
+		if rec.Code != http.StatusNotFound {
+			t.Fatalf("%s: got %d, want 404", path, rec.Code)
+		}
+		body := rec.Body.String()
+		if !strings.Contains(body, "Nothing here") || !strings.Contains(body, `class="cta" href="/"`) {
+			t.Fatalf("%s: expected the not-found page with a link home", path)
+		}
+		if strings.Contains(body, "Try it on TestFlight") {
+			t.Fatalf("%s: served the home page", path)
+		}
+	}
+}
+
+// The routes that should answer still do, including the ones that sit beside the
+// catch-all: invite links and the association file.
+func TestKnownPathsAreNotCaughtByTheNotFoundPage(t *testing.T) {
+	mux := newSiteMux(t)
+
+	for _, path := range []string{"/", "/privacy", "/c/AB12CD", "/.well-known/apple-app-site-association"} {
+		rec := get(t, mux, path)
+		if rec.Code != http.StatusOK {
+			t.Fatalf("%s: got %d, want 200", path, rec.Code)
+		}
+		if strings.Contains(rec.Body.String(), "Nothing here") {
+			t.Fatalf("%s: served the not-found page", path)
+		}
+	}
+}
+
+// PocketBase's own routes sit on the same mux. They must still win over the
+// site's catch-all, and an unknown API path must keep PocketBase's JSON error
+// rather than an HTML page an API client can't read.
+func TestPocketBaseRoutesAreUnaffected(t *testing.T) {
+	mux := newSiteMux(t)
+
+	health := get(t, mux, "/api/health")
+	if health.Code != http.StatusOK || !strings.HasPrefix(health.Header().Get("Content-Type"), "application/json") {
+		t.Fatalf("/api/health: got %d %q, want 200 JSON", health.Code, health.Header().Get("Content-Type"))
+	}
+
+	missing := get(t, mux, "/api/nope")
+	if missing.Code != http.StatusNotFound || !strings.HasPrefix(missing.Header().Get("Content-Type"), "application/json") {
+		t.Fatalf("/api/nope: got %d %q, want 404 JSON", missing.Code, missing.Header().Get("Content-Type"))
+	}
+
+	admin := get(t, mux, "/_/")
+	if admin.Code != http.StatusOK || strings.Contains(admin.Body.String(), "Nothing here") {
+		t.Fatalf("/_/: got %d, want the superuser UI", admin.Code)
 	}
 }

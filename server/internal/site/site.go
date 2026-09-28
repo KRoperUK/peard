@@ -24,7 +24,12 @@ const (
 // Register binds the public site routes.
 func Register(app core.App) {
 	app.OnServe().BindFunc(func(se *core.ServeEvent) error {
-		se.Router.GET("/", homeHandler)
+		// "/{$}" is the root and nothing else. A bare "/" is a prefix match in
+		// net/http, so the home page used to answer every unknown path with a
+		// 200, which search engines read as a soft 404. "/" is kept, but only
+		// to say so properly.
+		se.Router.GET("/{$}", homeHandler)
+		se.Router.GET("/", notFoundHandler)
 		se.Router.GET("/privacy", privacyHandler)
 		se.Router.GET("/c/{code}", inviteHandler)
 		se.Router.GET("/.well-known/apple-app-site-association", associationHandler)
@@ -94,6 +99,22 @@ func homeHandler(e *core.RequestEvent) error {
 		"Pear'd 🍐",
 		"Moments and tallies shared with your favourite people.",
 		homeBody,
+	))
+}
+
+// notFoundHandler catches every GET that no other route claims.
+//
+// PocketBase's own routes are more specific patterns and still win, but an
+// unknown /api/ path would land here too. API clients expect PocketBase's JSON
+// error rather than a web page, so those get it.
+func notFoundHandler(e *core.RequestEvent) error {
+	if strings.HasPrefix(e.Request.URL.Path, "/api/") {
+		return e.NotFoundError("", nil)
+	}
+	return e.HTML(http.StatusNotFound, page(
+		"Page not found — Pear'd",
+		"There's nothing at this address.",
+		notFoundBody,
 	))
 }
 
@@ -354,6 +375,15 @@ const homeBody = `
       <h2>Private by design</h2>
       <p>You can only see somebody's name or photo if you share a connection with them — enforced by the server, not just the app.</p>
     </div>
+  </div>
+`
+
+const notFoundBody = `
+  <div class="hero">
+    <div class="pear" aria-hidden="true">🍐</div>
+    <h1>Nothing here</h1>
+    <p class="tagline">This page doesn't exist, or it has moved. If somebody sent you an invite, check the link — they look like <code>peard.kroper.uk/c/ABC123</code>.</p>
+    <a class="cta" href="/">Go to Pear'd</a>
   </div>
 `
 
