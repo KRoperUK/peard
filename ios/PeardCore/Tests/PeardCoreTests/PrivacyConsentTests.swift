@@ -53,6 +53,15 @@ final class PrivacyConsentTests: XCTestCase {
         XCTAssertFalse(consent.isFirstRun, "they have agreed to something before — this is an update, not a first run")
     }
 
+    /// Everyone who agreed before the September 2026 revision (server logs,
+    /// widget and Live Activity tokens, beta feedback, the full export and Apple
+    /// revocation) has to see the gate again.
+    func testTheJuly2026PolicyNoLongerCounts() {
+        store.recordPrivacyConsent(version: "2026-07-31")
+
+        XCTAssertFalse(store.privacyConsent.hasAcceptedCurrentVersion)
+    }
+
     func testClearingConsentPutsTheGateBack() {
         store.recordPrivacyConsent()
 

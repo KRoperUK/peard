@@ -590,7 +590,7 @@ const privacyBody = `
   <div class="doc">
     <header>
       <h1>Privacy Policy</h1>
-      <div class="updated">Last updated 31 July 2026</div>
+      <div class="updated">Last updated 28 September 2026</div>
     </header>
 
     <p>Pear'd ("we", "us") is a small, independently-run app for sharing moments and tallies with people you choose to connect with. This page explains what we collect, why, and how to get it deleted.</p>
@@ -601,10 +601,14 @@ const privacyBody = `
     <h2>What we collect</h2>
     <ul>
       <li><strong>Account info</strong> — an identifier and email address from Sign in with Apple, Google, or your own email and password.</li>
+      <li><strong>Sign in with Apple token</strong> — if you sign in with Apple, a token Apple issues to us, kept only on our server and used for one thing: telling Apple to revoke Pear'd's access when you delete your account.</li>
       <li><strong>Profile</strong> — the display name and photo you optionally set, shown to people you share a connection with.</li>
-      <li><strong>Moments</strong> — the events you log, including any note or photo you attach.</li>
-      <li><strong>Push token</strong> — a device token used only to deliver notifications from your connections.</li>
-      <li><strong>Phone number (optional)</strong> — only ever asked for if you turn on "let people find me" in Settings; nothing else asks for one.</li>
+      <li><strong>Moments</strong> — the events you log, including any note or photo you attach, and the reactions, custom moment kinds, group names and group photos you add.</li>
+      <li><strong>Read state</strong> — when you last opened each connection, so the app can show what's new since.</li>
+      <li><strong>Push tokens</strong> — a device token used only to deliver notifications from your connections, and, while a Live Activity is running, a token that updates it on your Lock Screen.</li>
+      <li><strong>Widget tokens</strong> — a random key the home screen widget uses to fetch your latest moments without your password. You can see them in your data export; they are cancelled if you withdraw Pear'd's access in your Apple Account settings, and deleted with your account.</li>
+      <li><strong>Phone number and contact email (optional)</strong> — only ever asked for if you turn on "let people find me" in Settings; nothing else asks for them.</li>
+      <li><strong>Server logs</strong> — our server records each request it receives: the time, the address asked for, the result, your IP address and your device's user agent (which names the app and system version), and for some events your account id. They're used only to keep the service running and to investigate faults and abuse, and they're deleted automatically after 5 days.</li>
     </ul>
 
     <h2>Who can see it</h2>
@@ -620,22 +624,26 @@ const privacyBody = `
     <ul>
       <li>Apple or Google, to sign you in.</li>
       <li>Apple's Push Notification service, to deliver alerts to your device.</li>
+      <li>Apple's Live Activity push service, to update a running Live Activity.</li>
       <li>The server we operate, where everything above is stored.</li>
     </ul>
+
+    <h2>TestFlight beta feedback</h2>
+    <p>If you test a beta through TestFlight and send feedback, Apple passes it to us: your comment, any screenshots, and details such as your device model, system version, locale, time zone, connection type and battery level. We send each piece of feedback to OpenRouter, an AI service, which routes it to a language model that sorts it into a bug report or feature request. The comment and the device details are then posted as an issue on our GitHub repository, which is public — the issue never names you or includes your email address, and screenshots stay in App Store Connect rather than being published. This only applies to beta feedback you choose to send; the App Store version of the app sends nothing of the kind.</p>
 
     <h2>Retention</h2>
     <p>By default, moments you post stay part of a connection's shared history even if you later leave it — leaving removes your membership, not the record of what already happened, which was somebody else's record of it too. When you leave, the app offers to delete your own moments from that connection instead; choosing that removes them for everyone in it. Your account data is kept for as long as your account exists.</p>
 
     <h2>Your rights</h2>
-    <p>You can sign out at any time from the app, and download a copy of your own profile, connections and moments any time from Settings → Export your data.</p>
-    <p>You can delete your account from Settings → Delete account. It happens immediately and takes your profile, your photo, your moments across every connection, your reactions and your push registration with it — you don't have to ask us, and there's nothing to wait for. Any connection you leave behind that still has other people in it keeps its shared history minus your moments; one that had only you is deleted outright.</p>
+    <p>You can sign out at any time from the app, and download a copy of everything we hold about you any time from Settings → Export your data: your profile, connections, invites, moments, reactions, custom moment kinds, devices, widget tokens and Live Activities. Tokens appear masked or are left out, because they are keys rather than your content. Photo links in the export stop working about 30 minutes after it's made, so save the photos soon after exporting, or export again.</p>
+    <p>You can delete your account from Settings → Delete account. It happens immediately and takes your profile, your photo, your moments across every connection, your reactions, your push and widget tokens and your Live Activities with it — you don't have to ask us, and there's nothing to wait for. If you signed in with Apple, we also tell Apple to revoke Pear'd's access, as if you had removed it under Settings → Apple Account → Sign in with Apple. Any connection you leave behind that still has other people in it keeps its shared history minus your moments; one that had only you is deleted outright.</p>
     <p>If you'd rather we did it, or you want to ask what we hold, email <a href="mailto:` + contactEmail + `">` + contactEmail + `</a> — we'll action requests within 30 days.</p>
 
     <h2>Children</h2>
     <p>Pear'd is not directed at children under 13, and we don't knowingly collect data from them.</p>
 
     <h2>Changes</h2>
-    <p>If this policy changes, we'll update the date at the top of this page.</p>
+    <p>If this policy changes, we'll update the date at the top of this page. When a change is one you should see, the app also asks you to agree to the new version on its next launch, before it sends anything else.</p>
 
     <h2>Contact</h2>
     <p><a href="mailto:` + contactEmail + `">` + contactEmail + `</a></p>
