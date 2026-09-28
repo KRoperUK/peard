@@ -86,6 +86,16 @@ jobs:
             exit 1
           fi
 
+      - name: Vulnerabilities
+        working-directory: server
+        # Fails only on a known vulnerability the server's code can actually
+        # reach, not on every advisory against a module it happens to require —
+        # so a red here is one to act on, usually by merging Dependabot's gomod
+        # pull request. Pinned so a new govulncheck release cannot turn a green
+        # main red on its own; Dependabot does not bump a `go run` version, so
+        # this one is moved by hand.
+        run: go run golang.org/x/vuln/cmd/govulncheck@v1.8.0 ./...
+
   core:
     name: PeardCore unit tests
     runs-on: macos-15
