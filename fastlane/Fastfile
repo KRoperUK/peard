@@ -257,7 +257,7 @@ platform :ios do
     file
   end
 
-  # CI sets PEARD_BUILD_NUMBER from the run number so every upload is unique;
+  # CI sets PEARD_BUILD_NUMBER to the upload time (Unix seconds) so every upload is unique;
   # locally the committed value (CURRENT_PROJECT_VERSION in ios/project.yml) is
   # used unchanged.
   #

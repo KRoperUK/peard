@@ -215,13 +215,11 @@ jobs:
       - name: Archive and upload
         if: steps.creds.outputs.ready == 'true'
         # Every upload needs a build number App Store Connect has not seen. The
-        # run number only goes up; PEARD_BUILD_NUMBER_OFFSET (a repository
-        # variable, default 0) lifts it past anything uploaded by hand before
-        # this job existed.
-        env:
-          PEARD_BUILD_NUMBER_OFFSET: ${{ vars.PEARD_BUILD_NUMBER_OFFSET }}
+        # upload time in Unix seconds: it only goes up, and it is the scheme the
+        # builds uploaded by hand already use (build 1785639368 was one), so CI's
+        # numbers carry on from them rather than starting below.
         run: |
-          export PEARD_BUILD_NUMBER=$(( ${{ github.run_number }} + ${PEARD_BUILD_NUMBER_OFFSET:-0} ))
+          export PEARD_BUILD_NUMBER=$(date +%s)
           echo "Build number $PEARD_BUILD_NUMBER"
           bundle exec fastlane beta
 

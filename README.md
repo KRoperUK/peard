@@ -206,7 +206,6 @@ To switch these on (until then the internal job skips itself with a warning):
 | Secret | `APP_STORE_CONNECT_API_ISSUER_ID` | Issuer id |
 | Secret | `APP_STORE_CONNECT_API_KEY_BASE64` | The `.p8`, base64-encoded (`base64 -i AuthKey_XXXX.p8`) |
 | Variable | `PEARD_TESTFLIGHT_EXTERNAL_GROUP` | The external testers' group name |
-| Variable | `PEARD_BUILD_NUMBER_OFFSET` | Optional; added to the run number so CI build numbers clear any uploaded by hand |
 | Environment | `testflight-internal`, `testflight-external` | Add a required reviewer to `testflight-external` so the button asks first |
 
 The key needs the **Admin** role: the runner has no Apple ID signed in, so the
