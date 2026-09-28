@@ -9,6 +9,7 @@
 //   - widget:  token-authenticated feed for the WidgetKit extension
 //   - push:    APNs delivery triggered by record hooks
 //   - limits:  request rate limiting (PEARD_RATE_LIMITS=off disables it)
+//   - backups: PocketBase's scheduled backups, configured from PEARD_BACKUP_*
 //   - version: GET /api/peard/status — which build is actually running
 package main
 
@@ -23,6 +24,7 @@ import (
 
 	peardauth "peard/internal/auth"
 	"peard/internal/avatars"
+	"peard/internal/backups"
 	"peard/internal/contacts"
 	"peard/internal/export"
 	"peard/internal/limits"
@@ -65,6 +67,7 @@ func main() {
 	})
 
 	limits.Register(app)
+	backups.Register(app)
 	media.Register(app)
 	peardauth.Register(app)
 	pairs.Register(app)
