@@ -15,6 +15,8 @@ struct MomentSheet: View {
     @State private var emoji = "🍐"
     /// The published moment being renamed, if any.
     @State private var editing: Moment?
+    /// The published moment waiting on "Remove it for everyone?", if any.
+    @State private var removing: Moment?
     @FocusState private var labelFocused: Bool
     /// Plain state rather than `@FocusState`: the emoji tile is a UIKit field,
     /// so focus is driven into it rather than shared with SwiftUI's own.
@@ -54,6 +56,28 @@ struct MomentSheet: View {
                     Task { await model.editCustom(moment: moment, label: newLabel, emoji: newEmoji) }
                 }
             }
+            // Removal takes the moment away from every member at once, so one
+            // stray tap on a row this narrow is not enough.
+            .confirmationDialog(
+                removing.map { "Remove \($0.emoji) \($0.label)?" } ?? "",
+                isPresented: Binding(
+                    get: { removing != nil },
+                    set: { if !$0 { removing = nil } }
+                ),
+                titleVisibility: .visible,
+                presenting: removing
+            ) { moment in
+                Button("Remove for everyone", role: .destructive) {
+                    Task { await model.removeCustom(moment: moment) }
+                }
+                Button("Cancel", role: .cancel) {}
+            } message: { _ in
+                Text("It stops being offered in this connection. Moments already logged keep counting.")
+            }
+            // Here as well as on the home screen, which cannot present over
+            // this sheet: without it a failed removal or rename said nothing
+            // until the sheet was closed.
+            .alert(item: Binding(get: { model.alert }, set: { model.alert = $0 }))
         }
     }
 
@@ -238,17 +262,28 @@ struct MomentSheet: View {
                         .accessibilityLabel("Edit \(moment.label)")
                         .accessibilityHint("Change its name or emoji")
 
-                        Button {
-                            Task { await model.removeCustom(moment: moment) }
-                        } label: {
-                            Image(systemName: "trash")
-                                .font(.footnote)
-                                .foregroundStyle(PearColor.error)
+                        // Only for whoever added it: the server refuses anyone
+                        // else, so showing it to them offered an action that
+                        // could only fail.
+                        if model.canRemove(moment) {
+                            Button {
+                                removing = moment
+                            } label: {
+                                Image(systemName: "trash")
+                                    .font(.body)
+                                    .foregroundStyle(PearColor.error)
+                                    .frame(minWidth: 44, minHeight: 44)
+                                    .contentShape(Rectangle())
+                            }
+                            .buttonStyle(.plain)
+                            .accessibilityLabel("Remove \(moment.label)")
+                            .accessibilityHint("Asks before removing it for everyone in this connection")
                         }
-                        .buttonStyle(.plain)
-                        .accessibilityLabel("Remove \(moment.label)")
                     }
-                    .padding(.vertical, 10)
+                    // A 44pt floor whether or not the row has a bin, so rows
+                    // you can remove and rows you cannot line up the same.
+                    .frame(minHeight: 44)
+                    .padding(.vertical, 4)
 
                     if moment.id != publishedMoments.last?.id {
                         Divider().background(PearColor.divider)
@@ -258,7 +293,7 @@ struct MomentSheet: View {
             .padding(.horizontal, 14)
             .background(PearColor.surface, in: RoundedRectangle(cornerRadius: 12))
 
-            Text("Tap one to rename it or change its emoji — everywhere, including moments already logged. Removing one stops it being offered; past tallies keep counting.")
+            Text("Tap one to rename it or change its emoji — everywhere, including moments already logged. Whoever added one can remove it, which stops it being offered; past tallies keep counting.")
                 .font(.caption)
                 .foregroundStyle(PearColor.textTertiary)
         }
