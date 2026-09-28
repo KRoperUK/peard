@@ -834,6 +834,10 @@ struct HistoryView: View {
                 }
             }
 
+            // The footer rows are not moments, so they draw no separators of
+            // their own, like the "New" divider. Left on, the list aligned each
+            // one to the row's text, which put a half-width line under the
+            // centred count.
             if model.hasMore {
                 HStack {
                     Spacer()
@@ -841,6 +845,7 @@ struct HistoryView: View {
                     Spacer()
                 }
                 .listRowBackground(Color.clear)
+                .listRowSeparator(.hidden)
                 .task { await model.loadMoreIfNeeded() }
             } else if model.totalItems > 0 {
                 Text(model.totalItems == 1 ? "1 moment" : "\(model.totalItems) moments")
@@ -848,6 +853,7 @@ struct HistoryView: View {
                     .foregroundStyle(PearColor.textTertiary)
                     .frame(maxWidth: .infinity, alignment: .center)
                     .listRowBackground(Color.clear)
+                    .listRowSeparator(.hidden)
             }
 
             if let error = model.error, !model.posts.isEmpty {
@@ -855,6 +861,7 @@ struct HistoryView: View {
                     .font(.footnote)
                     .foregroundStyle(PearColor.error)
                     .listRowBackground(Color.clear)
+                    .listRowSeparator(.hidden)
             }
         }
         .listStyle(.plain)
