@@ -11,6 +11,7 @@ included:
   - ios/PearWidget
   - ios/PearMessages
   - ios/PearNotificationService
+  - ios/PearShare
   - ios/PeardTests
   - ios/PeardCore/Sources
   - ios/PeardCore/Tests

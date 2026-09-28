@@ -128,4 +128,137 @@ final class MomentInboxTests: XCTestCase {
 
         XCTAssertEqual(inbox.load().map(\.id), ["b"])
     }
+
+    // MARK: Photos from the share extension
+
+    private let jpeg = Data([0xFF, 0xD8, 0xFF, 0xE0, 0x01, 0x02, 0x03])
+
+    private var photos: PendingPhotoStore {
+        PendingPhotoStore(directory: directory.appendingPathComponent("PendingPhotos"))
+    }
+
+    private func shared(id: String = "s1", kind: EventKind = .coffee, pair: String? = "p1") -> InboxedMoment {
+        InboxedMoment(
+            id: id, pairID: pair, kind: kind, emoji: "☕", label: "Coffee",
+            queuedAt: Date(timeIntervalSince1970: 1_790_000_000),
+            note: "flat white", hasPhoto: true
+        )
+    }
+
+    /// An inbox written before photos existed has neither field, and must still
+    /// load — a decoding failure would lose every moment waiting in it.
+    func testAnInboxFromBeforePhotosStillLoads() throws {
+        let old = """
+        [{"id":"a","pair":"p1","kind":"beer","emoji":"🍺","label":"Beer","queued_at":"2026-09-21 12:00:00.000Z"}]
+        """
+        try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
+        try Data(old.utf8).write(to: inbox.url)
+
+        let loaded = inbox.load()
+
+        XCTAssertEqual(loaded.map(\.id), ["a"])
+        XCTAssertEqual(loaded.first?.note, "")
+        XCTAssertEqual(loaded.first?.hasPhoto, false)
+    }
+
+    func testAPhotoIsWrittenBesideItsEntry() {
+        XCTAssertTrue(inbox.append(shared(), photo: jpeg))
+
+        XCTAssertEqual(inbox.load().first?.hasPhoto, true)
+        XCTAssertEqual(inbox.loadPhoto(for: "s1"), jpeg)
+    }
+
+    /// The app's queue uploads it: the photo moves to the pending photo store
+    /// under the send's id, with the note, before the send is queued.
+    func testAbsorbingASharedPhotoQueuesItWithItsFile() async {
+        inbox.append(shared(), photo: jpeg)
+
+        let added = await queue.absorb(inbox, authorID: "me", fallbackPairID: nil, photos: photos)
+
+        XCTAssertEqual(added, 1)
+        let send = await queue.pending.first
+        XCTAssertEqual(send?.id, "s1")
+        XCTAssertEqual(send?.hasPhoto, true)
+        XCTAssertEqual(send?.postType, .event)
+        XCTAssertEqual(send?.note, "flat white")
+        XCTAssertEqual(photos.load(for: "s1"), jpeg)
+        // Gone from the inbox, file and all, now the queue holds it.
+        XCTAssertTrue(inbox.load().isEmpty)
+        XCTAssertNil(inbox.loadPhoto(for: "s1"))
+    }
+
+    /// With no moment chosen it is a plain photo, as when shared in the app.
+    func testASharedPhotoWithNoMomentIsAPhotoPost() async {
+        inbox.append(shared(kind: EventKind(rawValue: "")), photo: jpeg)
+
+        await queue.absorb(inbox, authorID: "me", fallbackPairID: nil, photos: photos)
+
+        let send = await queue.pending.first
+        XCTAssertEqual(send?.postType, .photo)
+        XCTAssertNil(send?.postFields["event_kind"])
+    }
+
+    /// Queued without its file, the send would fail at upload; left in the
+    /// inbox, it waits for a caller that can place the photo.
+    func testAPhotoWaitsWhenThereIsNowhereToPutIt() async {
+        inbox.append(shared(), photo: jpeg)
+
+        let added = await queue.absorb(inbox, authorID: "me", fallbackPairID: nil)
+
+        XCTAssertEqual(added, 0)
+        XCTAssertEqual(inbox.load().map(\.id), ["s1"])
+        XCTAssertEqual(inbox.loadPhoto(for: "s1"), jpeg)
+    }
+
+    /// No later merge can bring back a file that has gone, so the entry goes
+    /// too rather than being retried for ever.
+    func testAnEntryWhosePhotoHasGoneIsDropped() async throws {
+        inbox.append(shared(), photo: jpeg)
+        try FileManager.default.removeItem(at: inbox.photoURL(for: "s1"))
+
+        let added = await queue.absorb(inbox, authorID: "me", fallbackPairID: nil, photos: photos)
+
+        XCTAssertEqual(added, 0)
+        XCTAssertTrue(inbox.load().isEmpty)
+    }
+
+    /// The inbox's photos must not sit where the app prunes after each flush,
+    /// or one shared between an absorb and a prune would be deleted unsent.
+    /// Both stores are built from the same container directory in the app, as
+    /// they are here.
+    func testInboxPhotosAreNotWhereTheQueuePrunes() {
+        inbox.append(shared(), photo: jpeg)
+
+        photos.removeAll(except: [])
+
+        XCTAssertEqual(inbox.loadPhoto(for: "s1"), jpeg)
+    }
+
+    /// The share sheet's entry matches a photo shared in the app: "📸 Photo"
+    /// with no kind when no moment was chosen, and the caption normalised.
+    func testASharedPhotoWithNoMomentIsFilledInLikeTheApps() {
+        let entry = InboxedMoment.sharedPhoto(pairID: "p1", moment: nil, caption: "  sunset  ")
+
+        XCTAssertEqual(entry.kind.rawValue, "")
+        XCTAssertEqual(entry.emoji, "📸")
+        XCTAssertEqual(entry.label, "Photo")
+        XCTAssertEqual(entry.note, "sunset")
+        XCTAssertTrue(entry.hasPhoto)
+    }
+
+    func testASharedPhotoCarriesItsMomentAndACappedCaption() {
+        let walk = WidgetFeed.AvailableMoment(kind: EventKind(rawValue: "dog_walk"), emoji: "🐕", label: "Dog walk")
+
+        let entry = InboxedMoment.sharedPhoto(
+            pairID: "p1", moment: walk, caption: String(repeating: "a", count: PostNote.limit + 20)
+        )
+
+        XCTAssertEqual(entry.kind.rawValue, "dog_walk")
+        XCTAssertEqual(entry.label, "Dog walk")
+        XCTAssertEqual(entry.note.count, PostNote.limit)
+    }
+
+    func testAPhotoIDNeverBecomesAPath() {
+        XCTAssertEqual(inbox.photoURL(for: "../../etc/passwd").deletingLastPathComponent(), inbox.photoDirectory)
+    }
 }
