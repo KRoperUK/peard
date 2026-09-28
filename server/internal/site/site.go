@@ -132,6 +132,10 @@ func privacyHandler(e *core.RequestEvent) error {
 const repoURL = "https://github.com/KRoperUK/peard"
 
 // page wraps a page's body with the shared document head, styling and footer.
+//
+// The body goes inside <main> and the footer stays outside it, so a screen
+// reader can jump straight to the content or the links without walking a page
+// of anonymous divs.
 func page(title, description, body string) string {
 	return `<!doctype html>
 <html lang="en">
@@ -144,7 +148,9 @@ func page(title, description, body string) string {
 <style>` + sharedCSS + `</style>
 </head>
 <body>
+<main>
 ` + body + `
+</main>
   <footer class="site-footer">
     <div class="footer-rule" aria-hidden="true"><span>🍐</span></div>
     <nav class="footer-links" aria-label="Footer">
@@ -168,7 +174,12 @@ const sharedCSS = `
     --surface: #FFFFFF;
     --text-primary: #3B2E1A;
     --text-secondary: #7A6A53;
-    --accent: #6B8E23;
+    /* The app's olive (#6B8E23) is too light to carry text here: 3.5:1 as a
+       link on the page background and 3.8:1 under the white button label,
+       against WCAG AA's 4.5:1. This darker shade keeps the olive and clears
+       it — 5.4:1 on the background, 5.8:1 on white both ways. */
+    --accent: #4F6F1A;
+    --on-accent: #FFFFFF;
     --divider: #E8DFCC;
   }
   @media (prefers-color-scheme: dark) {
@@ -178,6 +189,9 @@ const sharedCSS = `
       --text-primary: #F2E9D8;
       --text-secondary: #C3B49B;
       --accent: #9BBF4F;
+      /* The dark-mode accent is light, so white on it was 2.1:1. The page's
+         own dark brown reads 8.4:1 on it. */
+      --on-accent: #1C1810;
       --divider: #3A3226;
     }
   }
@@ -210,7 +224,7 @@ const sharedCSS = `
     padding: 14px 28px;
     border-radius: 12px;
     background: var(--accent);
-    color: #fff;
+    color: var(--on-accent);
     font-size: 17px;
     font-weight: 600;
     text-decoration: none;
@@ -348,12 +362,12 @@ const sharedCSS = `
 `
 
 const homeBody = `
-  <div class="hero">
+  <header class="hero">
     <div class="pear" aria-hidden="true">🍐</div>
     <h1>Pear'd</h1>
     <p class="tagline">Moments and tallies shared with your favourite people — like a locket for photos, a counter for the beers, and a nod for the loo.</p>
     <a class="cta" href="` + testFlightURL + `">Try it on TestFlight</a>
-  </div>
+  </header>
   <div class="features">
     <div class="feature">
       <div class="emoji" aria-hidden="true">🍺</div>
@@ -428,8 +442,10 @@ func invitePage(code string, found bool) string {
 
 const privacyBody = `
   <div class="doc">
-    <h1>Privacy Policy</h1>
-    <div class="updated">Last updated 31 July 2026</div>
+    <header>
+      <h1>Privacy Policy</h1>
+      <div class="updated">Last updated 31 July 2026</div>
+    </header>
 
     <p>Pear'd ("we", "us") is a small, independently-run app for sharing moments and tallies with people you choose to connect with. This page explains what we collect, why, and how to get it deleted.</p>
 
