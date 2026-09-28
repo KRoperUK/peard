@@ -1,0 +1,195 @@
+import Foundation
+
+/// A moment an extension could not get to the server, waiting for the app to
+/// pick it up.
+///
+/// Not a `PendingSend`, because an extension cannot fill one in. It has no
+/// session, so it does not know the author; and a Control Centre button or a
+/// spoken "log a beer" names no connection at all, leaving the server to pick
+/// the liveliest. Both are decided by the app when it takes the moment in.
+public struct InboxedMoment: Codable, Hashable, Sendable, Identifiable {
+    /// The `client_id` the extension's own attempt went out with, reused as the
+    /// queued send's id. If that attempt did land and only the response was
+    /// lost, the app's retry is refused by the server's unique index instead of
+    /// logging the moment twice.
+    public let id: String
+    /// `nil` for "whichever connection is liveliest".
+    public let pairID: String?
+    public let kind: EventKind
+    public let emoji: String
+    public let label: String
+    /// When it was tapped, so it lands at that time rather than whenever the
+    /// app next came to the foreground.
+    public let queuedAt: Date
+
+    enum CodingKeys: String, CodingKey {
+        case id, kind, emoji, label
+        case pairID = "pair"
+        case queuedAt = "queued_at"
+    }
+
+    public init(
+        id: String = UUID().uuidString,
+        pairID: String?,
+        kind: EventKind,
+        emoji: String,
+        label: String,
+        queuedAt: Date = Date()
+    ) {
+        self.id = id
+        self.pairID = pairID
+        self.kind = kind
+        self.emoji = emoji
+        self.label = label
+        self.queuedAt = queuedAt
+    }
+
+    /// The send the app queues for it, or `nil` while there is no connection to
+    /// put it in.
+    ///
+    /// A moment that named no connection goes to `fallbackPairID`, which the app
+    /// passes as the connection it has selected. The server's "liveliest" rule
+    /// is not something the app can reproduce offline, and asking the server
+    /// first would put a network round trip in front of a queue whose whole job
+    /// is working without one. For somebody in a single connection — most
+    /// people — the two answers are the same.
+    public func pendingSend(authorID: String, fallbackPairID: String?) -> PendingSend? {
+        guard let pair = pairID ?? fallbackPairID, !pair.isEmpty else { return nil }
+        return PendingSend(
+            id: id,
+            pairID: pair,
+            authorID: authorID,
+            kind: kind,
+            emoji: emoji,
+            label: label,
+            queuedAt: queuedAt
+        )
+    }
+}
+
+/// A file in the App Group container that the extensions add to and the app
+/// empties into its `SendQueue`.
+///
+/// Separate from `pending-sends.json` on purpose. That file belongs to the
+/// app's `SendQueue`, which holds it in memory and rewrites it whole: an
+/// extension writing to it underneath would either be overwritten by the next
+/// save or would resurrect a send the queue had just delivered. Here the only
+/// writers are an append and a removal of named entries, both read-modify-write
+/// under an `NSFileCoordinator`, so neither side can drop the other's change.
+public struct MomentInbox: Sendable {
+    public let url: URL
+
+    public init(url: URL) {
+        self.url = url
+    }
+
+    /// Beside the send queue's file, with the same fallback when the container
+    /// is unavailable.
+    public static func appGroup(
+        identifier: String = SharedStore.appGroupIdentifier,
+        fileManager: FileManager = .default
+    ) -> MomentInbox {
+        let directory = fileManager.containerURL(forSecurityApplicationGroupIdentifier: identifier)
+            ?? fileManager.urls(for: .applicationSupportDirectory, in: .userDomainMask).first
+            ?? URL(fileURLWithPath: NSTemporaryDirectory())
+        return MomentInbox(url: directory.appendingPathComponent("extension-inbox.json"))
+    }
+
+    /// Everything waiting, oldest first.
+    public func load() -> [InboxedMoment] {
+        var moments: [InboxedMoment] = []
+        coordinate(.reading) { moments = read() }
+        return moments
+    }
+
+    /// Adds a moment. One already there under the same id is left alone, so a
+    /// retried intent cannot inbox the same tap twice.
+    @discardableResult
+    public func append(_ moment: InboxedMoment) -> Bool {
+        var written = false
+        coordinate(.writing) {
+            var moments = read()
+            guard !moments.contains(where: { $0.id == moment.id }) else {
+                written = true
+                return
+            }
+            moments.append(moment)
+            written = write(moments)
+        }
+        return written
+    }
+
+    /// Removes the named entries, keeping anything appended since they were
+    /// read.
+    public func remove(ids: Set<String>) {
+        guard !ids.isEmpty else { return }
+        coordinate(.writing) {
+            write(read().filter { !ids.contains($0.id) })
+        }
+    }
+
+    // MARK: File access
+
+    private enum Access { case reading, writing }
+
+    /// Runs `body` while holding the coordinator's claim on the file, so an
+    /// extension's append and the app's removal are never interleaved.
+    private func coordinate(_ access: Access, _ body: () -> Void) {
+        let coordinator = NSFileCoordinator()
+        var error: NSError?
+        switch access {
+        case .reading:
+            coordinator.coordinate(readingItemAt: url, options: [], error: &error) { _ in body() }
+        case .writing:
+            coordinator.coordinate(writingItemAt: url, options: [], error: &error) { _ in body() }
+        }
+    }
+
+    private func read() -> [InboxedMoment] {
+        guard let data = try? Data(contentsOf: url) else { return [] }
+        return (try? JSONDecoder.peard.decode([InboxedMoment].self, from: data)) ?? []
+    }
+
+    @discardableResult
+    private func write(_ moments: [InboxedMoment]) -> Bool {
+        if moments.isEmpty {
+            try? FileManager.default.removeItem(at: url)
+            return true
+        }
+        guard let data = try? JSONEncoder.peard.encode(moments) else { return false }
+        try? FileManager.default.createDirectory(
+            at: url.deletingLastPathComponent(),
+            withIntermediateDirectories: true
+        )
+        // `.atomic` for the same reason as the send queue: a crash mid-write
+        // must not leave a truncated file that loses every moment in it.
+        return (try? data.write(to: url, options: .atomic)) != nil
+    }
+}
+
+public extension SendQueue {
+    /// Moves what the extensions left in `inbox` into the queue, returning how
+    /// many were added.
+    ///
+    /// Queued and persisted first, removed from the inbox second: a crash in
+    /// between leaves a moment in both, and the next merge skips it because the
+    /// queue already holds its id. The reverse order would lose it. Anything
+    /// with no connection to go to yet stays in the inbox for a later merge.
+    @discardableResult
+    func absorb(_ inbox: MomentInbox, authorID: String, fallbackPairID: String?) async -> Int {
+        let waiting = inbox.load()
+        guard !waiting.isEmpty, !authorID.isEmpty else { return 0 }
+
+        var taken: Set<String> = []
+        var added = 0
+        for moment in waiting {
+            guard let send = moment.pendingSend(authorID: authorID, fallbackPairID: fallbackPairID) else { continue }
+            taken.insert(moment.id)
+            guard !pending.contains(where: { $0.id == send.id }) else { continue }
+            await enqueue(send)
+            added += 1
+        }
+        inbox.remove(ids: taken)
+        return added
+    }
+}

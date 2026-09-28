@@ -10,15 +10,35 @@ import WidgetKit
 /// can be typed, and there is nowhere to type one from a widget button or a
 /// spoken phrase. The gesture is the whole thing, so it commits immediately.
 public enum MomentLogging {
-    /// Logs a moment, and reports whether the server took it.
+    /// What became of a log.
+    public enum Outcome: Sendable, Equatable {
+        /// The server took it.
+        case logged
+        /// It could not reach the server and is waiting in the `MomentInbox`
+        /// for the app to send.
+        case queued
+        /// Signed out, refused by the server, or unreachable with nowhere to
+        /// keep it. Nothing will arrive.
+        case failed
+    }
+
+    /// Logs a moment, and reports what became of it.
     ///
     /// The result exists for the Messages extension, which — unlike a widget
     /// button or a spoken phrase — puts a message into somebody's conversation
     /// saying the moment was logged. It used to insert that bubble whether or
     /// not anything had been logged, so a tap with no signal produced a bubble
-    /// asserting something untrue into a chat with another person. Callers with
-    /// nowhere to show an error still ignore it, which is what the widget and
-    /// Siri do.
+    /// asserting something untrue into a chat with another person. Siri and
+    /// Shortcuts read it too, to say what happened.
+    ///
+    /// A failure worth retrying — no signal, a timeout, a server that is down —
+    /// goes into `inbox` rather than being dropped. This used to swallow it, so
+    /// the widget button on a train looked as if it had worked and nothing ever
+    /// arrived. The app takes the inbox into its send queue the next time it
+    /// launches or comes to the foreground. `inbox` is `nil` for the Messages
+    /// extension, which has already told the person the log failed and so must
+    /// not deliver it later behind their back.
+    ///
     /// `store` is injected so the not-signed-in path can be tested. It defaults
     /// to the real App Group container, which is what every caller passes.
     @discardableResult
@@ -27,17 +47,17 @@ public enum MomentLogging {
         pairID: String?,
         emoji: String,
         label: String,
-        store: SharedStore = .shared
-    ) async -> Bool {
+        store: SharedStore = .shared,
+        inbox: MomentInbox? = .appGroup()
+    ) async -> Outcome {
         guard
             let token = store.widgetToken, !token.isEmpty,
             let baseURL = store.apiBaseURL
         else {
             // Not signed in: nothing to do, and no way to say so from a widget
-            // button or Siri. Reloading gets the timeline back to its
-            // "pear up" state.
+            // button. Reloading gets the timeline back to its "pear up" state.
             WidgetCenter.shared.reloadAllTimelines()
-            return false
+            return .failed
         }
 
         // Shows an immediate "logged" acknowledgement (see PearEntry.pendingLog)
@@ -48,21 +68,55 @@ public enum MomentLogging {
         store.pendingWidgetLog = pending
         WidgetCenter.shared.reloadAllTimelines()
 
+        // Chosen here rather than left to `logWidgetMoment`'s default so that an
+        // inboxed retry carries the same id as this attempt. See `InboxedMoment.id`.
+        let clientID = UUID().uuidString
         let api = APIClient(baseURL: baseURL)
-        var accepted = false
+        let outcome: Outcome
         do {
-            try await api.logWidgetMoment(token: token, kind: kind, pairID: pairID)
-            accepted = true
+            try await api.logWidgetMoment(token: token, kind: kind, pairID: pairID, clientID: clientID)
+            outcome = .logged
         } catch {
-            // A failed tap is not worth an error dialog over a home-screen button.
-            // The reload below redraws from the server, so the widget never shows a
-            // moment that did not land.
+            // Only a failure that waiting could fix is kept. A 400 or 403 — a
+            // moment the connection does not have, a connection somebody has
+            // left — would fail the same way from the app.
+            if let inbox, case .retryable = SendFailure.classify(error) {
+                let moment = InboxedMoment(
+                    id: clientID, pairID: pairID, kind: kind, emoji: emoji, label: label, queuedAt: pending.at
+                )
+                outcome = inbox.append(moment) ? .queued : .failed
+            } else {
+                outcome = .failed
+            }
         }
         // Kept, not cleared: the widget shows the outcome for a few seconds and
         // schedules its own return to normal (see PendingWidgetLog).
-        store.pendingWidgetLog = pending.finished(accepted ? .logged : .failed)
+        store.pendingWidgetLog = pending.finished(outcome.widgetOutcome)
         WidgetCenter.shared.reloadAllTimelines()
-        return accepted
+        return outcome
+    }
+}
+
+extension MomentLogging.Outcome {
+    var widgetOutcome: PendingWidgetLog.Outcome {
+        switch self {
+        case .logged: return .logged
+        case .queued: return .queued
+        case .failed: return .failed
+        }
+    }
+
+    /// What Siri says, and Shortcuts shows, once a logging intent has run.
+    ///
+    /// Without one Siri answered "log a beer" with nothing to say whether it
+    /// had, and on a train it had not. The emoji and label are data
+    /// interpolated into a literal template, so the phrase stays translatable.
+    public func dialog(emoji: String, label: String) -> IntentDialog {
+        switch self {
+        case .logged: return "Logged \(emoji) \(label)"
+        case .queued: return "Saved — it'll send when you're back online"
+        case .failed: return "Couldn't log \(emoji) \(label). Open Pear'd to try again."
+        }
     }
 }
 
@@ -104,9 +158,11 @@ public struct LogMomentIntent: AppIntent {
         self.label = label
     }
 
-    public func perform() async throws -> some IntentResult {
-        await MomentLogging.perform(kind: EventKind(rawValue: kind), pairID: pairID, emoji: emoji, label: label)
-        return .result()
+    public func perform() async throws -> some IntentResult & ProvidesDialog {
+        let outcome = await MomentLogging.perform(
+            kind: EventKind(rawValue: kind), pairID: pairID, emoji: emoji, label: label
+        )
+        return .result(dialog: outcome.dialog(emoji: emoji, label: label))
     }
 }
 
@@ -184,9 +240,11 @@ public struct LogBuiltinMomentIntent: AppIntent {
         Summary("Log a \(\.$kind)")
     }
 
-    public func perform() async throws -> some IntentResult {
+    public func perform() async throws -> some IntentResult & ProvidesDialog {
         let descriptor = kind.descriptor
-        await MomentLogging.perform(kind: kind.eventKind, pairID: nil, emoji: descriptor.emoji, label: descriptor.label)
-        return .result()
+        let outcome = await MomentLogging.perform(
+            kind: kind.eventKind, pairID: nil, emoji: descriptor.emoji, label: descriptor.label
+        )
+        return .result(dialog: outcome.dialog(emoji: descriptor.emoji, label: descriptor.label))
     }
 }

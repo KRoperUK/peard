@@ -301,6 +301,7 @@ struct PearWidgetEntryView: View {
         switch log.outcome {
         case nil: return "Logging \(log.label)…"
         case .logged: return "\(log.label) logged"
+        case .queued: return "\(log.label) saved — sends when online"
         case .failed: return "Couldn't log \(log.label)"
         }
     }
@@ -309,6 +310,7 @@ struct PearWidgetEntryView: View {
         switch outcome {
         case nil: return nil
         case .logged: return "checkmark.circle.fill"
+        case .queued: return "clock.fill"
         case .failed: return "exclamationmark.circle.fill"
         }
     }

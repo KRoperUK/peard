@@ -66,9 +66,9 @@ struct LogPublishedMomentIntent: AppIntent {
         }
     }
 
-    func perform() async throws -> some IntentResult {
+    func perform() async throws -> some IntentResult & ProvidesDialog {
         let option = MomentOption(encoded: moment)
-        await MomentLogging.perform(
+        let outcome = await MomentLogging.perform(
             kind: EventKind(rawValue: option.kind),
             // The moment's own connection, not the parameter: they agree
             // whenever the picker filled it in, and the moment is the one that
@@ -78,7 +78,7 @@ struct LogPublishedMomentIntent: AppIntent {
             emoji: option.emoji,
             label: option.label
         )
-        return .result()
+        return .result(dialog: outcome.dialog(emoji: option.emoji, label: option.label))
     }
 }
 
