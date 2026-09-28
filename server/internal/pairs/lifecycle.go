@@ -35,6 +35,10 @@ import (
 // migration. That hole is closed, but an orphan still keeps everybody's moments,
 // notes and photos on disk for a connection that no longer exists, and nobody is
 // left who could delete them.
+//
+// The same four doors can take away a group's only owner, so the hook also
+// keeps a second invariant: a connection that still has members has an owner.
+// See ensureOwner.
 func registerLifecycle(app core.App) {
 	// OnRecordDeleteExecute rather than OnRecordAfterDeleteSuccess: the success
 	// hook fires only once the delete has committed, which would leave the pair
@@ -54,7 +58,11 @@ func registerLifecycle(app core.App) {
 			if err := e.Next(); err != nil {
 				return err
 			}
-			_, err := deletePairIfEmpty(txApp, pairID)
+			gone, err := deletePairIfEmpty(txApp, pairID)
+			if err != nil || gone {
+				return err
+			}
+			_, err = ensureOwner(txApp, pairID)
 			return err
 		})
 	})
@@ -84,6 +92,31 @@ func DeleteMemberlessPairs(app core.App) (int, error) {
 		}
 	}
 	return deleted, nil
+}
+
+// BackfillGroupOwners promotes a member in every connection that has members
+// but no owner, returning how many it promoted.
+//
+// registerLifecycle hands the role on from here on; this repairs the groups
+// whose owner left or deleted their account before it did. Used by the
+// 1786838400_peard_backfill_group_owners migration.
+func BackfillGroupOwners(app core.App) (int, error) {
+	pairs, err := app.FindAllRecords("pairs")
+	if err != nil {
+		return 0, fmt.Errorf("list pairs: %w", err)
+	}
+
+	promoted := 0
+	for _, pair := range pairs {
+		did, err := ensureOwner(app, pair.Id)
+		if err != nil {
+			return promoted, err
+		}
+		if did {
+			promoted++
+		}
+	}
+	return promoted, nil
 }
 
 // DeleteExpiredInvites removes every unaccepted invite whose expiry has passed,
@@ -164,6 +197,54 @@ func deletePairIfEmpty(app core.App, pairID string) (bool, error) {
 
 	if err := app.Delete(pair); err != nil {
 		return false, fmt.Errorf("delete emptied pair %s: %w", pairID, err)
+	}
+	return true, nil
+}
+
+// ensureOwner promotes the longest-standing member of a connection that has
+// members but no owner, reporting whether it promoted anybody.
+//
+// Only the owner can remove somebody (see removeHandler), and the role is only
+// ever given to whoever created the connection. Without this, an owner leaving
+// or deleting their account left a group nobody could remove anyone from.
+// Longest-standing because it is the one choice every remaining member can
+// predict, and it needs nothing from people who may not be around to give it.
+//
+// Called after every membership deletion rather than only when the departing
+// row was the owner's: it costs one count, and it also repairs a group that
+// lost its owner some other way.
+func ensureOwner(app core.App, pairID string) (bool, error) {
+	if pairID == "" {
+		return false, nil
+	}
+	if pair, err := app.FindRecordById("pairs", pairID); err != nil || pair == nil {
+		// The pair's own cascade, as in deletePairIfEmpty: the remaining members
+		// are on their way out too, and there is nothing left to own.
+		return false, nil
+	}
+
+	owners, err := app.CountRecords("pair_members", dbx.HashExp{"pair": pairID, "role": "owner"})
+	if err != nil {
+		return false, fmt.Errorf("count owners of pair %s: %w", pairID, err)
+	}
+	if owners > 0 {
+		return false, nil
+	}
+
+	// `id` breaks ties between memberships created in the same millisecond, so
+	// the choice is at least stable.
+	eldest, err := app.FindRecordsByFilter("pair_members",
+		"pair = {:pair}", "created,id", 1, 0, dbx.Params{"pair": pairID})
+	if err != nil {
+		return false, fmt.Errorf("find eldest member of pair %s: %w", pairID, err)
+	}
+	if len(eldest) == 0 {
+		return false, nil
+	}
+
+	eldest[0].Set("role", "owner")
+	if err := app.Save(eldest[0]); err != nil {
+		return false, fmt.Errorf("promote owner of pair %s: %w", pairID, err)
 	}
 	return true, nil
 }

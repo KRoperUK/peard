@@ -483,3 +483,139 @@ func TestDeleteMemberlessPairsIsIdempotent(t *testing.T) {
 	}
 	w.assertPresent(t, "alice's connection", "pairs", w.flatmates.Id)
 }
+
+// --- handing on ownership ---------------------------------------------------
+
+// joinedAt backdates a membership, so which member has been there longest does
+// not depend on two rows landing in different milliseconds.
+func (w *lifeWorld) joinedAt(t *testing.T, membership *core.Record, at time.Time) {
+	t.Helper()
+	_, err := w.app.DB().NewQuery("UPDATE {{pair_members}} SET [[created]] = {:at} WHERE [[id]] = {:id}").
+		Bind(dbx.Params{"at": at.UTC().Format(types.DefaultDateLayout), "id": membership.Id}).
+		Execute()
+	if err != nil {
+		t.Fatalf("backdate membership: %v", err)
+	}
+}
+
+func (w *lifeWorld) role(t *testing.T, pair, user *core.Record) string {
+	t.Helper()
+	membership, err := w.app.FindFirstRecordByFilter("pair_members",
+		"pair = {:pair} && user = {:user}",
+		dbx.Params{"pair": pair.Id, "user": user.Id})
+	if err != nil {
+		t.Fatalf("find membership: %v", err)
+	}
+	return membership.GetString("role")
+}
+
+func TestOwnerLeavingHandsOwnershipToLongestStandingMember(t *testing.T) {
+	w := newLifeWorld(t)
+	carol, carolTok := w.newUser(t, "carol@example.com", "Carol Clark")
+	bobMembership := w.addMember(t, w.flatmates, w.bob, "member")
+	carolMembership := w.addMember(t, w.flatmates, carol, "member")
+	// Carol joined first even though her row was written second, so the choice
+	// is shown to follow `created` rather than insertion order.
+	w.joinedAt(t, carolMembership, time.Now().Add(-48*time.Hour))
+	w.joinedAt(t, bobMembership, time.Now().Add(-24*time.Hour))
+
+	status, body := w.do(t, http.MethodPost, "/api/peard/pairs/leave", w.aliceTok,
+		`{"pair":"`+w.flatmates.Id+`"}`)
+	if status != http.StatusOK {
+		t.Fatalf("leave: status %d, body %s", status, body)
+	}
+
+	if got := w.role(t, w.flatmates, carol); got != "owner" {
+		t.Errorf("carol's role after the owner left = %q, want owner", got)
+	}
+	if got := w.role(t, w.flatmates, w.bob); got != "member" {
+		t.Errorf("bob's role after the owner left = %q, want member", got)
+	}
+
+	// The point of the role: the group can still remove somebody.
+	status, body = w.do(t, http.MethodPost, "/api/peard/pairs/remove", carolTok,
+		`{"pair":"`+w.flatmates.Id+`","user":"`+w.bob.Id+`"}`)
+	if status != http.StatusOK {
+		t.Fatalf("remove by the new owner: status %d, body %s", status, body)
+	}
+	w.assertPresent(t, "the connection carol is still in", "pairs", w.flatmates.Id)
+}
+
+func TestOwnerDeletingAccountHandsOwnershipOn(t *testing.T) {
+	w := newLifeWorld(t)
+	w.addMember(t, w.flatmates, w.bob, "member")
+
+	alice, err := w.app.FindRecordById("users", w.alice.Id)
+	if err != nil {
+		t.Fatalf("reload alice: %v", err)
+	}
+	if err := w.app.Delete(alice); err != nil {
+		t.Fatalf("delete alice: %v", err)
+	}
+
+	w.assertPresent(t, "the connection bob is still in", "pairs", w.flatmates.Id)
+	if got := w.role(t, w.flatmates, w.bob); got != "owner" {
+		t.Errorf("bob's role after the owner deleted their account = %q, want owner", got)
+	}
+}
+
+func TestMemberLeavingDoesNotChangeOwner(t *testing.T) {
+	w := newLifeWorld(t)
+	carol, carolTok := w.newUser(t, "carol@example.com", "Carol Clark")
+	bobMembership := w.addMember(t, w.flatmates, w.bob, "member")
+	w.addMember(t, w.flatmates, carol, "member")
+	w.joinedAt(t, bobMembership, time.Now().Add(-48*time.Hour))
+
+	status, body := w.do(t, http.MethodPost, "/api/peard/pairs/leave", carolTok,
+		`{"pair":"`+w.flatmates.Id+`"}`)
+	if status != http.StatusOK {
+		t.Fatalf("leave: status %d, body %s", status, body)
+	}
+
+	if got := w.role(t, w.flatmates, w.alice); got != "owner" {
+		t.Errorf("alice's role = %q, want owner", got)
+	}
+	if got := w.role(t, w.flatmates, w.bob); got != "member" {
+		t.Errorf("bob's role = %q, want member: somebody else leaving must not promote anyone", got)
+	}
+}
+
+func TestBackfillGroupOwnersPromotesOnlyWhereNobodyOwns(t *testing.T) {
+	w := newLifeWorld(t)
+	carol, _ := w.newUser(t, "carol@example.com", "Carol Clark")
+
+	// A group of the kind the migration exists to repair: its owner went before
+	// the hook did, leaving two ordinary members. Written straight to the model.
+	stranded := w.newPair(t, "Stranded")
+	bobMembership := w.addMember(t, stranded, w.bob, "member")
+	carolMembership := w.addMember(t, stranded, carol, "member")
+	w.joinedAt(t, carolMembership, time.Now().Add(-48*time.Hour))
+	w.joinedAt(t, bobMembership, time.Now().Add(-24*time.Hour))
+
+	promoted, err := pairs.BackfillGroupOwners(w.app)
+	if err != nil {
+		t.Fatalf("backfill: %v", err)
+	}
+	if promoted != 1 {
+		t.Errorf("owners promoted = %d, want 1", promoted)
+	}
+	if got := w.role(t, stranded, carol); got != "owner" {
+		t.Errorf("carol's role = %q, want owner", got)
+	}
+	if got := w.role(t, stranded, w.bob); got != "member" {
+		t.Errorf("bob's role = %q, want member", got)
+	}
+	// Connections that already have an owner are left exactly as they are.
+	if got := w.role(t, w.flatmates, w.alice); got != "owner" {
+		t.Errorf("alice's role in her own connection = %q, want owner", got)
+	}
+
+	// Migrations may be re-run, so a second pass must find nothing to do.
+	promoted, err = pairs.BackfillGroupOwners(w.app)
+	if err != nil {
+		t.Fatalf("second backfill: %v", err)
+	}
+	if promoted != 0 {
+		t.Errorf("owners promoted on the second pass = %d, want 0", promoted)
+	}
+}
