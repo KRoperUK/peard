@@ -161,6 +161,14 @@ func rules() []core.RateLimitRule {
 		// a few times, a script tries thousands.
 		{Label: "/api/peard/pairs/accept", MaxRequests: 10, Duration: 600},
 
+		// The invite page, which tells a live code from a dead one and needs no
+		// account, so it is the same question as accepting and gets the same
+		// budget. Going over does not refuse the page: the site stops looking
+		// the code up and shows every code the same way (see site's
+		// unverifiedWhenLimited), so link-preview fetchers and people sharing
+		// an address still get a page, and a guesser gets nothing from it.
+		{Label: "/c/", MaxRequests: 10, Duration: 600},
+
 		// A full export of one account. Expensive, and wanted about once ever.
 		{Label: "/api/peard/export", MaxRequests: 3, Duration: 60},
 

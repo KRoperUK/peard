@@ -25,6 +25,7 @@ package pairs
 
 import (
 	"crypto/rand"
+	"database/sql"
 	"errors"
 	"net/http"
 	"strings"
@@ -170,6 +171,26 @@ func retireOldestInvites(app core.App, inviter string) error {
 		}
 	}
 	return nil
+}
+
+// InviteIsLive reports whether accepting code would get past the lookup in
+// acceptHandler right now: a pending invite that has not yet run out. It says
+// nothing about who sent it or where it leads, because its only caller is the
+// public invite page, which is served to anybody.
+//
+// A missing row is an answer, not a failure; any other error is returned so the
+// caller can decide what an unknown state should look like.
+func InviteIsLive(app core.App, code string) (bool, error) {
+	inv, err := app.FindFirstRecordByFilter("pair_invites",
+		"code = {:code} && status = 'pending'", dbx.Params{"code": code})
+	if errors.Is(err, sql.ErrNoRows) {
+		return false, nil
+	}
+	if err != nil {
+		return false, err
+	}
+	exp := inv.GetDateTime("expires")
+	return exp.IsZero() || exp.Time().After(time.Now()), nil
 }
 
 func acceptHandler(app core.App) func(e *core.RequestEvent) error {

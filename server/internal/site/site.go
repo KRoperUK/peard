@@ -6,11 +6,17 @@ package site
 
 import (
 	_ "embed"
+	"errors"
 	"net/http"
 	"regexp"
 	"strings"
 
+	"github.com/pocketbase/pocketbase/apis"
 	"github.com/pocketbase/pocketbase/core"
+	"github.com/pocketbase/pocketbase/tools/hook"
+	"github.com/pocketbase/pocketbase/tools/router"
+
+	"peard/internal/pairs"
 )
 
 const (
@@ -29,8 +35,15 @@ func Register(app core.App) {
 		// nothing else: PocketBase's /api/ and the /_/ superuser UI are
 		// registered outside it, and the UI in particular needs the scripts the
 		// policy below forbids.
+		//
+		// pageHeaders runs ahead of PocketBase's rate limiter so that a page the
+		// limiter turns away still goes out with the headers — for an invite page
+		// above all, whose code must never be cached.
 		pages := se.Router.Group("")
-		pages.BindFunc(pageHeaders)
+		pages.Bind(&hook.Handler[*core.RequestEvent]{
+			Func:     pageHeaders,
+			Priority: apis.DefaultRateLimitMiddlewarePriority - 2,
+		})
 
 		// "/{$}" is the root and nothing else. A bare "/" is a prefix match in
 		// net/http, so the home page used to answer every unknown path with a
@@ -40,7 +53,10 @@ func Register(app core.App) {
 		pages.GET("/", notFoundHandler)
 		pages.GET("/privacy", privacyHandler)
 		pages.GET("/support", supportHandler)
-		pages.GET("/c/{code}", inviteHandler)
+		pages.GET("/c/{code}", inviteHandler).Bind(&hook.Handler[*core.RequestEvent]{
+			Func:     unverifiedWhenLimited,
+			Priority: apis.DefaultRateLimitMiddlewarePriority - 1,
+		})
 		pages.GET("/.well-known/apple-app-site-association", associationHandler)
 		pages.GET("/apple-touch-icon.png", imageHandler(appleTouchIcon))
 		pages.GET("/og.png", imageHandler(previewImage))
@@ -124,13 +140,41 @@ func associationHandler(e *core.RequestEvent) error {
 // inviteHandler is what an invite link resolves to for somebody who cannot open
 // it in the app.
 //
-// With the app installed iOS never asks for this page — it hands the URL
-// straight to Pear'd. So everything below is written for the other case: the
-// person has been sent a link by a friend, has no app, and needs to know what
-// this is and what to do next. The code is repeated in full because the
-// TestFlight round trip loses the link, and typing it in afterwards is the only
-// way back.
+// With the app installed iOS usually never asks for this page — it hands the
+// URL straight to Pear'd. So everything below is written for the other cases:
+// the person has been sent a link by a friend and has no app, or has the app
+// but opened the link somewhere that doesn't pass it on, like an in-app
+// browser. The code is repeated in full because the TestFlight round trip loses
+// the link, and typing it in afterwards is the only way back.
 func inviteHandler(e *core.RequestEvent) error {
+	return invite(e, true)
+}
+
+// unverifiedWhenLimited serves the invite page without looking its code up once
+// the visitor is over the /c/ rate limit (see the limits package).
+//
+// The lookup is what makes the page worth guarding: "that invite has expired"
+// against "you've been invited" is a yes/no answer to "is this code live?",
+// which is exactly what somebody guessing codes wants, and this page needs no
+// account. The accept route's limit is no protection here, because a guesser
+// could simply ask the page instead.
+//
+// Past the limit the page is served as it always was, before it could tell the
+// difference: every well-formed code gets "you've been invited", which tells a
+// guesser nothing. That is kinder than PocketBase's JSON 429 for the people who
+// could plausibly go over — a link-preview fetcher shared by a whole messaging
+// service, or a household behind one address — who still get a page that
+// works, and the page itself costs nothing to render.
+func unverifiedWhenLimited(e *core.RequestEvent) error {
+	err := e.Next()
+	var apiErr *router.ApiError
+	if errors.As(err, &apiErr) && apiErr.Status == http.StatusTooManyRequests {
+		return invite(e, false)
+	}
+	return err
+}
+
+func invite(e *core.RequestEvent, lookup bool) error {
 	code := strings.ToUpper(strings.TrimSpace(e.Request.PathValue("code")))
 	// Codes are short and alphanumeric. Anything else is somebody poking at the
 	// URL, and reflecting it into the page would be an invitation of a
@@ -139,7 +183,18 @@ func inviteHandler(e *core.RequestEvent) error {
 		return e.HTML(http.StatusNotFound, page(e, pageMeta{
 			title:       "Invite not found — Pear'd",
 			description: "That invite link doesn't look right.",
-		}, invitePage("", false)))
+		}, invitePage("", inviteMalformed)))
+	}
+	if lookup {
+		// A lookup that fails for any reason other than the code not being
+		// there shows the page as it was before lookups existed, rather than
+		// telling somebody their perfectly good invite is dead.
+		if live, err := pairs.InviteIsLive(e.App, code); err == nil && !live {
+			return e.HTML(http.StatusNotFound, page(e, pageMeta{
+				title:       "Invite expired — Pear'd",
+				description: "This invite has expired or been used. Ask for a new one.",
+			}, invitePage("", inviteDead)))
+		}
 	}
 	return e.HTML(http.StatusOK, page(e, pageMeta{
 		title:       "Join on Pear'd 🍐",
@@ -149,7 +204,7 @@ func inviteHandler(e *core.RequestEvent) error {
 		// person sees, before they've tapped anything, so it says what the
 		// link is rather than naming the app.
 		previewTitle: "You've been invited to Pear'd",
-	}, invitePage(code, true)))
+	}, invitePage(code, inviteLive)))
 }
 
 var inviteCodePattern = regexp.MustCompile(`^[A-Z0-9]{4,12}$`)
@@ -505,6 +560,12 @@ const sharedCSS = `
     user-select: all;
   }
   .tagline.small { font-size: 15px; margin-top: 24px; }
+  .tagline.small + .cta { margin-top: -16px; }
+  .cta.secondary {
+    background: var(--surface);
+    color: var(--accent);
+    border: 1px solid var(--accent);
+  }
 `
 
 const homeBody = `
@@ -553,8 +614,9 @@ const notFoundBody = `
 // somebody who taps "Try it on TestFlight" first and reads afterwards has lost
 // the link, and the code is the only way back. Saying "you'll need the code
 // again" *before* the button is what makes that recoverable.
-func invitePage(code string, found bool) string {
-	if !found {
+func invitePage(code string, state inviteState) string {
+	switch state {
+	case inviteMalformed:
 		return `
   <div class="hero">
     <div class="pear" aria-hidden="true">🍐</div>
@@ -563,7 +625,22 @@ func invitePage(code string, found bool) string {
     <a class="cta" href="/">About Pear'd</a>
   </div>
 `
+	case inviteDead:
+		return `
+  <div class="hero">
+    <div class="pear" aria-hidden="true">🍐</div>
+    <h1>This invite has expired or been used</h1>
+    <p class="tagline">Ask whoever sent it for a new one. Each invite works once, and only for 24 hours.</p>
+    <a class="cta" href="/">About Pear'd</a>
+  </div>
+`
 	}
+	// The custom scheme rather than this page's own https URL: tapping a
+	// universal link on the page it would open is exactly what iOS declines to
+	// hand to the app. Nothing on the page is scripted, so there is no attempt
+	// to detect whether the app is installed first; without it, Safari says it
+	// cannot open the address, which is why the button is second and says who
+	// it is for.
 	return `
   <div class="hero">
     <div class="pear" aria-hidden="true">🍐</div>
@@ -581,10 +658,21 @@ func invitePage(code string, found bool) string {
     </div>
 
     <a class="cta" href="` + testFlightURL + `">Join the Pear'd beta</a>
-    <p class="tagline small">Already have Pear'd? Open the app and enter <strong>` + code + `</strong> — or tap this link again from your phone.</p>
+    <p class="tagline small">Already have Pear'd?</p>
+    <a class="cta secondary" href="peard://pair/` + code + `">Open in Pear'd</a>
+    <p class="tagline small">Or open the app and enter <strong>` + code + `</strong>.</p>
   </div>
 `
 }
+
+// inviteState is which of the invite page's three faces to show.
+type inviteState int
+
+const (
+	inviteLive inviteState = iota
+	inviteDead
+	inviteMalformed
+)
 
 const privacyBody = `
   <div class="doc">
