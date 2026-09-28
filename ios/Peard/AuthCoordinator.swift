@@ -74,11 +74,12 @@ final class AuthCoordinator {
         do {
             let response: AuthResponse = try await api.post(
                 path: "/api/peard/auth/apple",
-                fields: [
-                    "identity_token": identityToken,
-                    "nonce": rawNonce,
-                    "display_name": displayName,
-                ]
+                fields: AppleSignInRequest.fields(
+                    identityToken: identityToken,
+                    authorizationCode: credential.authorizationCode,
+                    nonce: rawNonce,
+                    displayName: displayName
+                )
             )
             return Session(token: response.token, user: response.record)
         } catch let error as APIError {

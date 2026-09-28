@@ -60,6 +60,11 @@ services:
       - PEARD_APP_URL=${PEARD_APP_URL:-https://peard.kroper.uk}
       - PEARD_APPLE_AUDIENCE=${PEARD_APPLE_AUDIENCE:-com.peard.app}
       - PEARD_APPLE_ERASE_ON_ACCOUNT_DELETE=${PEARD_APPLE_ERASE_ON_ACCOUNT_DELETE:-false}
+      # Sign in with Apple key, for revoking a deleted account's Apple
+      # authorisation. Unset leaves revocation off; see server/.env.example.
+      - PEARD_APPLE_TEAM_ID
+      - PEARD_APPLE_KEY_ID
+      - PEARD_APPLE_PRIVATE_KEY
 
       # APNs. Listed without a default so an unset one is absent from the
       # container rather than empty, which is how push detects "not configured".

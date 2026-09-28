@@ -291,11 +291,16 @@ the thumbnail the notification service extension cached in the App Group under
 Apple sign-in request body:
 
 ```json
-{ "identity_token": "<apple JWT>", "nonce": "<raw nonce>", "display_name": "Ada Lovelace" }
+{ "identity_token": "<apple JWT>", "authorization_code": "<one-time code>", "nonce": "<raw nonce>", "display_name": "Ada Lovelace" }
 ```
 
 `nonce` is the raw value; the request sent to Apple used its lower-case hex
-SHA-256. Google code exchange body:
+SHA-256. `authorization_code` is the credential's `authorizationCode` as UTF-8
+and is optional: when it is present and the server has a Sign in with Apple key
+(`PEARD_APPLE_TEAM_ID`, `PEARD_APPLE_KEY_ID`, `PEARD_APPLE_PRIVATE_KEY`), the
+server exchanges it for a refresh token and revokes that when the account is
+deleted. A missing key or a failed exchange never fails the sign-in, and the
+response is the same either way; the refresh token never leaves the server. Google code exchange body:
 
 ```json
 { "provider": "google", "code": "...", "codeVerifier": "...", "redirectURL": "peard://auth/google" }
@@ -582,6 +587,11 @@ record is the whole act: every relation pointing at a user — `pair_members`,
 connection's own posts, reactions and moment kinds through the `pair_members`
 delete hook. A connection that still has other members keeps its shared history;
 only the deleted account's moments in it go.
+
+When the account signed in with Apple and the server holds a refresh token for it
+(see the Apple sign-in body under Auth responses), deleting the record also sends
+that token to Apple's `/auth/revoke`, after the delete has succeeded. A failed or
+unconfigured revocation is logged and never fails the deletion.
 
 The two together are the self-serve half of the privacy policy's promise: take a
 copy, then leave, without asking anybody.

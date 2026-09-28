@@ -5,6 +5,9 @@
 // by verified email — email is the linking identity across providers — and
 // returns a PocketBase auth token + user record.
 //
+// When the request also carries the authorization code, it is exchanged for a
+// refresh token that account deletion later revokes. See apple_tokens.go.
+//
 // POST /api/peard/auth/apple/notifications receives Apple's server-to-server
 // notifications (the endpoint configured on the App ID). Apple posts a signed
 // JWT there when a user disables mail forwarding, revokes the app's access, or
@@ -49,6 +52,7 @@ func Register(app core.App) {
 		se.Router.POST(appleNotificationPath, appleNotificationHandler(app))
 		return se.Next()
 	})
+	registerAppleRevocation(app)
 }
 
 // appleAudience is the `aud` both the identity token and the server-to-server
@@ -67,6 +71,10 @@ func appleSignInHandler(app core.App) func(e *core.RequestEvent) error {
 			IdentityToken string `json:"identity_token" form:"identity_token"`
 			Nonce         string `json:"nonce" form:"nonce"`
 			DisplayName   string `json:"display_name" form:"display_name"`
+			// The one-time code from the same authorisation, exchanged for the
+			// refresh token that account deletion revokes. Optional: older
+			// builds do not send it, and sign-in works the same without it.
+			AuthorizationCode string `json:"authorization_code" form:"authorization_code"`
 		}
 		if err := e.BindBody(&body); err != nil {
 			return e.BadRequestError("invalid request body", err)
@@ -128,6 +136,9 @@ func appleSignInHandler(app core.App) func(e *core.RequestEvent) error {
 		}
 
 		linkAppleExternalAuth(app, user, claims.Subject)
+		if body.AuthorizationCode != "" {
+			storeAppleRefreshToken(app, user.Id, body.AuthorizationCode)
+		}
 
 		token, err := user.NewAuthToken()
 		if err != nil {
