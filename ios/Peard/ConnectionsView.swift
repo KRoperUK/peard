@@ -21,6 +21,8 @@ struct ConnectionsView: View {
     @State private var friends: FindFriendsModel
     @State private var composeTarget: ComposeTarget?
     @State private var showSignOutConfirmation = false
+    @State private var showDeleteAccountConfirmation = false
+    @State private var isDeletingAccount = false
 
     init(api: APIClient) {
         _friends = State(initialValue: FindFriendsModel(api: api))
@@ -49,6 +51,22 @@ struct ConnectionsView: View {
             Button("Cancel", role: .cancel) {}
         } message: {
             Text("Anything still waiting to send is discarded.")
+        }
+        .confirmationDialog(
+            "Delete your account?",
+            isPresented: $showDeleteAccountConfirmation,
+            titleVisibility: .visible
+        ) {
+            Button("Delete my account", role: .destructive) {
+                Task {
+                    isDeletingAccount = true
+                    await app.deleteAccount()
+                    isDeletingAccount = false
+                }
+            }
+            Button("Cancel", role: .cancel) {}
+        } message: {
+            Text("This erases your profile and everything you've shared, right now and for good. This can't be undone.")
         }
     }
 
@@ -88,10 +106,24 @@ struct ConnectionsView: View {
         } else {
             // The only way out of a signed-in app with nothing in it. It used to
             // live at the bottom of the pairing screen; it belongs wherever that
-            // dead end now is.
+            // dead end now is. Deleting the account is here too: it otherwise
+            // lives in a connection's settings, so somebody with no connection
+            // had no way to do it in the app, which App Store Review requires.
             ToolbarItem(placement: .primaryAction) {
-                Button("Sign out") { showSignOutConfirmation = true }
-                    .foregroundStyle(PearColor.textSecondary)
+                Menu {
+                    Button("Sign out") { showSignOutConfirmation = true }
+                    Button("Delete account", role: .destructive) {
+                        showDeleteAccountConfirmation = true
+                    }
+                } label: {
+                    if isDeletingAccount {
+                        ProgressView()
+                    } else {
+                        Text("Account")
+                    }
+                }
+                .foregroundStyle(PearColor.textSecondary)
+                .disabled(isDeletingAccount)
             }
         }
     }
