@@ -413,14 +413,23 @@ struct HomeView: View {
             .contentShape(Rectangle())
         }
         .buttonStyle(.plain)
-        .accessibilityElement(children: .ignore)
+        // The label goes on the button itself. Wrapping it with
+        // `.accessibilityElement(children: .ignore)` first split it in two: a
+        // plain element carrying this sentence, and the button still reading
+        // its own contents as "🍺, 1, ☕, 1" — bare numbers on the one element
+        // VoiceOver can activate (issue #3).
         .accessibilityLabel(breakdownAccessibilityLabel)
         .accessibilityHint("Opens the tallies")
     }
 
     private var breakdownAccessibilityLabel: String {
-        let parts = model.topMoments.map { "\($0.label) \($0.total)" }
-        return parts.isEmpty ? "Moment breakdown" : "Most logged: " + parts.joined(separator: ", ")
+        let parts = model.topMoments.map { "\($0.label), \($0.total)" }
+        var sentence = parts.isEmpty ? "Moment breakdown" : "Most logged: " + parts.joined(separator: "; ")
+        // The badge beside the counts says this visually; it was missing aloud.
+        if let streak = model.recap?.streak, streak.current >= 2 {
+            sentence += ". \(streak.current) days running"
+        }
+        return sentence
     }
 
     /// The undo/annotate window. It says what is about to happen and by when, so
