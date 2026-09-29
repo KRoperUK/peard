@@ -311,9 +311,7 @@ struct HistoryView: View {
                     // several people rely on, and a line that quietly changed
                     // under them is worse than one that says it changed.
                     if post.isEdited {
-                        Text("· edited")
-                            .font(.caption2)
-                            .foregroundStyle(PearColor.textTertiary)
+                        EditedChip()
                     }
                     if post.rewound {
                         RewoundChip(loggedAt: post.created)

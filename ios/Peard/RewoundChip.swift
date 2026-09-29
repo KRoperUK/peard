@@ -12,13 +12,37 @@ struct RewoundChip: View {
     let loggedAt: Date
 
     var body: some View {
+        MomentChip(systemImage: "backward.fill", title: "Rewound")
+            .accessibilityLabel(Self.accessibilityLabel(loggedAt: loggedAt))
+    }
+
+    static func accessibilityLabel(loggedAt: Date) -> String {
+        "Rewound, logged later at \(loggedAt.formatted(date: .omitted, time: .shortened))"
+    }
+}
+
+/// Marks a moment that was changed after it was logged, styled like
+/// `RewoundChip` so the two read as the same kind of note side by side.
+struct EditedChip: View {
+    var body: some View {
+        MomentChip(systemImage: "pencil", title: "Edited")
+            .accessibilityLabel("Edited")
+    }
+}
+
+/// The capsule both chips are drawn in.
+private struct MomentChip: View {
+    let systemImage: String
+    let title: String
+
+    var body: some View {
         // Laid out by hand rather than as a `Label`: inside a List row the
         // system label style stacks the icon over a title it then squeezes to
         // nothing, which drew a tall empty pill.
         HStack(spacing: 3) {
-            Image(systemName: "backward.fill")
+            Image(systemName: systemImage)
                 .imageScale(.small)
-            Text("Rewound")
+            Text(title)
                 .lineLimit(1)
         }
         .font(.caption2.bold())
@@ -29,10 +53,5 @@ struct RewoundChip: View {
         .overlay(Capsule().strokeBorder(PearColor.divider))
         .fixedSize()
         .accessibilityElement(children: .ignore)
-        .accessibilityLabel(Self.accessibilityLabel(loggedAt: loggedAt))
-    }
-
-    static func accessibilityLabel(loggedAt: Date) -> String {
-        "Rewound, logged later at \(loggedAt.formatted(date: .omitted, time: .shortened))"
     }
 }
