@@ -229,8 +229,8 @@ final class AppDelegate: NSObject, UIApplicationDelegate, UNUserNotificationCent
             await openPost(postID)
         } else if let answer = NotificationAnswer(actionIdentifier: response.actionIdentifier, text: typed) {
             await answerFromNotification(answer, push: MomentPush(userInfo: userInfo))
-        } else {
-            await reactFromNotification(actionIdentifier: response.actionIdentifier, postID: postID)
+        } else if let reaction = NotificationReaction(actionIdentifier: response.actionIdentifier, postID: postID) {
+            await reactFromNotification(reaction)
         }
     }
 
@@ -239,9 +239,19 @@ final class AppDelegate: NSObject, UIApplicationDelegate, UNUserNotificationCent
         model?.push.handleNotificationSelection(postID: postID)
     }
 
-    private func reactFromNotification(actionIdentifier: String, postID: String?) async {
-        guard let postID, !postID.isEmpty else { return }
-        await model?.push.handleNotificationAction(actionIdentifier, postID: postID)
+    /// A reaction from a notification. With no model — the app was killed and
+    /// iOS launched it into the background for this — it is sent straight
+    /// away with the stored session, the way an answer's first attempt is.
+    private func reactFromNotification(_ reaction: NotificationReaction) async {
+        if let model {
+            await model.push.handleNotificationReaction(reaction)
+            return
+        }
+        guard SharedStore.shared.privacyConsent.hasAcceptedCurrentVersion else { return }
+        let session = KeychainSessionStore()
+        guard let userID = session.userID, !userID.isEmpty else { return }
+        let api = APIClient(baseURL: PeardConfig.current.serverURL, tokenProvider: session)
+        _ = try? await api.create("reactions", of: Reaction.self, fields: reaction.fields(userID: userID))
     }
 
     /// "Me too" or a reply, sent the way any moment is: through the queue.

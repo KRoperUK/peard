@@ -45,7 +45,6 @@ final class PushCoordinator {
     /// The same without "Me too", for a photo on its own or a reply — a post
     /// with no moment to log back (`push.postCategory` server-side).
     static let postCategoryIdentifier = "POST"
-    private static let reactionActionPrefix = "REACT_"
 
     /// Registers the quick actions so a new-moment notification can be
     /// answered without opening the app: "Me too", a typed reply, and the
@@ -64,7 +63,7 @@ final class PushCoordinator {
     static func notificationCategories() -> Set<UNNotificationCategory> {
         let reactions = ReactionKind.allCases.map { kind in
             UNNotificationAction(
-                identifier: reactionActionPrefix + kind.rawValue,
+                identifier: NotificationReaction.actionIdentifier(for: kind),
                 title: "\(kind.emoji) \(kind.accessibilityLabel)",
                 options: []
             )
@@ -102,20 +101,10 @@ final class PushCoordinator {
     /// Records a reaction fired from a notification's quick actions. Mirrors
     /// `HomeModel.react(kind:)` but has no view to update or error to show —
     /// this can run with no UI on screen at all, so it is best effort.
-    func handleNotificationAction(_ actionIdentifier: String, postID: String) async {
-        guard
-            actionIdentifier.hasPrefix(Self.reactionActionPrefix),
-            !postID.isEmpty,
-            let userID = session.userID, !userID.isEmpty
-        else { return }
-
-        let kind = ReactionKind(rawValue: String(actionIdentifier.dropFirst(Self.reactionActionPrefix.count)))
+    func handleNotificationReaction(_ reaction: NotificationReaction) async {
+        guard let userID = session.userID, !userID.isEmpty else { return }
         do {
-            let _: Reaction = try await api.create("reactions", fields: [
-                "post": postID,
-                "user": userID,
-                "kind": kind.rawValue,
-            ])
+            let _: Reaction = try await api.create("reactions", fields: reaction.fields(userID: userID))
         } catch {
             // Nowhere to surface a failure from here; the in-app reaction
             // picker on the post itself still works.
