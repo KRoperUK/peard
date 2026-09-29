@@ -408,6 +408,7 @@ final class HistoryModel {
         if let note = post.displayNote { return note }
         switch post.type {
         case .photo: return "photo"
+        case .note: return "replied"
         case .event: return MomentCatalogue.label(for: post.eventKind, customKinds: customKinds)
         case .unknown: return "shared a moment"
         }

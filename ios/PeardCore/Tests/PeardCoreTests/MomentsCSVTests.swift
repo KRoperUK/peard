@@ -71,6 +71,12 @@ final class MomentsCSVTests: XCTestCase {
         XCTAssertEqual(rows[1], "2026-03-12T19:04:05Z,You,📸 Photo,,yes,no")
     }
 
+    /// A reply from a notification is a post of its own with only words (#154).
+    func testAReplyIsLabelledAsOne() {
+        let rows = lines(csv([post(author: "me", type: .note, kind: nil, note: "On my way")]))
+        XCTAssertEqual(rows[1], "2026-03-12T19:04:05Z,You,💬 Reply,On my way,no,no")
+    }
+
     func testACustomMomentUsesTheConnectionsOwnEmojiAndLabel() {
         let dogWalk = MomentKind(id: "k1", pair: "pair1", slug: "dog-walk", emoji: "🐕", label: "Dog walk")
         let rows = lines(csv([post(author: "me", kind: "dog-walk")], customKinds: [dogWalk]))

@@ -267,6 +267,9 @@ final class HomeModel {
             return label(for: post.eventKind)
         case .photo:
             return "shared a moment"
+        case .note:
+            // The words themselves are drawn under it, as any note is.
+            return "replied"
         case .unknown(let value):
             return value
         }

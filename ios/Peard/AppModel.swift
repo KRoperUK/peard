@@ -144,10 +144,19 @@ final class AppModel {
         push.onRegistered = { [weak self] in
             await self?.liveActivities.uploadStartToken()
         }
+        // Every tab of a connection counts as its screen: they share one
+        // `HomeModel`, so the refresh brings all of them up to date at once.
+        push.connectionOnScreen = { [weak self] in
+            guard case .home(let pairID) = self?.phase else { return nil }
+            return pairID
+        }
+        push.onRefreshConnectionOnScreen = { [weak self] in
+            await self?.onHomeRefreshRequested?()
+        }
     }
 
     /// Set by the home screen so a silent push can re-request its posts
-    /// (Requirement 18.6).
+    /// (Requirement 18.6), and so can an alert for the connection on screen.
     var onHomeRefreshRequested: (@MainActor () async -> Void)?
 
     /// Set by the home screen so a return to the foreground re-reads its
@@ -272,6 +281,21 @@ final class AppModel {
     func enqueue(_ send: PendingSend) async {
         await sendQueue.enqueue(send)
         await refreshPendingSends()
+    }
+
+    /// "Me too" or a reply from a moment's notification (issue #154): queued,
+    /// then sent. Awaited rather than left to a background flush, because iOS
+    /// may suspend the app again as soon as the action's handler returns.
+    ///
+    /// Not sent while the privacy gate is up; the queue holds it until the
+    /// launch that follows agreement flushes.
+    func answerFromNotification(_ moment: InboxedMoment) async {
+        guard let send = moment.pendingSend(authorID: signedInUserID, fallbackPairID: nil),
+              !send.authorID.isEmpty
+        else { return }
+        await enqueue(send)
+        guard hasAgreedToPrivacyPolicy else { return }
+        await flushSendQueueAndWait()
     }
 
     /// Kicks off a flush, coalescing with one already in flight. Non-blocking so

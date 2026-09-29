@@ -214,9 +214,13 @@ final class AppDelegate: NSObject, UIApplicationDelegate, UNUserNotificationCent
         _ center: UNUserNotificationCenter,
         didReceive response: UNNotificationResponse
     ) async {
-        let postID = response.notification.request.content.userInfo["post_id"] as? String
+        let userInfo = response.notification.request.content.userInfo
+        let postID = userInfo["post_id"] as? String
+        let typed = (response as? UNTextInputNotificationResponse)?.userText
         if response.actionIdentifier == UNNotificationDefaultActionIdentifier {
             await openPost(postID)
+        } else if let answer = NotificationAnswer(actionIdentifier: response.actionIdentifier, text: typed) {
+            await answerFromNotification(answer, push: MomentPush(userInfo: userInfo))
         } else {
             await reactFromNotification(actionIdentifier: response.actionIdentifier, postID: postID)
         }
@@ -232,11 +236,65 @@ final class AppDelegate: NSObject, UIApplicationDelegate, UNUserNotificationCent
         await model?.push.handleNotificationAction(actionIdentifier, postID: postID)
     }
 
-    /// Show alerts while the app is in the foreground.
+    /// "Me too" or a reply, sent the way any moment is: through the queue.
+    private func answerFromNotification(_ answer: NotificationAnswer, push: MomentPush?) async {
+        guard let push, let moment = answer.moment(for: push) else { return }
+        if let model {
+            await model.answerFromNotification(moment)
+        } else {
+            await answerWithoutTheApp(moment)
+        }
+    }
+
+    /// An answer that arrived with no model to queue it.
+    ///
+    /// iOS answers a notification action on an app that is not running by
+    /// launching it into the background, and the model belongs to the window,
+    /// which does not appear for that. So the answer goes into the App Group
+    /// inbox, which the app takes into its send queue on its next flush — the
+    /// same hand-off the widget uses — and one attempt is made now with the
+    /// stored session, so that "me too" reaches the other person without
+    /// waiting for this one to open the app.
+    ///
+    /// Inboxed before the attempt and removed after it, so a crash in between
+    /// leaves it to be sent later. If the attempt landed and only the reply was
+    /// lost, the later send reuses the id as its `client_id` and the server
+    /// refuses it as the duplicate it is.
+    private func answerWithoutTheApp(_ moment: InboxedMoment) async {
+        let inbox = MomentInbox.appGroup()
+        guard inbox.append(moment) else { return }
+        // A policy that has changed since it was agreed to holds everything
+        // back until it is agreed to again; the queue sends it after that.
+        guard SharedStore.shared.privacyConsent.hasAcceptedCurrentVersion else { return }
+        let session = KeychainSessionStore()
+        guard
+            let userID = session.userID, !userID.isEmpty,
+            let send = moment.pendingSend(authorID: userID, fallbackPairID: nil)
+        else { return }
+        let api = APIClient(baseURL: PeardConfig.current.serverURL, tokenProvider: session)
+        do {
+            let _: Post = try await api.create("posts", fields: send.postFields)
+            inbox.remove(ids: [moment.id])
+        } catch {
+            if case .permanent = SendFailure.classify(error) {
+                inbox.remove(ids: [moment.id])
+            }
+        }
+    }
+
+    /// Show alerts while the app is in the foreground — except one for the
+    /// connection on screen, which the screen shows instead (see
+    /// `PushCoordinator.foregroundPresentation(for:)`).
     nonisolated func userNotificationCenter(
         _ center: UNUserNotificationCenter,
         willPresent notification: UNNotification
     ) async -> UNNotificationPresentationOptions {
-        [.banner, .sound]
+        let push = MomentPush(userInfo: notification.request.content.userInfo)
+        return await presentation(for: push)
+    }
+
+    private func presentation(for push: MomentPush?) -> UNNotificationPresentationOptions {
+        guard let model else { return [.banner, .sound] }
+        return model.push.foregroundPresentation(for: push)
     }
 }

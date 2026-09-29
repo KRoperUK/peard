@@ -21,6 +21,11 @@ final class PushCoordinator {
     /// Called once this device's `devices` row exists, for anything that has to
     /// hang off it — the Live Activity push-to-start token.
     var onRegistered: (@MainActor () async -> Void)?
+    /// The connection whose screens are showing, if any, and how to bring them
+    /// up to date — so an alert about it can be folded into the screen rather
+    /// than drawn over it. See `foregroundPresentation(for:)`.
+    var connectionOnScreen: (@MainActor () -> String?)?
+    var onRefreshConnectionOnScreen: (@MainActor () async -> Void)?
 
     private(set) var authorizationStatus: UNAuthorizationStatus = .notDetermined
 
@@ -37,27 +42,61 @@ final class PushCoordinator {
     /// (`push.momentCategory` server-side) — this is what makes iOS offer the
     /// reaction actions below instead of a plain banner.
     static let momentCategoryIdentifier = "MOMENT"
+    /// The same without "Me too", for a photo on its own or a reply — a post
+    /// with no moment to log back (`push.postCategory` server-side).
+    static let postCategoryIdentifier = "POST"
     private static let reactionActionPrefix = "REACT_"
 
-    /// Registers the reaction quick actions so a new-moment notification can
-    /// be reacted to without opening the app. Safe to call before
-    /// authorization is granted or even decided — it only shapes what a
-    /// notification looks like once one is actually shown.
+    /// Registers the quick actions so a new-moment notification can be
+    /// answered without opening the app: "Me too", a typed reply, and the
+    /// reactions. Safe to call before authorization is granted or even
+    /// decided — it only shapes what a notification looks like once one is
+    /// actually shown.
+    ///
+    /// "Me too" carries no emoji, though "🍺 Me too" would read better: a
+    /// category's actions are fixed here, once, and cannot differ from one
+    /// notification to the next. The notification above it already says which
+    /// moment it is.
     static func registerNotificationCategories(center: UNUserNotificationCenter = .current()) {
-        let actions = ReactionKind.allCases.map { kind in
+        center.setNotificationCategories(notificationCategories())
+    }
+
+    static func notificationCategories() -> Set<UNNotificationCategory> {
+        let reactions = ReactionKind.allCases.map { kind in
             UNNotificationAction(
                 identifier: reactionActionPrefix + kind.rawValue,
                 title: "\(kind.emoji) \(kind.accessibilityLabel)",
                 options: []
             )
         }
-        let category = UNNotificationCategory(
-            identifier: momentCategoryIdentifier,
-            actions: actions,
-            intentIdentifiers: [],
-            options: []
+        let meToo = UNNotificationAction(
+            identifier: NotificationAnswer.meTooIdentifier,
+            title: "Me too",
+            options: [],
+            icon: UNNotificationActionIcon(systemImageName: "plus.circle")
         )
-        center.setNotificationCategories([category])
+        let reply = UNTextInputNotificationAction(
+            identifier: NotificationAnswer.replyIdentifier,
+            title: "Reply",
+            options: [],
+            icon: UNNotificationActionIcon(systemImageName: "arrowshape.turn.up.left"),
+            textInputButtonTitle: "Send",
+            textInputPlaceholder: "Say something back"
+        )
+        return [
+            UNNotificationCategory(
+                identifier: momentCategoryIdentifier,
+                actions: [meToo, reply] + reactions,
+                intentIdentifiers: [],
+                options: []
+            ),
+            UNNotificationCategory(
+                identifier: postCategoryIdentifier,
+                actions: [reply] + reactions,
+                intentIdentifiers: [],
+                options: []
+            ),
+        ]
     }
 
     /// Records a reaction fired from a notification's quick actions. Mirrors
@@ -207,6 +246,33 @@ final class PushCoordinator {
         await refresh()
         WidgetCenter.shared.reloadAllTimelines()
         return .newData
+    }
+
+    /// How an alert that arrives with the app open is shown.
+    ///
+    /// Normally as a banner, as it always was. But one for the connection on
+    /// screen was a banner over the very screen it was about, which then went
+    /// on showing the old moment until the next poll — so that one is not
+    /// shown at all: the screen refreshes and the moment appears in it instead.
+    /// Not added to Notification Centre either, since it has been seen.
+    ///
+    /// A light tap stands in for the banner. Without anything, a moment could
+    /// land while somebody was reading another part of the screen and never be
+    /// noticed; with the alert's sound, a phone that is already in somebody's
+    /// hand chimes at them in a quiet room for something they are looking at.
+    /// A haptic says "that just changed" and nothing more.
+    ///
+    /// The refresh is started, not awaited: the system is waiting on the
+    /// answer, and it has nothing to do with how long a fetch takes.
+    func foregroundPresentation(for push: MomentPush?) -> UNNotificationPresentationOptions {
+        guard let push, push.isFor(connectionOnScreen: connectionOnScreen?()) else {
+            return [.banner, .sound]
+        }
+        UIImpactFeedbackGenerator(style: .light).impactOccurred()
+        if let refresh = onRefreshConnectionOnScreen {
+            Task { await refresh() }
+        }
+        return []
     }
 
     /// The user tapped a notification (Requirement 18.7).
