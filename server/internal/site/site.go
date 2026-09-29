@@ -654,7 +654,7 @@ func invitePage(code string, state inviteState) string {
         <li>Join the Pear'd beta with the button below, then open Pear'd and enter your code.</li>
       </ol>
       <p class="keep-code">Keep this code — you'll need to type it in after installing:</p>
-      <div class="code" aria-label="Invite code ` + strings.Join(strings.Split(code, ""), " ") + `">` + code + `</div>
+      <div class="code" role="img" aria-label="Invite code ` + strings.Join(strings.Split(code, ""), " ") + `">` + code + `</div>
     </div>
 
     <a class="cta" href="` + testFlightURL + `">Join the Pear'd beta</a>

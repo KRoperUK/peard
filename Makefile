@@ -8,7 +8,7 @@ PROJECT = ios/Peard.xcodeproj
 XCODEBUILD = xcodebuild -project $(PROJECT) -scheme Peard
 BUILT_APP = ios/build/Build/Products/Debug-iphonesimulator/Peard.app
 
-.PHONY: server migrate app app-release run project test test-app test-integration \
+.PHONY: server migrate app app-release run project test test-app test-ui test-integration \
         test-all icons lint fmt hooks clean \
         docker-build docker-up docker-up-tls docker-up-cloudflared docker-down docker-logs
 
@@ -60,7 +60,7 @@ project: hooks
 # their names ("iMessage App Icon.stickersiconset"), which make splits into
 # three prerequisites it then cannot find. Correctness and robustness happen to
 # want the same prune.
-SOURCE_DIRS := $(shell find ios/Peard ios/PearWidget ios/PearMessages ios/PearShare ios/PeardTests \
+SOURCE_DIRS := $(shell find ios/Peard ios/PearWidget ios/PearMessages ios/PearShare ios/PeardTests ios/PeardUITests \
                         ios/PeardCore/Sources ios/PeardCore/Tests ios/Shared \
                         -name '*.xcassets' -prune -o -type d -print 2>/dev/null)
 
@@ -117,9 +117,21 @@ test:
 
 # App-target tests (HomeModel's quick-send flow, AppModel's routing). These need
 # a simulator because the types they cover are @MainActor and import UIKit.
+#
+# The scheme's test action lists the UI tests as well, so they are skipped by
+# name: they take a minute or more where these take seconds, and this is the
+# loop people run while working.
 test-app: $(PROJECT)
 	$(XCODEBUILD) -configuration Debug -destination '$(DESTINATION)' \
-		-derivedDataPath ios/build test
+		-derivedDataPath ios/build -skip-testing:PeardUITests test
+
+# The launch smoke test (PeardUITests): privacy consent, sign-in and an invite
+# link, through the real UI. Needs no server — it points the app at a closed
+# port and resets the simulator's consent and session itself. CI runs it on
+# every push to main.
+test-ui: $(PROJECT)
+	$(XCODEBUILD) -configuration Debug -destination '$(DESTINATION)' \
+		-derivedDataPath ios/build -only-testing:PeardUITests test
 
 test-all: test test-app
 	cd server && go test ./...

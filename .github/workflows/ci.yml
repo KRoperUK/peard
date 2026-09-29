@@ -10,7 +10,8 @@ name: CI
 # environment's required reviewer), then runs the app-target tests, archives
 # and uploads for internal testers. "TestFlight (external)" waits for a second
 # approval, then sends that same build to external testers. The server's
-# deploy runs alongside without waiting for either.
+# deploy runs alongside without waiting for either, and so does the app's UI
+# smoke test, which nothing waits on.
 
 on:
   push:
@@ -201,6 +202,46 @@ jobs:
           echo "Container never became healthy:"
           docker compose logs
           exit 1
+
+  ui-smoke:
+    name: App UI smoke test
+    runs-on: macos-15
+    # Main only, and after the merge rather than on the pull request: it boots a
+    # simulator and drives the real app for a minute or two, which is too slow
+    # and too costly on a macOS runner to put in front of every push to a pull
+    # request. A manual run can ask for it too.
+    #
+    # Nothing depends on it, deliberately. It is not in the deploy's or
+    # TestFlight's `needs`, and it has no environment, so it never waits for an
+    # approval and a red run never holds up a server fix or a build — it says
+    # that the first-launch path broke, on the commit that broke it. The
+    # app-target unit tests, which do gate uploads, run inside the TestFlight
+    # job and skip these (see fastlane test_app).
+    if: >-
+      (github.event_name == 'push' && github.ref == 'refs/heads/main')
+      || github.event_name == 'workflow_dispatch'
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+
+      - name: Toolchain
+        # The newest Xcode on the image, as the other macOS jobs use.
+        run: scripts/select-newest-xcode
+
+      - name: Tools
+        run: brew install xcodegen
+
+      # Straight to xcodegen and xcodebuild rather than `make test-ui`, whose
+      # project target also tries to install git hooks. No server is started:
+      # the test points the app at a closed port and never signs in.
+      - name: UI smoke test
+        run: |
+          set -euo pipefail
+          (cd ios && xcodegen generate --spec project.yml)
+          udid=$(scripts/pick-simulator)
+          xcodebuild -project ios/Peard.xcodeproj -scheme Peard -configuration Debug \
+            -destination "platform=iOS Simulator,id=$udid" \
+            -derivedDataPath ios/build -only-testing:PeardUITests test
 
   ios-release:
     name: TestFlight (internal)

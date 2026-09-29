@@ -1,6 +1,7 @@
 # Pear'd lanes.
 #
 #     bundle exec fastlane test          # PeardCore + app-target tests
+#     bundle exec fastlane test_ui       # launch smoke UI test (slow; not in `test`)
 #     bundle exec fastlane build         # Debug simulator build
 #     bundle exec fastlane release_build # Release build, no signing needed
 #     bundle exec fastlane archive       # signed .ipa for distribution
@@ -66,6 +67,25 @@ platform :ios do
       derived_data_path: DERIVED,
       # The scheme's own test action already lists PeardTests; naming it here as
       # well would fail on a fresh clone if the scheme regenerates differently.
+      # The UI tests are in that action too, and are skipped: they are slow,
+      # and this lane gates every TestFlight upload. They have their own lane
+      # below and their own CI job.
+      skip_testing: ["PeardUITests"],
+      result_bundle: true,
+      output_directory: "fastlane/test_output"
+    )
+  end
+
+  desc "Launch smoke UI test on a simulator (no server needed)"
+  lane :test_ui do
+    generate
+    run_tests(
+      project: PROJECT,
+      scheme: SCHEME,
+      configuration: "Debug",
+      destination: simulator_destination,
+      derived_data_path: DERIVED,
+      only_testing: ["PeardUITests"],
       result_bundle: true,
       output_directory: "fastlane/test_output"
     )
