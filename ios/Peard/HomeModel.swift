@@ -48,6 +48,8 @@ final class HomeModel {
     var assistiveTechnologyIsRunning: () -> Bool = {
         UIAccessibility.isVoiceOverRunning || UIAccessibility.isSwitchControlRunning
     }
+    /// Replaceable so a test can see what was felt.
+    var playHaptic: (Haptic) -> Void = { Haptics.play($0) }
     private(set) var quickSendProgress: Double = 1
 
     var noteText = ""
@@ -476,6 +478,7 @@ final class HomeModel {
     /// tapping a different one commits what was pending and starts over, so
     /// moments can be logged back to back.
     func tap(moment: Moment) {
+        playHaptic(.momentTapped)
         if let pending = quickSend {
             if pending.moment.kind == moment.kind {
                 Task { await commitQuickSend() }
@@ -569,6 +572,7 @@ final class HomeModel {
     func rewindQuickSend(to date: Date?) {
         guard var send = quickSend else { return }
         send.rewind(to: date)
+        if date != nil { playHaptic(.rewound) }
         quickSend = send
         quickSendCaption = send.caption()
         quickSendProgress = 1
@@ -578,6 +582,7 @@ final class HomeModel {
 
     /// Requirement 12.6 — dismissing discards the text and creates nothing.
     func cancelQuickSend() {
+        if quickSend != nil { playHaptic(.cancelled) }
         countdownTask?.cancel()
         countdownTask = nil
         quickSend = nil
@@ -630,6 +635,7 @@ final class HomeModel {
 
         // The moment is recorded on the device now, so the confirmation is honest
         // whether or not the request gets through.
+        playHaptic(.sent)
         showToast(isOffline ? "\(moment.emoji) saved — will send" : "\(moment.emoji) logged!")
 
         let result = await app.flushSendQueueAndWait()
@@ -928,6 +934,7 @@ final class HomeModel {
     func upload(image: UIImage, moment: Moment? = nil, caption: String = "") async {
         guard let data = image.jpegData(compressionQuality: PhotoSquare.jpegQuality), !data.isEmpty else {
             alert = AlertContent(title: "Upload failed", message: "The photo couldn't be prepared for upload.")
+            playHaptic(.failed)
             return
         }
         busy = .photo
@@ -953,9 +960,11 @@ final class HomeModel {
             try app.pendingPhotos.save(data, for: send.id)
         } catch {
             alert = AlertContent(title: "Upload failed", message: "The photo couldn't be saved to send.")
+            playHaptic(.failed)
             return
         }
         await app.enqueue(send)
+        playHaptic(.sent)
         showToast(isOffline ? "📸 saved — will send" : "📸 sending…")
 
         let result = await app.flushSendQueueAndWait()
@@ -984,6 +993,7 @@ final class HomeModel {
     /// thought — and tapping the wrong one of three emoji is easy enough that
     /// add-only left people stuck with it.
     func toggleReaction(kind: ReactionKind) async {
+        playHaptic(.reacted)
         if myReaction(kind: kind) != nil {
             await unreact(kind: kind)
         } else {
