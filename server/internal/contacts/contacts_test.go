@@ -193,6 +193,52 @@ func TestMatchFindsOnlyDiscoverableAccounts(t *testing.T) {
 	}
 }
 
+func TestTurningDiscoveryOffClearsThePhoneNumber(t *testing.T) {
+	h := newHarness(t)
+	alex, alexToken := h.newUser(t, "alex@example.com")
+	_, searcherToken := h.newUser(t, "searcher@example.com")
+
+	code, _ := h.do(t, "POST", "/api/peard/contacts/settings", alexToken, map[string]any{
+		"discoverable": true,
+		"phone":        "+44 7700 900123",
+	})
+	if code != 200 {
+		t.Fatalf("settings status = %d", code)
+	}
+
+	// Off, even with the number still sent alongside: it must not be kept.
+	code, resp := h.do(t, "POST", "/api/peard/contacts/settings", alexToken, map[string]any{
+		"discoverable": false,
+		"phone":        "+44 7700 900123",
+	})
+	if code != 200 {
+		t.Fatalf("settings status = %d", code)
+	}
+	if resp["phone"] != "" {
+		t.Fatalf("echoed phone = %v, want empty", resp["phone"])
+	}
+	stored, err := h.app.FindRecordById("users", alex.Id)
+	if err != nil {
+		t.Fatalf("reload alex: %v", err)
+	}
+	if stored.GetString("phone") != "" || stored.GetString("phone_hash") != "" {
+		t.Fatalf("phone = %q, phone_hash = %q, want both empty", stored.GetString("phone"), stored.GetString("phone_hash"))
+	}
+
+	// Back on without a number: the old one is not restored, so the phone
+	// hash matches nobody.
+	h.do(t, "POST", "/api/peard/contacts/settings", alexToken, map[string]any{"discoverable": true})
+	code, resp = h.do(t, "POST", "/api/peard/contacts/match", searcherToken, map[string]any{
+		"hashes": []string{contacts.HashPhone("+44 7700 900123")},
+	})
+	if code != 200 {
+		t.Fatalf("match status = %d, body = %v", code, resp)
+	}
+	if matches, _ := resp["matches"].([]any); len(matches) != 0 {
+		t.Fatalf("expected no phone match after the number was cleared, got %v", matches)
+	}
+}
+
 func TestMatchNeverReturnsTheCallerThemselves(t *testing.T) {
 	h := newHarness(t)
 	_, token := h.newUser(t, "self@example.com")
