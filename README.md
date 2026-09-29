@@ -962,7 +962,7 @@ receive live pushes.
 | POST | `/api/peard/contacts/settings` | user | Set your discoverability, phone number and the email address to be matched on |
 | GET  | `/api/peard/recap?pair=` | member | The week's moments, the busiest day and the current and best streak |
 | GET  | `/api/peard/status` | none | Build commit and time, which the deploy job watches |
-| GET  | `/api/peard/export` | user | JSON snapshot of your profile, connections and moments |
+| GET  | `/api/peard/export` | user | JSON snapshot of your profile, connections and moments; `?media=zip` adds every photo in a zip |
 | DELETE | `/api/peard/account` | user | Delete your account and everything that cascades from it |
 | GET  | `/api/peard/widget/feed?token=` | widget | Latest moment + today's tallies; optional `&pair=` pins a connection |
 | GET  | `/api/peard/widget/connections?token=` | widget | Choices for the configurable widget's picker |

@@ -565,6 +565,14 @@ email fallback, not an error.
 `GET /api/peard/export` → a JSON snapshot of everything held about the caller.
 The app writes it to a file and hands it to the share sheet.
 
+`GET /api/peard/export?media=zip` → the same snapshot as `export.json` inside a
+zip (`application/zip`, sent as an attachment), with every photo under
+`photos/<moment id>-<file>` and the profile photo under `avatar/<file>`. The zip
+is streamed as it is built. In it, `media_url` and `avatar_url` are replaced by
+`media_path` and `avatar_path`, paths inside the archive, and `missing_media`
+lists any file that could not be read when it was made (normally empty). The
+same rate limit applies as to the JSON export.
+
 | Key | What it holds |
 | --- | --- |
 | `exported_at` | RFC 3339 UTC time of the export |
@@ -582,8 +590,8 @@ The app writes it to a file and hands it to the share sheet.
 Every list is complete: the server pages through the rows rather than stopping
 at a cap. Photo and avatar links (`media_url`, `avatar_url`) are protected files,
 so each carries a file token that expires about **30 minutes** after the export;
-the export says so in `media_note`. Bundling the photos into a zip is a possible
-follow-up. Push tokens, widget secrets and invite codes are credentials, not the
+the export says so in `media_note`. The zip holds the photos themselves instead,
+so nothing in it expires. Push tokens, widget secrets and invite codes are credentials, not the
 user's content, and an export is a file that may end up anywhere, so they are
 shown masked or left out, and `token_note` says why.
 

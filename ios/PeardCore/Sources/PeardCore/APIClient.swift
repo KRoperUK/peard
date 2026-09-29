@@ -343,6 +343,42 @@ public final class APIClient: Sendable {
         try await sendReturningData(method: "GET", path: path, query: query, body: nil)
     }
 
+    /// How long a download may take in all. Each wait for the next bytes is
+    /// still bounded by `timeout`, so a stalled download fails as fast as any
+    /// request; only a large one that keeps arriving is given longer.
+    public static let downloadTimeout: TimeInterval = 15 * 60
+
+    /// `GET` streamed to disk and moved to `destination`, for a response too
+    /// large to hold in memory — the export with every photo in it.
+    ///
+    /// Runs on a copy of this client's session configuration, so it reaches the
+    /// same server the same way, with only the overall limit raised: the
+    /// shared session's 30 seconds would cut a large archive off mid-way.
+    public func download(path: String, query: [String: String] = [:], to destination: URL) async throws {
+        let request = try makeRequest(method: "GET", path: path, query: query)
+        let configuration = session.configuration
+        configuration.timeoutIntervalForResource = APIClient.downloadTimeout
+        let downloads = URLSession(configuration: configuration)
+        defer { downloads.finishTasksAndInvalidate() }
+
+        let location: URL
+        let response: URLResponse
+        do {
+            (location, response) = try await downloads.download(for: request)
+        } catch {
+            throw APIClient.transportError(error)
+        }
+        defer { try? FileManager.default.removeItem(at: location) }
+        guard let http = response as? HTTPURLResponse else {
+            throw APIError.transport("The server sent a response that was not HTTP.")
+        }
+        guard (200...299).contains(http.statusCode) else {
+            throw APIClient.statusError(http.statusCode, body: (try? Data(contentsOf: location)) ?? Data())
+        }
+        try? FileManager.default.removeItem(at: destination)
+        try FileManager.default.moveItem(at: location, to: destination)
+    }
+
     // MARK: Plumbing
 
     private enum Body {
@@ -367,12 +403,7 @@ public final class APIClient: Sendable {
         }
     }
 
-    private func sendReturningData(
-        method: String,
-        path: String,
-        query: [String: String],
-        body: Body?
-    ) async throws -> Data {
+    private func makeRequest(method: String, path: String, query: [String: String]) throws -> URLRequest {
         guard var components = URLComponents(
             url: baseURL.appendingPathComponent(path.hasPrefix("/") ? String(path.dropFirst()) : path),
             resolvingAgainstBaseURL: false
@@ -392,6 +423,16 @@ public final class APIClient: Sendable {
         if let token = tokenProvider?.authToken, !token.isEmpty {
             request.setValue(token, forHTTPHeaderField: "Authorization")
         }
+        return request
+    }
+
+    private func sendReturningData(
+        method: String,
+        path: String,
+        query: [String: String],
+        body: Body?
+    ) async throws -> Data {
+        var request = try makeRequest(method: method, path: path, query: query)
 
         switch body {
         case .json(let fields):
@@ -412,31 +453,37 @@ public final class APIClient: Sendable {
         let response: URLResponse
         do {
             (data, response) = try await session.data(for: request)
-        } catch let error as URLError where error.code == .cancelled {
-            // Separated from the transport errors below because it is not one.
-            // URLSession reports a cancelled request this way, and folding it in
-            // meant "cancelled" was shown to users as though the server had said
-            // it.
-            throw APIError.cancelled
-        } catch is CancellationError {
-            throw APIError.cancelled
-        } catch let error as URLError {
-            throw APIError.transport(error.localizedDescription)
         } catch {
-            throw APIError.transport(error.localizedDescription)
+            throw APIClient.transportError(error)
         }
 
         guard let http = response as? HTTPURLResponse else {
             throw APIError.transport("The server sent a response that was not HTTP.")
         }
         guard (200...299).contains(http.statusCode) else {
-            let message = APIClient.errorMessage(in: data)
-            if http.statusCode == 401 {
-                throw APIError.unauthorized(message: message)
-            }
-            throw APIError.server(status: http.statusCode, message: message)
+            throw APIClient.statusError(http.statusCode, body: data)
         }
         return data
+    }
+
+    private static func transportError(_ error: Error) -> APIError {
+        switch error {
+        // Separated from the transport errors below because it is not one.
+        // URLSession reports a cancelled request this way, and folding it in
+        // meant "cancelled" was shown to users as though the server had said
+        // it.
+        case let error as URLError where error.code == .cancelled: return .cancelled
+        case is CancellationError: return .cancelled
+        default: return .transport(error.localizedDescription)
+        }
+    }
+
+    private static func statusError(_ status: Int, body: Data) -> APIError {
+        let message = errorMessage(in: body)
+        if status == 401 {
+            return .unauthorized(message: message)
+        }
+        return .server(status: status, message: message)
     }
 
     /// Extracts PocketBase's `message` field when present (Requirement 5.6),
