@@ -27,6 +27,7 @@ import (
 	"crypto/rand"
 	"database/sql"
 	"errors"
+	"fmt"
 	"net/http"
 	"strings"
 	"time"
@@ -35,6 +36,8 @@ import (
 	"github.com/pocketbase/pocketbase/apis"
 	"github.com/pocketbase/pocketbase/core"
 	"github.com/pocketbase/pocketbase/tools/types"
+
+	"peard/internal/health"
 )
 
 // inviteTTL is how long a code is worth holding on to.
@@ -93,7 +96,8 @@ func Register(app core.App) {
 
 	// Sweep spent invites every 15 minutes.
 	app.Cron().MustAdd("peard-expire-invites", inviteSweepInterval, func() {
-		_, _ = DeleteExpiredInvites(app, types.NowDateTime())
+		deleted, err := DeleteExpiredInvites(app, types.NowDateTime())
+		health.RecordJob("invite_sweep", err, fmt.Sprintf("%d deleted", deleted))
 	})
 }
 

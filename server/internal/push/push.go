@@ -24,6 +24,7 @@ import (
 	"os"
 	"strings"
 
+	"peard/internal/health"
 	"peard/internal/moments"
 	// For UnreadCount/UnreadSince. The badge and the in-app rail have to agree
 	// on what "unread" means, and the only way to guarantee that is one
@@ -97,6 +98,7 @@ func Register(app core.App) {
 	} else {
 		app.Logger().Info("push: APNs configured", "bundle", n.bundleID)
 	}
+	health.Set("apns_configured", n != nil)
 	drainOnTerminate(app)
 
 	// Delivery happens after the request has been answered, so the poster does
@@ -462,8 +464,10 @@ func (nt *notifier) send(deviceToken string, p *payload.Payload, pushType apns2.
 	if err != nil {
 		nt.log().Error("push: APNs send failed",
 			"pushType", string(pushType), "collapseId", collapseID, "error", err)
+		health.RecordPush(false)
 		return false
 	}
+	health.RecordPush(res.StatusCode == 200)
 	if res.StatusCode != 200 {
 		nt.log().Warn("push: APNs refused a notification",
 			"status", res.StatusCode, "reason", res.Reason,

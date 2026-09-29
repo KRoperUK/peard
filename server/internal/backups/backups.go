@@ -23,6 +23,8 @@ import (
 	"time"
 
 	"github.com/pocketbase/pocketbase/core"
+
+	"peard/internal/health"
 )
 
 // defaultMaxKeep is how many scheduled backups are kept when
@@ -173,6 +175,10 @@ func fromEnv(getenv func(string) string) (core.BackupsConfig, bool, error) {
 // this is what catches it.
 func warnIfStale(app core.App, now time.Time) {
 	newest, err := newestBackup(app)
+	health.RecordJob("backup_check", err, "")
+	if err == nil && !newest.IsZero() {
+		health.Set("newest_backup", newest.UTC())
+	}
 	switch {
 	case err != nil:
 		app.Logger().Warn("could not check the age of the latest backup", "error", err)

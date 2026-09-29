@@ -9,6 +9,9 @@ import (
 
 	"github.com/pocketbase/pocketbase/core"
 	"github.com/sideshow/apns2"
+	"github.com/sideshow/apns2/payload"
+
+	"peard/internal/health"
 )
 
 func deviceExists(t *testing.T, app core.App, token string) bool {
@@ -240,5 +243,24 @@ func TestShutdownGivesUpAfterTheGrace(t *testing.T) {
 	close(release)
 	if left := drainDeliveries(5 * time.Second); left != 0 {
 		t.Fatalf("abandoned = %d after the delivery finished, want 0", left)
+	}
+}
+
+// Every attempt to reach APNs is counted for the admin status view (#266), so
+// a run of refusals shows up without reading the logs.
+func TestPushesAreCountedForTheStatusView(t *testing.T) {
+	installFakeAPNs(t, map[string]fakeReply{"gone": {http.StatusGone, apns2.ReasonUnregistered}})
+	counts := func() (sent, failed int64) {
+		p := health.Snapshot()["push"].(map[string]any)
+		return p["sent"].(int64), p["failed"].(int64)
+	}
+	sent0, failed0 := counts()
+
+	n.send("live", payload.NewPayload().AlertTitle("hi"), apns2.PushTypeAlert, apns2.PriorityHigh, "")
+	n.send("gone", payload.NewPayload().AlertTitle("hi"), apns2.PushTypeAlert, apns2.PriorityHigh, "")
+
+	sent, failed := counts()
+	if sent-sent0 != 1 || failed-failed0 != 1 {
+		t.Fatalf("counted %d sent and %d failed, want 1 and 1", sent-sent0, failed-failed0)
 	}
 }
