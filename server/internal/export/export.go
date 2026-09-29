@@ -5,11 +5,15 @@
 // — the self-serve access half of the privacy policy's promise (the other half
 // is DELETE /api/peard/account in internal/profile).
 //
-//	GET /api/peard/export  -> a JSON snapshot, auth required
+//	GET /api/peard/export            -> a JSON snapshot, auth required
+//	GET /api/peard/export?media=zip  -> the same, plus every photo, as a zip
 package export
 
 import (
+	"archive/zip"
+	"encoding/json"
 	"fmt"
+	"io"
 	"net/http"
 	"net/url"
 	"strings"
@@ -25,10 +29,13 @@ import (
 // a long history comes out whole. The page bounds each query, not the export.
 var pageSize = 500
 
-// mediaNote travels in the payload. Photos stay as links rather than being
-// bundled into a zip (a possible follow-up): a JSON body keeps the route cheap,
-// and the note makes the links' shelf life plain.
+// mediaNote travels in the payload. By default photos stay as links: a JSON
+// body keeps the route cheap, and the note makes the links' shelf life plain.
+// ?media=zip bundles them instead, for an archive that stays whole.
 const mediaNote = "Photo links carry a temporary access token and stop working about 30 minutes after this export. Re-export to get fresh ones. The same goes for your profile photo link."
+
+// zipMediaNote replaces mediaNote in the zip, where there is no link to expire.
+const zipMediaNote = "Photos are in this archive. media_path and avatar_path are paths inside it, next to this file. Any listed under missing_media could not be read when the archive was made."
 
 // tokenNote says why tokens appear only in part.
 const tokenNote = "Push tokens are shown masked (last 6 characters only). A full token is the address Pear'd's server uses to send notifications to that device; it is of no use outside the app, so it is kept out of a file that may be shared or stored anywhere. Widget token secrets and invite codes are left out for the same reason."
@@ -94,6 +101,24 @@ func exportHandler(app core.App) func(e *core.RequestEvent) error {
 		}
 		base := baseURL(app, e)
 
+		// With ?media=zip every file is gathered here and written into the
+		// archive after the queries, so a query failure can still answer with
+		// an error instead of half a zip.
+		withMedia := e.Request.URL.Query().Get("media") == "zip"
+		var files []archivedFile
+		attach := func(record *core.Record, name, dir, pathKey, urlKey string, into map[string]any) {
+			if !withMedia {
+				into[urlKey] = fileURL(base, record, name, fileToken)
+				return
+			}
+			path := dir + "/" + name
+			if dir == "photos" {
+				path = dir + "/" + record.Id + "-" + name
+			}
+			files = append(files, archivedFile{path: path, key: record.BaseFilesPath() + "/" + name})
+			into[pathKey] = path
+		}
+
 		// email_hash and phone_hash are left out: they are one-way digests of
 		// the email and phone below, kept only so contact matching never has to
 		// compare plaintext, and say nothing the plain values do not.
@@ -110,7 +135,7 @@ func exportHandler(app core.App) func(e *core.RequestEvent) error {
 		}
 		if avatar := user.GetString("avatar"); avatar != "" {
 			profile["avatar"] = avatar
-			profile["avatar_url"] = fileURL(base, user, avatar, fileToken)
+			attach(user, avatar, "avatar", "avatar_path", "avatar_url", profile)
 		}
 
 		connections := []map[string]any{}
@@ -165,7 +190,7 @@ func exportHandler(app core.App) func(e *core.RequestEvent) error {
 				"rewound":     post.GetBool("rewound"),
 			}
 			if media := post.GetString("media"); media != "" {
-				moment["media_url"] = fileURL(base, post, media, fileToken)
+				attach(post, media, "photos", "media_path", "media_url", moment)
 			}
 			moments = append(moments, moment)
 		})
@@ -248,7 +273,7 @@ func exportHandler(app core.App) func(e *core.RequestEvent) error {
 			return e.InternalServerError("could not read your live activities", err)
 		}
 
-		return e.JSON(http.StatusOK, map[string]any{
+		payload := map[string]any{
 			"exported_at":     time.Now().UTC().Format(time.RFC3339),
 			"media_note":      mediaNote,
 			"token_note":      tokenNote,
@@ -261,8 +286,74 @@ func exportHandler(app core.App) func(e *core.RequestEvent) error {
 			"devices":         devices,
 			"widget_tokens":   widgetTokens,
 			"live_activities": activities,
-		})
+		}
+		if !withMedia {
+			return e.JSON(http.StatusOK, payload)
+		}
+		payload["media_note"] = zipMediaNote
+		return writeArchive(app, e, payload, files)
 	}
+}
+
+// archivedFile is one stored file bound for the zip: where it goes in the
+// archive, and its key in PocketBase's storage.
+type archivedFile struct {
+	path, key string
+}
+
+// writeArchive streams the zip straight to the response: photos are read from
+// storage and copied in one at a time, so the whole archive is never held in
+// memory. export.json goes last so it can say which files, if any, could not
+// be read — once the first byte is sent there is no error status left to
+// answer with.
+func writeArchive(app core.App, e *core.RequestEvent, payload map[string]any, files []archivedFile) error {
+	fsys, err := app.NewFilesystem()
+	if err != nil {
+		return e.InternalServerError("could not open file storage", err)
+	}
+	defer fsys.Close()
+
+	name := "peard-export-" + time.Now().UTC().Format("2006-01-02") + ".zip"
+	e.Response.Header().Set("Content-Type", "application/zip")
+	e.Response.Header().Set("Content-Disposition", `attachment; filename="`+name+`"`)
+	e.Response.WriteHeader(http.StatusOK)
+
+	zw := zip.NewWriter(e.Response)
+	missing := []string{}
+	for _, f := range files {
+		if err := copyInto(zw, fsys.GetReader, f); err != nil {
+			app.Logger().Warn("export: could not archive a file", "path", f.path, "error", err)
+			missing = append(missing, f.path)
+		}
+	}
+	payload["missing_media"] = missing
+
+	w, err := zw.Create("export.json")
+	if err != nil {
+		return err
+	}
+	enc := json.NewEncoder(w)
+	enc.SetIndent("", "  ")
+	if err := enc.Encode(payload); err != nil {
+		return err
+	}
+	return zw.Close()
+}
+
+// copyInto adds one stored file to the archive. Photos are already
+// compressed, so they are stored rather than deflated again.
+func copyInto[R io.ReadCloser](zw *zip.Writer, open func(string) (R, error), f archivedFile) error {
+	r, err := open(f.key)
+	if err != nil {
+		return err
+	}
+	defer r.Close()
+	w, err := zw.CreateHeader(&zip.FileHeader{Name: f.path, Method: zip.Store, Modified: time.Now()})
+	if err != nil {
+		return err
+	}
+	_, err = io.Copy(w, r)
+	return err
 }
 
 // fileURL links to one of record's protected files, carrying the caller's

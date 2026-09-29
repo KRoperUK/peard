@@ -608,8 +608,16 @@ struct ConnectionSettingsView: View {
     /// grid. It belongs here.
     private var accountSection: some View {
         Section {
-            Button {
-                Task { await exportData() }
+            // Two kinds, because the photos are what make an export large: a
+            // quick look at what is held needs none of them, and an archive
+            // meant to be kept needs all of them.
+            Menu {
+                Button("Data only") {
+                    Task { await exportData(withPhotos: false) }
+                }
+                Button("Data and photos") {
+                    Task { await exportData(withPhotos: true) }
+                }
             } label: {
                 HStack {
                     Text("Export your data")
@@ -658,15 +666,21 @@ struct ConnectionSettingsView: View {
     /// Downloads a JSON snapshot of the profile, connections and moments this
     /// account owns, then hands it to the system share sheet — save to Files,
     /// AirDrop, email, whatever the person wants to do with their own data.
-    private func exportData() async {
+    /// Data only is a JSON file whose photo links expire; with photos it is a
+    /// zip that holds them, streamed to disk because it can be large.
+    private func exportData(withPhotos: Bool) async {
         isExporting = true
         defer { isExporting = false }
         do {
-            let data = try await app.api.data(path: "/api/peard/export")
             let url = FileManager.default.temporaryDirectory
                 .appendingPathComponent("peard-export-\(Int(Date().timeIntervalSince1970))")
-                .appendingPathExtension("json")
-            try data.write(to: url, options: .atomic)
+                .appendingPathExtension(withPhotos ? "zip" : "json")
+            if withPhotos {
+                try await app.api.download(path: "/api/peard/export", query: ["media": "zip"], to: url)
+            } else {
+                let data = try await app.api.data(path: "/api/peard/export")
+                try data.write(to: url, options: .atomic)
+            }
             exportFileURL = url
         } catch {
             exportError = APIError.userMessage(for: error)

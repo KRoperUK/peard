@@ -49,6 +49,7 @@ func TestPrivacyPolicyDisclosesWhatIsCollected(t *testing.T) {
 		"tester identity not published":  "never names you",
 		"the complete export":            "everything we hold about you",
 		"export photo links expire":      "30 minutes",
+		"export with photos":             "Data and photos",
 		"Apple revocation on deletion":   "revoke Pear'd's access",
 		"device time zones":              "Time zone",
 	} {

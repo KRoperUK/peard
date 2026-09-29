@@ -423,12 +423,12 @@ async function triageFeedback(cfg, detail, shots, core) {
     shots.length ? 'The screenshot(s) are attached as images above. Examine them carefully — identify the visible screen, any error states, layout issues, or UI elements shown.' : '',
     '',
     'Return ONLY a JSON object with this shape:',
-    '{"type":"bug|feature|other","title":"short imperative title without a prefix","brief":"Markdown brief with sections: Problem / motivation, Proposed solution, Acceptance criteria, Affected files / areas, Notes / assumptions"}',
+    `{"type":"bug|feature|other","title":"short imperative title without a prefix, at most ${MAX_TITLE_LENGTH} characters","brief":"Markdown brief with sections: Problem / motivation, Proposed solution, Acceptance criteria, Affected files / areas, Notes / assumptions"}`,
   ].join('\n');
 
   const parsed = await callOpenRouter(cfg, systemPrompt, userPrompt, shots, core);
   const type = ['bug', 'feature', 'other'].includes(parsed?.type) ? parsed.type : 'other';
-  const title = (parsed?.title || fallbackTitle(detail)).slice(0, 80);
+  const title = shortenTitle(parsed?.title || fallbackTitle(detail));
   const brief = parsed?.brief || fallbackBrief(detail);
   const titlePrefix = type === 'bug' ? 'bug: ' : type === 'feature' ? 'feat: ' : 'feedback: ';
   const typeLabel = type === 'bug' ? 'bug' : type === 'feature' ? 'enhancement' : null;
@@ -490,7 +490,21 @@ function stripFences(s) {
 
 function fallbackTitle(detail) {
   const c = detail.comment.replace(/\s+/g, ' ').trim();
-  return c ? c.slice(0, 70) : `TestFlight feedback (${detail.deviceModel || 'device'})`;
+  return c ? shortenTitle(c) : `TestFlight feedback (${detail.deviceModel || 'device'})`;
+}
+
+// The prompt asks for a title this long; this is the net for one that is not.
+// Cut at the last whole word and marked, so a title never ends "on Timeli"
+// (#276) and a reader can tell that something was left off.
+const MAX_TITLE_LENGTH = 72;
+
+function shortenTitle(title, max = MAX_TITLE_LENGTH) {
+  const t = title.replace(/\s+/g, ' ').trim();
+  if (t.length <= max) return t;
+  const room = t.slice(0, max - 1);
+  const space = room.lastIndexOf(' ');
+  const cut = space > max / 2 ? room.slice(0, space) : room;
+  return `${cut.replace(/[\s,;:.\-–—]+$/, '')}…`;
 }
 
 function fallbackBrief(detail) {
@@ -601,3 +615,5 @@ function buildIssueBody({ id, detail, triage, hosted, keptShots = 0 }) {
 function quote(text) {
   return text.split('\n').map((l) => `> ${l}`).join('\n');
 }
+
+module.exports.shortenTitle = shortenTitle;
