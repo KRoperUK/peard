@@ -28,6 +28,34 @@ enum DebugSupport {
         value(for: "PeardDebugSuperuserPassword") ?? "Password123!"
     }
 
+    // MARK: UI tests
+
+    /// Launch argument that puts the app back to a fresh install's state:
+    /// no privacy agreement and no session. The UI tests pass it so every test
+    /// starts at the consent screen whatever the simulator ran before — an
+    /// XCUITest cannot uninstall the app, and the Keychain survives a
+    /// reinstall anyway.
+    static let resetStateArgument = "-PeardResetState"
+
+    /// Launch environment key that points the app at another server. The UI
+    /// tests set it to a port nothing listens on, so the launch's health probe
+    /// is refused at once instead of reaching whatever a developer has running
+    /// on the configured local server — the tests are about what the app shows
+    /// with no server, and must not write to a real one.
+    static let serverURLEnvironmentKey = "PEARD_SERVER_URL"
+
+    static var serverURLOverride: String? {
+        ProcessInfo.processInfo.environment[serverURLEnvironmentKey]
+    }
+
+    /// Called once from `PeardApp.init`, before the first `bootstrap`.
+    static func applyLaunchArguments() {
+        guard ProcessInfo.processInfo.arguments.contains(resetStateArgument) else { return }
+        SharedStore.shared.clearPrivacyConsent()
+        KeychainSessionStore().clear()
+        logger.info("reset to a fresh install's state for UI testing")
+    }
+
     private static func value(for key: String) -> String? {
         guard
             let raw = Bundle.main.object(forInfoDictionaryKey: key) as? String,

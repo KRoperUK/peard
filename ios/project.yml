@@ -327,6 +327,26 @@ targets:
         PRODUCT_BUNDLE_IDENTIFIER: com.peard.app.PeardTests
         TARGETED_DEVICE_FAMILY: "1,2"
 
+  # The launch smoke test: privacy consent, sign-in, and an invite link, driven
+  # through the real UI. Its own target because XCUITests run in a separate
+  # runner process against the installed app, and because it is slow enough to
+  # keep out of the unit-test loop — `make test-app` and `fastlane test_app`
+  # skip it, `make test-ui` and `fastlane test_ui` run only it. No server:
+  # everything it touches happens before sign-in.
+  PeardUITests:
+    type: bundle.ui-testing
+    platform: iOS
+    sources:
+      - path: PeardUITests
+    dependencies:
+      - target: Peard
+    settings:
+      base:
+        GENERATE_INFOPLIST_FILE: YES
+        PRODUCT_BUNDLE_IDENTIFIER: com.peard.app.PeardUITests
+        TARGETED_DEVICE_FAMILY: "1,2"
+        TEST_TARGET_NAME: Peard
+
 schemes:
 
   Peard:
@@ -337,6 +357,7 @@ schemes:
         PearMessagesExtension: all
         PearShareExtension: all
         PeardTests: [test]
+        PeardUITests: [test]
     run:
       config: Debug
     test:
@@ -344,8 +365,12 @@ schemes:
       gatherCoverageData: true
       coverageTargets:
         - Peard
+      # Both, so Xcode's Test action and `-only-testing:PeardUITests` find the
+      # UI tests. The command-line entry points choose between them rather than
+      # running the lot: see test-app and test-ui in the Makefile.
       targets:
         - PeardTests
+        - PeardUITests
     profile:
       config: Release
     analyze:

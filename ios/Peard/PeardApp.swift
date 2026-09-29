@@ -12,6 +12,14 @@ struct PeardApp: App {
     @Environment(\.scenePhase) private var scenePhase
     @State private var model = AppModel()
 
+    #if DEBUG
+    init() {
+        // Safe after `model` above: AppModel's initialiser reads neither the
+        // consent record nor the session, and `bootstrap` has not run yet.
+        DebugSupport.applyLaunchArguments()
+    }
+    #endif
+
     var body: some Scene {
         WindowGroup {
             RootView()

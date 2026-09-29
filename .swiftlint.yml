@@ -13,6 +13,7 @@ included:
   - ios/PearNotificationService
   - ios/PearShare
   - ios/PeardTests
+  - ios/PeardUITests
   - ios/PeardCore/Sources
   - ios/PeardCore/Tests
 

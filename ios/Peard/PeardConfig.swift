@@ -25,11 +25,14 @@ struct PeardConfig: Sendable {
     static let current = PeardConfig.load()
 
     static func load(bundle: Bundle = .main) -> PeardConfig {
-        PeardConfig(
-            serverURL: PeardServerURL.resolve(
-                bundle.object(forInfoDictionaryKey: "PeardServerURL") as? String,
-                fallback: fallbackServerURL
-            ),
+        let configured = bundle.object(forInfoDictionaryKey: "PeardServerURL") as? String
+        #if DEBUG
+        let serverURL = DebugSupport.serverURLOverride ?? configured
+        #else
+        let serverURL = configured
+        #endif
+        return PeardConfig(
+            serverURL: PeardServerURL.resolve(serverURL, fallback: fallbackServerURL),
             googleClientID: (bundle.object(forInfoDictionaryKey: "PeardGoogleIOSClientID") as? String)?
                 .trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
         )
