@@ -22,10 +22,12 @@ package tallies
 
 import (
 	"net/http"
+	"net/url"
 	"strings"
 	"time"
 
 	"peard/internal/moments"
+	"peard/internal/zone"
 
 	"github.com/pocketbase/dbx"
 	"github.com/pocketbase/pocketbase/apis"
@@ -195,11 +197,15 @@ func handler(app core.App) func(e *core.RequestEvent) error {
 	}
 }
 
-// windows resolves the three boundaries, preferring the caller's.
+// windows resolves the three boundaries, preferring the caller's. Without
+// them, they are drawn in the caller's own zone (#268): the server's is UTC,
+// which put "today" at 7pm for somebody in New York.
 func windows(e *core.RequestEvent) (day, week, month string) {
-	query := e.Request.URL.Query()
-	now := time.Now()
+	return windowsAt(e.Request.URL.Query(), time.Now().In(zone.ForUser(e.App, e.Auth.Id)))
+}
 
+// windowsAt is windows with the clock and zone given, for testing.
+func windowsAt(query url.Values, now time.Time) (day, week, month string) {
 	day = boundary(query.Get("day"), startOfDay(now))
 	week = boundary(query.Get("week"), startOfWeek(now))
 	month = boundary(query.Get("month"), startOfMonth(now))

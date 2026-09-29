@@ -27,6 +27,7 @@ import (
 	"time"
 
 	"peard/internal/moments"
+	"peard/internal/zone"
 
 	"github.com/pocketbase/dbx"
 	"github.com/pocketbase/pocketbase/apis"
@@ -121,8 +122,10 @@ func handler(app core.App) func(e *core.RequestEvent) error {
 			return e.ForbiddenError("you are not a member of that connection", nil)
 		}
 
-		shift := shiftFor(e)
-		from := windowStart(e)
+		// Only consulted when the caller sends no zone or window of its own.
+		loc := zone.ForUser(app, e.Auth.Id)
+		shift := shiftFor(e, loc)
+		from := windowStart(e, loc)
 
 		var kinds []kindRow
 		if err := app.DB().NewQuery(windowQuery).Bind(dbx.Params{
@@ -259,10 +262,13 @@ func streaks(app core.App, pairID, shift string) (current, best int) {
 // Clamped to a real range so a malformed or hostile value cannot make SQLite
 // walk somewhere absurd; ±14 hours covers every zone in use, including the ones
 // offset by 45 minutes.
-func shiftFor(e *core.RequestEvent) string {
+//
+// Without one, the caller's stored zone's current offset (#268), rather than
+// the server's.
+func shiftFor(e *core.RequestEvent, loc *time.Location) string {
 	minutes, err := strconv.Atoi(strings.TrimSpace(e.Request.URL.Query().Get("tz")))
 	if err != nil {
-		_, offset := time.Now().Zone()
+		_, offset := time.Now().In(loc).Zone()
 		minutes = offset / 60
 	}
 	if minutes > 14*60 {
@@ -291,14 +297,19 @@ func shiftedNow(shift string) time.Time {
 
 // windowStart is the beginning of the summarised period, preferring the
 // caller's boundary for the same reason the tallies route does.
-func windowStart(e *core.RequestEvent) string {
-	supplied := strings.TrimSpace(e.Request.URL.Query().Get("from"))
+func windowStart(e *core.RequestEvent, loc *time.Location) string {
+	return windowStartAt(e.Request.URL.Query().Get("from"), time.Now().In(loc))
+}
+
+// windowStartAt is windowStart with the clock and zone given, for testing.
+// Without a supplied boundary the window starts at midnight in now's zone.
+func windowStartAt(from string, now time.Time) string {
+	supplied := strings.TrimSpace(from)
 	if supplied != "" {
 		if parsed, err := time.Parse(time.RFC3339, supplied); err == nil {
 			return parsed.UTC().Format(pocketBaseLayout)
 		}
 	}
-	now := time.Now()
-	start := time.Date(now.Year(), now.Month(), now.Day(), 0, 0, 0, 0, now.Location())
+	start := zone.StartOfDay(now, now.Location())
 	return start.AddDate(0, 0, -(recapDays - 1)).UTC().Format(pocketBaseLayout)
 }

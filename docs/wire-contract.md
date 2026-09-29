@@ -514,8 +514,10 @@ reaches that in weeks — and moved up to 500 records to derive eight integers.
 The three window boundaries are **supplied by the caller** as RFC 3339 instants,
 because they are the device's: local midnight and a Monday-start week. A server
 guessing its own would make a phone in Sydney disagree with a server in London
-about what "today" means. When they are absent the server falls back to its own
-local boundaries, so a client that does not send them still gets sensible numbers.
+about what "today" means. When they are absent, the server draws them in the
+caller's own zone: the `time_zone` of their most recently registered device,
+or UTC when none has one. A client that does not send them still gets the
+right day.
 
 `kinds` is what the app's moment breakdown draws. Two things about it matter to a
 renderer:
@@ -689,8 +691,9 @@ visually ambiguous characters).
 `from` bounds the summary and `tz` is the caller's UTC offset in minutes, both
 for the same reason the tallies route takes its windows from the caller: a
 streak is nothing but a sequence of days, and a phone in Sydney and a server in
-London disagree about which days those are. Absent, the server falls back to its
-own clock and the last 7 days. `tz` is clamped to ±14 hours.
+London disagree about which days those are. Absent, the server uses the
+caller's own zone (their latest device's `time_zone`, else UTC) and the last 7
+days. `tz` is clamped to ±14 hours.
 
 `kinds` is ordered most-logged first, then alphabetically, so the same week does
 not reorder itself between two requests. `busiest` is omitted rather than sent
