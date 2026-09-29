@@ -10,6 +10,9 @@ package zone
 import (
 	"regexp"
 	"time"
+
+	"github.com/pocketbase/dbx"
+	"github.com/pocketbase/pocketbase/core"
 )
 
 // namePattern admits the shape of an IANA name and nothing else: letters,
@@ -46,4 +49,28 @@ func Load(name string) (*time.Location, bool) {
 func StartOfDay(t time.Time, loc *time.Location) time.Time {
 	local := t.In(loc)
 	return time.Date(local.Year(), local.Month(), local.Day(), 0, 0, 0, 0, loc)
+}
+
+// ForUser is the zone of the user's most recently registered device, and UTC
+// when none has a zone the server can load.
+//
+// It is the fallback for a request that sends no boundaries of its own: an
+// app from before boundaries were sent, or a client that forgot. The device
+// row is rewritten at the start of every session (#260), so the latest one is
+// where the person is now.
+func ForUser(app core.App, userID string) *time.Location {
+	if userID == "" {
+		return time.UTC
+	}
+	devices, err := app.FindRecordsByFilter("devices",
+		"user = {:user} && time_zone != ''", "-updated", 5, 0, dbx.Params{"user": userID})
+	if err != nil {
+		return time.UTC
+	}
+	for _, d := range devices {
+		if loc, ok := Load(d.GetString("time_zone")); ok {
+			return loc
+		}
+	}
+	return time.UTC
 }

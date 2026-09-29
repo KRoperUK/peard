@@ -1,6 +1,7 @@
 package tallies
 
 import (
+	"net/url"
 	"testing"
 	"time"
 )
@@ -135,6 +136,35 @@ func TestStoredTimestampsCompareChronologicallyAsText(t *testing.T) {
 		earlier, later := pair[0], pair[1]
 		if !(earlier < later) {
 			t.Errorf("%q should sort before %q as text", earlier, later)
+		}
+	}
+}
+
+// Without boundaries from the client, "today" starts at midnight where the
+// user is, not at the server's UTC midnight (#268).
+func TestWindowsWithoutBoundariesUseTheCallersZone(t *testing.T) {
+	cases := []struct {
+		zone     string
+		wantDay  string
+		wantWeek string
+	}{
+		// 10:00 UTC on Wed 18 March 2026 is 19:00 in Tokyo and 06:00 in New York;
+		// the week starts on Monday 16 March in each.
+		{"Asia/Tokyo", "2026-03-17 15:00:00.000Z", "2026-03-15 15:00:00.000Z"},
+		{"America/New_York", "2026-03-18 04:00:00.000Z", "2026-03-16 04:00:00.000Z"},
+	}
+	for _, c := range cases {
+		loc, err := time.LoadLocation(c.zone)
+		if err != nil {
+			t.Fatal(err)
+		}
+		now := time.Date(2026, 3, 18, 10, 0, 0, 0, time.UTC).In(loc)
+		day, week, _ := windowsAt(url.Values{}, now)
+		if day != c.wantDay {
+			t.Errorf("%s: day = %s, want %s", c.zone, day, c.wantDay)
+		}
+		if week != c.wantWeek {
+			t.Errorf("%s: week = %s, want %s", c.zone, week, c.wantWeek)
 		}
 	}
 }
