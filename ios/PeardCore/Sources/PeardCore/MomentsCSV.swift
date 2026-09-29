@@ -55,6 +55,7 @@ public enum MomentsCSV {
         switch post.type {
         case .event: label = MomentCatalogue.label(for: post.eventKind, customKinds: customKinds)
         case .photo: label = "Photo"
+        case .note: label = "Reply"
         case .unknown(let value): label = value
         }
         return label.isEmpty ? emoji : "\(emoji) \(label)"

@@ -26,12 +26,16 @@ public extension OpenEnum {
 public enum PostType: OpenEnum {
     case photo
     case event
+    /// Only words: a reply typed into a moment's notification. Not an event,
+    /// so it counts in no tally.
+    case note
     case unknown(String)
 
     public init(rawValue: String) {
         switch rawValue {
         case "photo": self = .photo
         case "event": self = .event
+        case "note": self = .note
         default: self = .unknown(rawValue)
         }
     }
@@ -40,6 +44,7 @@ public enum PostType: OpenEnum {
         switch self {
         case .photo: return "photo"
         case .event: return "event"
+        case .note: return "note"
         case .unknown(let value): return value
         }
     }
@@ -954,11 +959,13 @@ public struct WidgetFeed: Codable, Hashable, Sendable {
         /// The server's emoji when it sent one, else the local catalogue's.
         public var displayEmoji: String {
             if type == .photo { return "📸" }
+            if type == .note { return MomentCatalogue.replyEmoji }
             if let emoji, !emoji.isEmpty { return emoji }
             return MomentCatalogue.emoji(for: eventKind)
         }
 
         public var displayLabel: String {
+            if type == .note { return MomentCatalogue.replyLabel }
             if let label, !label.isEmpty { return label }
             return MomentCatalogue.label(for: eventKind)
         }

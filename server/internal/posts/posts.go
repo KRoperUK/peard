@@ -40,6 +40,12 @@ import (
 // sentence rather than a PocketBase validation blob.
 const maxNoteLength = 280
 
+// A post that is only words — a reply typed into a notification. The words are
+// the whole of it, so one without any is refused rather than drawn as a blank.
+const noteType = "note"
+
+const emptyReply = "a reply needs something in it"
+
 // Matches the `event_kind` field's Max.
 const maxKindLength = 40
 
@@ -58,6 +64,9 @@ func Register(app core.App) {
 	app.OnRecordCreateRequest("posts").BindFunc(func(e *core.RecordRequestEvent) error {
 		if msg := checkHappenedAt(e.Record.GetDateTime("happened_at"), time.Now()); msg != "" {
 			return e.BadRequestError(msg, nil)
+		}
+		if e.Record.GetString("type") == noteType && strings.TrimSpace(e.Record.GetString("note")) == "" {
+			return e.BadRequestError(emptyReply, nil)
 		}
 		return e.Next()
 	})
@@ -111,6 +120,9 @@ func editHandler(app core.App) func(e *core.RequestEvent) error {
 			note := strings.TrimSpace(*body.Note)
 			if len(note) > maxNoteLength {
 				return e.BadRequestError("that note is too long", nil)
+			}
+			if note == "" && post.GetString("type") == noteType {
+				return e.BadRequestError(emptyReply, nil)
 			}
 			post.Set("note", note)
 		}

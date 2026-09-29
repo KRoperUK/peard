@@ -69,6 +69,24 @@ const apnsCollapseIDMaxBytes = 64
 // than showing a plain banner.
 const momentCategory = "MOMENT"
 
+// postCategory is the same minus "Me too", for a post with no moment kind to
+// log back — a photo on its own, or a reply. A category's actions are fixed
+// when the app registers it, so the only way to leave the button off an alert
+// is to send that alert under another category.
+//
+// This way round because MOMENT is what builds from before the split know: on
+// one of those a photo's alert arrives without reaction buttons until it is
+// updated, where the other way round every moment's would.
+const postCategory = "POST"
+
+// categoryFor picks which of the two an alert goes under.
+func categoryFor(kind string) string {
+	if kind == "" {
+		return postCategory
+	}
+	return momentCategory
+}
+
 var n *notifier
 
 // Register configures the APNs client and binds the record hooks.
@@ -241,7 +259,7 @@ func notifyPairMembers(app core.App, post *core.Record) {
 				Sound("default").MutableContent().
 				ThreadID(threadID).
 				Badge(badge).
-				Category(momentCategory).
+				Category(categoryFor(kind)).
 				Custom("post_id", post.Id).
 				Custom("pair_id", pairID)
 			if media != "" {
@@ -500,6 +518,9 @@ func copyFor(app core.App, name string, post *core.Record) (title, body string) 
 			title = moments.FallbackEmoji + " " + name + " logged something" + suffix
 		}
 		return title, post.GetString("note")
+	}
+	if post.GetString("type") == "note" {
+		return "💬 " + name + " replied" + suffix, post.GetString("note")
 	}
 
 	body = post.GetString("note")

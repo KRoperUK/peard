@@ -283,6 +283,21 @@ final class AppModel {
         await refreshPendingSends()
     }
 
+    /// "Me too" or a reply from a moment's notification (issue #154): queued,
+    /// then sent. Awaited rather than left to a background flush, because iOS
+    /// may suspend the app again as soon as the action's handler returns.
+    ///
+    /// Not sent while the privacy gate is up; the queue holds it until the
+    /// launch that follows agreement flushes.
+    func answerFromNotification(_ moment: InboxedMoment) async {
+        guard let send = moment.pendingSend(authorID: signedInUserID, fallbackPairID: nil),
+              !send.authorID.isEmpty
+        else { return }
+        await enqueue(send)
+        guard hasAgreedToPrivacyPolicy else { return }
+        await flushSendQueueAndWait()
+    }
+
     /// Kicks off a flush, coalescing with one already in flight. Non-blocking so
     /// callers on the main actor (a tap, a foreground) are never held up by it.
     ///

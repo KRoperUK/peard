@@ -36,12 +36,17 @@ public struct InboxedMoment: Codable, Hashable, Sendable, Identifiable {
     /// A flag rather than a path in the JSON, so nothing read from this file
     /// can point the app at a file outside the inbox's own folder.
     public let hasPhoto: Bool
+    /// `nil` for an event, which is all a widget button or Siri can log; `.note`
+    /// for a reply answered from a notification, whose words are `note`.
+    /// Optional so an inbox written before it existed still loads.
+    public let postType: PostType?
 
     enum CodingKeys: String, CodingKey {
         case id, kind, emoji, label, note
         case pairID = "pair"
         case queuedAt = "queued_at"
         case hasPhoto = "has_photo"
+        case postType = "post_type"
     }
 
     public init(
@@ -52,7 +57,8 @@ public struct InboxedMoment: Codable, Hashable, Sendable, Identifiable {
         label: String,
         queuedAt: Date = Date(),
         note: String = "",
-        hasPhoto: Bool = false
+        hasPhoto: Bool = false,
+        postType: PostType? = nil
     ) {
         self.id = id
         self.pairID = pairID
@@ -62,6 +68,7 @@ public struct InboxedMoment: Codable, Hashable, Sendable, Identifiable {
         self.queuedAt = queuedAt
         self.note = note
         self.hasPhoto = hasPhoto
+        self.postType = postType
     }
 
     /// A photo from the share extension, with the moment it was shared as, if
@@ -100,6 +107,7 @@ public struct InboxedMoment: Codable, Hashable, Sendable, Identifiable {
         queuedAt = try c.decode(Date.self, forKey: .queuedAt)
         note = try c.decodeIfPresent(String.self, forKey: .note) ?? ""
         hasPhoto = try c.decodeIfPresent(Bool.self, forKey: .hasPhoto) ?? false
+        postType = try c.decodeIfPresent(PostType.self, forKey: .postType)
     }
 
     /// The send the app queues for it, or `nil` while there is no connection to
@@ -122,10 +130,10 @@ public struct InboxedMoment: Codable, Hashable, Sendable, Identifiable {
             label: label,
             note: note,
             queuedAt: queuedAt,
-            // The same rule as a photo shared from inside the app: with a
-            // moment it is an event that carries a picture, and counts; with
-            // none it is a plain photo.
-            postType: hasPhoto && kind.rawValue.isEmpty ? .photo : .event,
+            // A reply keeps the type it was given. Otherwise, the same rule as
+            // a photo shared from inside the app: with a moment it is an event
+            // that carries a picture, and counts; with none it is a plain photo.
+            postType: postType ?? (hasPhoto && kind.rawValue.isEmpty ? .photo : .event),
             hasPhoto: hasPhoto
         )
     }

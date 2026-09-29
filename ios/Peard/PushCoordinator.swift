@@ -42,27 +42,61 @@ final class PushCoordinator {
     /// (`push.momentCategory` server-side) — this is what makes iOS offer the
     /// reaction actions below instead of a plain banner.
     static let momentCategoryIdentifier = "MOMENT"
+    /// The same without "Me too", for a photo on its own or a reply — a post
+    /// with no moment to log back (`push.postCategory` server-side).
+    static let postCategoryIdentifier = "POST"
     private static let reactionActionPrefix = "REACT_"
 
-    /// Registers the reaction quick actions so a new-moment notification can
-    /// be reacted to without opening the app. Safe to call before
-    /// authorization is granted or even decided — it only shapes what a
-    /// notification looks like once one is actually shown.
+    /// Registers the quick actions so a new-moment notification can be
+    /// answered without opening the app: "Me too", a typed reply, and the
+    /// reactions. Safe to call before authorization is granted or even
+    /// decided — it only shapes what a notification looks like once one is
+    /// actually shown.
+    ///
+    /// "Me too" carries no emoji, though "🍺 Me too" would read better: a
+    /// category's actions are fixed here, once, and cannot differ from one
+    /// notification to the next. The notification above it already says which
+    /// moment it is.
     static func registerNotificationCategories(center: UNUserNotificationCenter = .current()) {
-        let actions = ReactionKind.allCases.map { kind in
+        center.setNotificationCategories(notificationCategories())
+    }
+
+    static func notificationCategories() -> Set<UNNotificationCategory> {
+        let reactions = ReactionKind.allCases.map { kind in
             UNNotificationAction(
                 identifier: reactionActionPrefix + kind.rawValue,
                 title: "\(kind.emoji) \(kind.accessibilityLabel)",
                 options: []
             )
         }
-        let category = UNNotificationCategory(
-            identifier: momentCategoryIdentifier,
-            actions: actions,
-            intentIdentifiers: [],
-            options: []
+        let meToo = UNNotificationAction(
+            identifier: NotificationAnswer.meTooIdentifier,
+            title: "Me too",
+            options: [],
+            icon: UNNotificationActionIcon(systemImageName: "plus.circle")
         )
-        center.setNotificationCategories([category])
+        let reply = UNTextInputNotificationAction(
+            identifier: NotificationAnswer.replyIdentifier,
+            title: "Reply",
+            options: [],
+            icon: UNNotificationActionIcon(systemImageName: "arrowshape.turn.up.left"),
+            textInputButtonTitle: "Send",
+            textInputPlaceholder: "Say something back"
+        )
+        return [
+            UNNotificationCategory(
+                identifier: momentCategoryIdentifier,
+                actions: [meToo, reply] + reactions,
+                intentIdentifiers: [],
+                options: []
+            ),
+            UNNotificationCategory(
+                identifier: postCategoryIdentifier,
+                actions: [reply] + reactions,
+                intentIdentifiers: [],
+                options: []
+            ),
+        ]
     }
 
     /// Records a reaction fired from a notification's quick actions. Mirrors
