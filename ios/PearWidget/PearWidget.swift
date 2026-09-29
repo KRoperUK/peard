@@ -179,6 +179,7 @@ struct PearTimelineProvider: AppIntentTimelineProvider {
 
 struct PearWidgetEntryView: View {
     @Environment(\.widgetFamily) private var family
+    @Environment(\.dynamicTypeSize) private var dynamicTypeSize
 
     let entry: PearEntry
 
@@ -357,7 +358,8 @@ struct PearWidgetEntryView: View {
     /// sent it, what they said, when, and today's tallies.
     ///
     /// Small has no room for a column beside anything, so the photo takes the
-    /// whole area and the words sit over it.
+    /// whole area and the words sit over it. Large has room to run it across
+    /// the top with the words below.
     @ViewBuilder
     private func photoContent(_ image: UIImage) -> some View {
         if family == .systemSmall {
@@ -372,6 +374,36 @@ struct PearWidgetEntryView: View {
                     .background(.ultraThinMaterial)
                 }
                 .clipShape(RoundedRectangle(cornerRadius: 12))
+        } else if family == .systemLarge {
+            // Tall enough for the photo to span the width, cropped to the room
+            // the grid leaves, with who and when underneath: a square tile
+            // beside the caption, as medium draws it, left half the widget
+            // empty.
+            VStack(alignment: .leading, spacing: 4) {
+                photoTile(image)
+                    .clipShape(RoundedRectangle(cornerRadius: 12))
+                HStack(alignment: .firstTextBaseline, spacing: 6) {
+                    Text(attribution)
+                        .font(.caption).bold()
+                        .lineLimit(1)
+                    if !entry.note.isEmpty {
+                        Text(entry.note)
+                            .font(.caption2)
+                            .foregroundStyle(PearColor.textSecondary)
+                            .lineLimit(1)
+                    }
+                    Spacer(minLength: 4)
+                    if let created = entry.created {
+                        Text(created, style: .relative)
+                            .font(.caption2)
+                            .foregroundStyle(PearColor.textTertiary)
+                            .lineLimit(1)
+                            .multilineTextAlignment(.trailing)
+                    }
+                }
+                talliesRow
+            }
+            .frame(maxWidth: .infinity, alignment: .leading)
         } else {
             HStack(alignment: .top, spacing: 10) {
                 photoTile(image)
@@ -449,21 +481,37 @@ struct PearWidgetEntryView: View {
     /// One tap per moment, straight from the home screen.
     ///
     /// The small family fits three; medium fits more but is still capped, because
-    /// a row of tiny targets is worse than a short row of usable ones.
+    /// a row of tiny targets is worse than a short row of usable ones. Large has
+    /// room for a grid of them — see `WidgetMomentGrid` for where it stops.
+    @ViewBuilder
     private var momentButtons: some View {
-        let limit = family == .systemSmall ? 3 : 5
-        return HStack(spacing: 6) {
-            ForEach(entry.moments.prefix(limit)) { moment in
-                Button(intent: LogMomentIntent(kind: moment.kind, pairID: entry.pairID, emoji: moment.emoji, label: moment.label)) {
-                    Text(moment.emoji)
-                        .font(.footnote)
-                        .frame(maxWidth: .infinity, minHeight: 22)
+        if family == .systemLarge {
+            let isAccessibilitySize = dynamicTypeSize.isAccessibilitySize
+            let columns = Array(
+                repeating: GridItem(.flexible(), spacing: 6),
+                count: WidgetMomentGrid.columns(isAccessibilitySize: isAccessibilitySize)
+            )
+            LazyVGrid(columns: columns, spacing: 6) {
+                ForEach(WidgetMomentGrid.shown(entry.moments, isAccessibilitySize: isAccessibilitySize)) {
+                    momentButton($0, minHeight: 32)
                 }
-                .buttonStyle(.plain)
-                .background(PearColor.surface, in: RoundedRectangle(cornerRadius: 8))
-                .accessibilityLabel("Log \(moment.label)")
+            }
+        } else {
+            HStack(spacing: 6) {
+                ForEach(entry.moments.prefix(family == .systemSmall ? 3 : 5)) { momentButton($0, minHeight: 22) }
             }
         }
+    }
+
+    private func momentButton(_ moment: WidgetFeed.AvailableMoment, minHeight: CGFloat) -> some View {
+        Button(intent: LogMomentIntent(kind: moment.kind, pairID: entry.pairID, emoji: moment.emoji, label: moment.label)) {
+            Text(moment.emoji)
+                .font(.footnote)
+                .frame(maxWidth: .infinity, minHeight: minHeight)
+        }
+        .buttonStyle(.plain)
+        .background(PearColor.surface, in: RoundedRectangle(cornerRadius: 8))
+        .accessibilityLabel("Log \(moment.label)")
     }
 }
 
@@ -611,7 +659,7 @@ struct PearWidget: Widget {
         .configurationDisplayName("Pear'd")
         .description("The latest moment from your people, today's tallies, and one-tap moments.")
         .supportedFamilies([
-            .systemSmall, .systemMedium,
+            .systemSmall, .systemMedium, .systemLarge,
             .accessoryRectangular, .accessoryCircular, .accessoryInline,
         ])
     }
