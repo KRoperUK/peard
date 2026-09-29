@@ -97,6 +97,7 @@ func Register(app core.App) {
 	} else {
 		app.Logger().Info("push: APNs configured", "bundle", n.bundleID)
 	}
+	drainOnTerminate(app)
 
 	// Delivery happens after the request has been answered, so the poster does
 	// not wait on Apple. The record is cloned because the request goes on using
