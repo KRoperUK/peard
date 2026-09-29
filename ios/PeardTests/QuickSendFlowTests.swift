@@ -397,6 +397,32 @@ final class QuickSendFlowTests: XCTestCase {
     // MARK: Helpers
 
     /// Lets the detached commit tasks that `tap` spawns finish before asserting.
+    // MARK: Haptics
+
+    /// Issue #274: a light tap to start, success when it goes, and cancelling
+    /// and rewinding each felt differently.
+    func testTheSendIsFeltFromTapToSend() async {
+        var played: [Haptic] = []
+        model.playHaptic = { played.append($0) }
+
+        model.tap(moment: beer)
+        model.rewindQuickSend(to: Date().addingTimeInterval(-600))
+        await model.sendNow()
+
+        XCTAssertEqual(played, [.momentTapped, .rewound, .sent])
+    }
+
+    func testCancellingIsFeltOnlyWhenSomethingWasPending() {
+        var played: [Haptic] = []
+        model.playHaptic = { played.append($0) }
+
+        model.cancelQuickSend()
+        model.tap(moment: beer)
+        model.cancelQuickSend()
+
+        XCTAssertEqual(played, [.momentTapped, .cancelled])
+    }
+
     private func settle() async {
         for _ in 0..<20 {
             await Task.yield()
