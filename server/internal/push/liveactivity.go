@@ -8,6 +8,8 @@ import (
 	"github.com/pocketbase/pocketbase/core"
 	"github.com/sideshow/apns2"
 	"github.com/sideshow/apns2/payload"
+
+	"peard/internal/health"
 )
 
 // Photo drops: a Live Activity on the Lock Screen and in the Dynamic Island
@@ -192,8 +194,10 @@ func (nt *notifier) sendLive(token string, p *payload.Payload) (dead bool) {
 	})
 	if err != nil {
 		nt.log().Error("push: live activity send failed", "error", err)
+		health.RecordPush(false)
 		return false
 	}
+	health.RecordPush(res.StatusCode == 200)
 	if res.StatusCode != 200 {
 		nt.log().Warn("push: APNs refused a live activity push",
 			"status", res.StatusCode, "reason", res.Reason)

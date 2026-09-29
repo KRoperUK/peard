@@ -27,6 +27,7 @@ import (
 	"peard/internal/backups"
 	"peard/internal/contacts"
 	"peard/internal/export"
+	"peard/internal/health"
 	"peard/internal/limits"
 	"peard/internal/media"
 	"peard/internal/pairs"
@@ -82,6 +83,7 @@ func main() {
 	export.Register(app)
 	contacts.Register(app)
 	version.Register(app)
+	health.Register(app)
 
 	if err := app.Start(); err != nil {
 		log.Fatal(err)

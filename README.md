@@ -371,6 +371,19 @@ prefers. `PEARD_APNS_PRODUCTION=true` is the one that is easy to miss and silent
 when wrong: TestFlight builds carry `aps-environment=production`, so their device
 tokens only resolve on Apple's production APNs host.
 
+#### Is it working?
+
+`GET /api/peard/admin/status`, for superusers only (sign in to the dashboard,
+or send a superuser token), shows the background work since the last boot:
+
+- whether APNs is configured, and how many pushes it accepted and refused;
+- the last run of the invite sweep (and how many it deleted), the weekly recap,
+  and the backup check, each with whether it failed and why;
+- the time of the newest backup.
+
+It lives in memory, so a restart starts the counts again. That is enough to
+see a job that has stopped, which is what it is for.
+
 ### Backups and restoring
 
 `pb_data` is the only state the server has, and PocketBase can back it up on a

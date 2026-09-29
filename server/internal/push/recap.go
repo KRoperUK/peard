@@ -6,6 +6,7 @@ import (
 	"strings"
 	"time"
 
+	"peard/internal/health"
 	"peard/internal/moments"
 	"peard/internal/zone"
 
@@ -45,6 +46,7 @@ const (
 func registerWeeklyRecap(app core.App) {
 	app.Cron().MustAdd("weeklyRecap", weeklyRecapCron, func() {
 		sendWeeklyRecaps(app)
+		health.RecordJob("weekly_recap", nil, "")
 	})
 }
 
