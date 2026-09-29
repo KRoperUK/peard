@@ -59,6 +59,7 @@ func TestPageCheckCatchesBrokenMarkup(t *testing.T) {
 		"skipped heading":      head + `<main><h1>x</h1><h3>y</h3></main>` + tail,
 		"two h1s":              head + `<main><h1>x</h1><h1>y</h1></main>` + tail,
 		"duplicate id":         head + `<main><h1 id="a">x</h1><p id="a">y</p></main>` + tail,
+		"label on a plain div": head + `<main><h1>x</h1><div aria-label="Code A B C">ABC</div></main>` + tail,
 	}
 	for name, doc := range cases {
 		if problems := checkPage(doc); len(problems) == 0 {
@@ -108,6 +109,7 @@ type openLink struct {
 //   - every <a> has an href and an accessible name: text outside aria-hidden,
 //     aria-label, or an image's alt text
 //   - one <h1>, it comes first, and no heading skips a level on the way down
+//   - no aria-label on a <div>, <span> or <p> that has no role
 //   - no id used twice
 func checkPage(doc string) []string {
 	var problems []string
@@ -270,6 +272,12 @@ func checkElement(tok html.Token, report func(string, ...any), ids map[string]bo
 	case "a":
 		if !seen["href"] {
 			report("<a> has no href")
+		}
+	case "div", "span", "p":
+		// ARIA forbids naming a generic element: without a role, a screen
+		// reader is free to ignore the label, and most do.
+		if seen["aria-label"] && !seen["role"] {
+			report("<%s aria-label=%q> has no role, so the label may never be read", tok.Data, attr(tok, "aria-label"))
 		}
 	}
 }
