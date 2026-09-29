@@ -98,7 +98,9 @@ rich push notifications. The backend is Go on PocketBase.
 - Reference specific files/services from the tables above in "Affected files /
   areas" when you can identify the relevant screen.
 - Keep wording concise and action-oriented.
-- Prefer the most specific, useful title you can derive.
+- Prefer the most specific, useful title you can derive, in at most 72
+  characters. Write one that fits rather than a long one: anything longer is
+  cut short.
 
 ## Output format
 
@@ -107,7 +109,7 @@ Respond with **only** a single JSON object — no prose, no code fences:
 ```
 {
   "type": "bug | feature | other",
-  "title": "short imperative title, no 'bug:'/'feat:' prefix",
+  "title": "short imperative title, at most 72 characters, no 'bug:'/'feat:' prefix",
   "brief": "Markdown brief"
 }
 ```
