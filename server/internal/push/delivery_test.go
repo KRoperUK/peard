@@ -191,3 +191,54 @@ func TestDeliveriesAreCapped(t *testing.T) {
 		t.Fatalf("peak concurrent deliveries = %d, want exactly the cap %d", got, maxConcurrentDeliveries)
 	}
 }
+
+// A redeploy mid-fan-out must not drop the pushes it was sending: the post is
+// already saved, and nothing would ever send its alert again.
+func TestShutdownWaitsForADeliveryInFlight(t *testing.T) {
+	app := newMediaApp(t)
+	drainOnTerminate(app)
+
+	release := make(chan struct{})
+	var finished atomic.Bool
+	deliverInBackground(app, "test", func() {
+		<-release
+		finished.Store(true)
+	})
+
+	stopped := make(chan struct{})
+	go func() {
+		_ = app.OnTerminate().Trigger(&core.TerminateEvent{App: app}, func(*core.TerminateEvent) error { return nil })
+		close(stopped)
+	}()
+
+	select {
+	case <-stopped:
+		t.Fatal("shutdown finished while a delivery was still running")
+	case <-time.After(50 * time.Millisecond):
+	}
+	close(release)
+	select {
+	case <-stopped:
+	case <-time.After(5 * time.Second):
+		t.Fatal("shutdown never finished after the delivery did")
+	}
+	if !finished.Load() {
+		t.Fatal("shutdown finished before the delivery did")
+	}
+}
+
+// It does not wait for ever: past the grace it gives up and reports how many
+// it abandoned.
+func TestShutdownGivesUpAfterTheGrace(t *testing.T) {
+	app := newMediaApp(t)
+	release := make(chan struct{})
+	deliverInBackground(app, "test", func() { <-release })
+
+	if left := drainDeliveries(20 * time.Millisecond); left != 1 {
+		t.Fatalf("abandoned = %d, want 1", left)
+	}
+	close(release)
+	if left := drainDeliveries(5 * time.Second); left != 0 {
+		t.Fatalf("abandoned = %d after the delivery finished, want 0", left)
+	}
+}
