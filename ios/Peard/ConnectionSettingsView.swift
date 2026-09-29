@@ -594,10 +594,10 @@ struct ConnectionSettingsView: View {
         isSavingDiscoverability = true
         await app.updateDiscoverability(
             discoverable: discoverable,
-            phone: phoneText,
+            phone: discoverable ? phoneText : "",
             contactEmail: contactEmailText
         )
-        phoneText = app.profile?.phone ?? phoneText
+        phoneText = app.profile?.phone ?? (discoverable ? phoneText : "")
         isSavingDiscoverability = false
     }
 

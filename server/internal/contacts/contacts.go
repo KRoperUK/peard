@@ -236,6 +236,12 @@ func settingsHandler(app core.App) func(e *core.RequestEvent) error {
 			return e.BadRequestError("that is a private relay address — use one people have for you", nil)
 		}
 
+		// The phone number is only held for discovery, so turning discovery
+		// off drops it (and, via the record hook, its hash) rather than
+		// keeping it for next time.
+		if !body.Discoverable {
+			phone = ""
+		}
 		user.Set("discoverable", body.Discoverable)
 		user.Set("phone", phone)
 		user.Set("contact_email", contactEmail)
