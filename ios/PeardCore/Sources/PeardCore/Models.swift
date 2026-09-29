@@ -723,6 +723,19 @@ public struct Device: Codable, Hashable, Sendable, Identifiable {
         self.platform = platform
         self.pushToken = pushToken
     }
+
+    /// What the app writes to its `devices` row at the start of every session.
+    ///
+    /// The zone rides along so the weekly recap reaches this phone at 18:00 on
+    /// Sunday where it is, not where the server is. Rewritten each session, so it
+    /// follows somebody who travels.
+    public static func registrationFields(
+        user: String,
+        pushToken: String,
+        timeZone: TimeZone = .current
+    ) -> [String: String] {
+        ["user": user, "platform": "ios", "push_token": pushToken, "time_zone": timeZone.identifier]
+    }
 }
 
 /// A `users` record, as returned by the auth endpoints.
