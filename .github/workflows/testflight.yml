@@ -2,14 +2,14 @@ name: TestFlight
 
 # Releasing the app from main: "TestFlight (internal)" waits for approval (the
 # testflight-internal environment's required reviewer), then runs the
-# app-target tests, archives and uploads for internal testers; "TestFlight (What to
+# app-target tests, archives and uploads for internal testers, then runs the
+# app's UI smoke test; "TestFlight (What to
 # Test)" sets the notes once App Store Connect has processed the build; and
 # "TestFlight (external)" waits for a second approval, then sends that same
 # build to external testers.
 #
 # A workflow of its own, rather than jobs in CI, so that a newer push to main
-# can cut CI's older run — its smoke test and all — without also killing an
-# upload in progress. GitHub cancels a run whole; a job cannot opt out. Here
+# can cut CI's older run without also killing an upload in progress. GitHub cancels a run whole; a job cannot opt out. Here
 # nothing is cancelled at the workflow level, and the internal job's
 # concurrency group lets a running upload finish while a newer build waits.
 
@@ -75,6 +75,18 @@ jobs:
       - name: Test, build and upload
         id: release
         run: bundle exec fastlane ci_release skip_checks:true
+
+      # The launch smoke test (PeardUITests): privacy consent, sign-in and an
+      # invite link, through the real UI. Only here, with a build somebody
+      # chose to ship: it was a job of its own on every push to main, a second
+      # macOS runner for several minutes each time. Here it reuses the
+      # simulator build the app-target tests just made, and runs after the
+      # upload so it never holds one up. It gates nothing, as before — a
+      # failure marks this step, not the release — and says the first-launch
+      # path broke on the build that broke it.
+      - name: UI smoke test
+        continue-on-error: true
+        run: bundle exec fastlane test_ui
 
   # What to Test for internal testers. The upload no longer waits for App Store
   # Connect to process the build — pilot did that on the macOS runner, which is

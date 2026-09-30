@@ -193,8 +193,10 @@ gated on them:
 
 **Pushes to `main`** then offer the release, as two approvals, in a workflow of
 its own (`.github/workflows/testflight.yml`). CI's runs on `main` cancel each
-other so a stale smoke test stops at once; GitHub cancels a run whole, so the
-upload lives elsewhere, where nothing cuts it once it has started.
+other so a stale run stops at once; GitHub cancels a run whole, so the upload
+lives elsewhere, where nothing cuts it once it has started. The app's UI smoke
+test runs only there, after each internal upload, reusing that job's simulator
+build rather than a macOS runner of its own on every push; it gates nothing.
 
 - **TestFlight (internal)** waits for approval (the `testflight-internal`
   environment's required reviewer). It runs `fastlane ci_release skip_checks:true`:

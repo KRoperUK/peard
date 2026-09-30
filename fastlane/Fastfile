@@ -69,7 +69,7 @@ platform :ios do
       # well would fail on a fresh clone if the scheme regenerates differently.
       # The UI tests are in that action too, and are skipped: they are slow,
       # and this lane gates every TestFlight upload. They have their own lane
-      # below and their own CI job.
+      # below, which CI runs after the upload.
       skip_testing: ["PeardUITests"],
       result_bundle: true,
       output_directory: "fastlane/test_output"
@@ -87,7 +87,9 @@ platform :ios do
       derived_data_path: DERIVED,
       only_testing: ["PeardUITests"],
       result_bundle: true,
-      output_directory: "fastlane/test_output"
+      # Its own folder: CI runs it straight after test_app, and the two
+      # result bundles would otherwise share a path.
+      output_directory: "fastlane/test_output/ui"
     )
   end
 

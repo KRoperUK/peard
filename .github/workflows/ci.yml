@@ -5,9 +5,9 @@ name: CI
 # touches it. They are small jobs in parallel, none of which builds the app or
 # boots a simulator, and every merge is gated on them.
 #
-# On main the server deploys and, when the app changed, the UI smoke test runs.
-# Releasing the app is testflight.yml, a workflow of its own so that cutting an
-# older run here never cuts an upload in progress.
+# On main the server deploys. Releasing the app — and the app's UI smoke test,
+# which runs with it — is testflight.yml, a workflow of its own so that
+# cutting an older run here never cuts an upload in progress.
 
 on:
   push:
@@ -20,8 +20,8 @@ on:
 
 concurrency:
   # One run per pull request or branch, and a newer run cancels the older one —
-  # on main too, where a stale run's smoke test is only spending a macOS runner
-  # on a commit that has already been superseded. Closing or merging a pull
+  # on main too, where a stale run is only spending runners on a commit that
+  # has already been superseded. Closing or merging a pull
   # request starts a run that does nothing but join this group, which cancels
   # whatever was still running for it. The app's TestFlight jobs are in
   # testflight.yml so that none of this reaches an upload in progress; the
@@ -203,92 +203,6 @@ jobs:
           echo "Container never became healthy:"
           docker compose logs
           exit 1
-
-  # Whether a push to main touched the app, so the smoke test below only spends
-  # a macOS runner — seven to fourteen minutes of building the app — when there
-  # is something new to smoke-test. A tiny Linux job rather than a first step
-  # of that one, because by the time a step runs the macOS runner is already
-  # paid for. Manual runs always test.
-  app-scope:
-    name: Does this change the app?
-    runs-on: ubuntu-latest
-    if: >-
-      (github.event_name == 'push' && github.ref == 'refs/heads/main')
-      || github.event_name == 'workflow_dispatch'
-    outputs:
-      app: ${{ steps.scope.outputs.app }}
-    steps:
-      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
-        with:
-          # Full history, so the range below is diffable however many commits
-          # the push carried.
-          fetch-depth: 0
-
-      - name: Does this change the app?
-        id: scope
-        run: |
-          set -euo pipefail
-          if [ "${{ github.event_name }}" = "workflow_dispatch" ]; then
-            echo "app=true" >> "$GITHUB_OUTPUT"
-            exit 0
-          fi
-          before='${{ github.event.before }}'
-          if [ -z "$before" ] || [ "$before" = "0000000000000000000000000000000000000000" ] \
-             || ! git cat-file -e "${before}^{commit}" 2>/dev/null; then
-            # A force-push or a first push: nothing reliable to diff against, so
-            # test rather than guess.
-            echo "No usable previous commit to diff against — testing."
-            echo "app=true" >> "$GITHUB_OUTPUT"
-            exit 0
-          fi
-          changed=$(git diff --name-only "$before" "$GITHUB_SHA")
-          # The app and everything its build reads, plus this workflow, which
-          # is how a change to the smoke test itself gets tested.
-          if echo "$changed" | grep -qE '^(ios/|scripts/(pick-simulator|select-newest-xcode)$|\.github/workflows/ci\.yml$)'; then
-            echo "app=true" >> "$GITHUB_OUTPUT"
-          else
-            echo "Nothing the app is built from changed — skipping the smoke test."
-            echo "app=false" >> "$GITHUB_OUTPUT"
-          fi
-
-  ui-smoke:
-    name: App UI smoke test
-    runs-on: macos-26
-    # Main only, and after the merge rather than on the pull request: it boots a
-    # simulator and drives the real app for a minute or two, which is too slow
-    # and too costly on a macOS runner to put in front of every push to a pull
-    # request. A manual run can ask for it too.
-    #
-    # Nothing depends on it, deliberately. It is not in the deploy's `needs`,
-    # TestFlight is another workflow, and it has no environment, so it never
-    # waits for an approval and a red run never holds up a server fix or a
-    # build — it says that the first-launch path broke, on the commit that
-    # broke it. The app-target unit tests, which do gate uploads, run inside the
-    # TestFlight job and skip these (see fastlane test_app).
-    needs: app-scope
-    if: needs.app-scope.outputs.app == 'true'
-    timeout-minutes: 30
-    steps:
-      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
-
-      - name: Toolchain
-        # The newest Xcode on the image, as the other macOS jobs use.
-        run: scripts/select-newest-xcode
-
-      - name: Tools
-        run: brew install xcodegen
-
-      # Straight to xcodegen and xcodebuild rather than `make test-ui`, whose
-      # project target also tries to install git hooks. No server is started:
-      # the test points the app at a closed port and never signs in.
-      - name: UI smoke test
-        run: |
-          set -euo pipefail
-          (cd ios && xcodegen generate --spec project.yml)
-          udid=$(scripts/pick-simulator)
-          xcodebuild -project ios/Peard.xcodeproj -scheme Peard -configuration Debug \
-            -destination "platform=iOS Simulator,id=$udid" \
-            -derivedDataPath ios/build -only-testing:PeardUITests test
 
   deploy:
     name: Deploy server
