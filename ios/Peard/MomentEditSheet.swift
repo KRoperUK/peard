@@ -71,10 +71,11 @@ struct MomentEditSheet: View {
                         .disabled(!hasChanges || isSaving)
                 }
             }
-            .confirmationDialog(
+            // An alert, as on the timeline: centred over the moment rather than
+            // a sheet along the bottom of the screen (issue #296).
+            .alert(
                 "Delete this moment?",
-                isPresented: $showDeleteConfirmation,
-                titleVisibility: .visible
+                isPresented: $showDeleteConfirmation
             ) {
                 Button("Delete", role: .destructive) { deleteMoment() }
                 Button("Cancel", role: .cancel) {}

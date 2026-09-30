@@ -71,10 +71,14 @@ struct HistoryView: View {
         // A swipe is easy to do by accident on a list you are scrolling, and this
         // one cannot be undone, so it asks. The sheet has its own confirmation
         // for the same reason.
-        .confirmationDialog(
+        //
+        // An alert, centred, rather than a confirmation dialog, which an iPhone
+        // shows as a sheet along the bottom of the screen — far from the row
+        // being deleted, and easy to read as belonging to the whole timeline
+        // (issue #296).
+        .alert(
             "Delete this moment?",
-            isPresented: Binding(get: { deleting != nil }, set: { if !$0 { deleting = nil } }),
-            titleVisibility: .visible
+            isPresented: Binding(get: { deleting != nil }, set: { if !$0 { deleting = nil } })
         ) {
             Button("Delete", role: .destructive) {
                 if let post = deleting {
