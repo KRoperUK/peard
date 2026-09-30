@@ -54,6 +54,38 @@ final class MomentTrayModelTests: XCTestCase {
         XCTAssertEqual(model.moments.map(\.kind), [.beer, .loo, .coffee])
     }
 
+    // MARK: Log one too
+
+    /// Somebody else's bubble offers their moment back — as this connection has
+    /// it, so the emoji and label are the connection's own.
+    func testATappedBubbleOffersItsMomentBack() {
+        let model = MomentTrayModel(store: store)
+
+        model.offer(MomentBubble(kind: .coffee, emoji: "☕", label: "Coffee"))
+
+        XCTAssertEqual(model.offeredMoment?.kind, .coffee)
+    }
+
+    /// A custom moment from another connection is not offered: the server
+    /// would refuse to log a kind this connection never published.
+    func testAMomentThisConnectionDoesNotHaveIsNotOffered() {
+        let model = MomentTrayModel(store: store)
+
+        model.offer(MomentBubble(kind: EventKind(rawValue: "dog_walk"), emoji: "🐕", label: "Dog walk"))
+
+        XCTAssertNotNil(model.offered)
+        XCTAssertNil(model.offeredMoment)
+    }
+
+    func testNothingIsOfferedUntilABubbleIsTapped() {
+        let model = MomentTrayModel(store: store)
+        XCTAssertNil(model.offeredMoment)
+
+        model.offer(MomentBubble(kind: .beer, emoji: "🍺", label: "Beer"))
+        model.offer(nil)
+        XCTAssertNil(model.offeredMoment)
+    }
+
     // MARK: Choosing
 
     func testAChoiceIsOnlyOfferedWhenThereIsOne() {

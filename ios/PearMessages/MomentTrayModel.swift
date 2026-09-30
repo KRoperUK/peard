@@ -42,6 +42,10 @@ final class MomentTrayModel {
     private(set) var status: Status = .idle
     private(set) var selectedID: String?
 
+    /// A moment somebody else sent as a bubble, offered back as "log one too"
+    /// when their bubble is tapped.
+    private(set) var offered: MomentBubble?
+
     /// The selected connection's feed, kept whole.
     ///
     /// The tray fetched this all along and kept only `moments`, throwing away
@@ -82,6 +86,19 @@ final class MomentTrayModel {
     var moments: [WidgetFeed.AvailableMoment] {
         let published = feed?.moments ?? []
         return published.isEmpty ? Self.builtin : published
+    }
+
+    /// The offered moment as this connection has it, or `nil` when there is
+    /// none or this connection has no such moment — somebody else's custom
+    /// "dog walk" is not something every connection can log, and the server
+    /// would refuse it.
+    var offeredMoment: WidgetFeed.AvailableMoment? {
+        guard let offered else { return nil }
+        return moments.first { $0.kind == offered.kind }
+    }
+
+    func offer(_ bubble: MomentBubble?) {
+        offered = bubble
     }
 
     /// Only worth offering a choice when there is one to make.
