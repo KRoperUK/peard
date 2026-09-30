@@ -17,4 +17,11 @@ final class HapticsTests: XCTestCase {
         let all: [Haptic] = [.momentTapped, .sent, .cancelled, .failed, .rewound, .reacted]
         XCTAssertEqual(Set(all.map { "\($0.feedback)" }).count, all.count)
     }
+
+    /// Choosing something from a set feels like choosing, wherever it is.
+    func testChoosingFeelsTheSameEverywhere() {
+        XCTAssertEqual(Haptic.switchedConnection.feedback, .selection)
+        XCTAssertEqual(Haptic.changedPeriod.feedback, .selection)
+        XCTAssertEqual(Haptic.reacted.feedback, .selection)
+    }
 }

@@ -240,6 +240,25 @@ final class TimelineReactionsTests: XCTestCase {
 
     // MARK: Who may
 
+    // MARK: Haptics
+
+    /// Issue #274's follow-up: the timeline feels a reaction and a rewind the
+    /// way Home does. (This stub never fails a write, so the error haptic on a
+    /// failed edit is not reachable here.)
+    func testReactingAndRewindingAreFelt() async {
+        var played: [Haptic] = []
+        model.playHaptic = { played.append($0) }
+        TimelineStubProtocol.route(posts: [Self.mine, Self.theirs], reactions: [])
+        await model.loadFirstPage()
+
+        await model.toggleReaction(to: Self.theirs, kind: .cheers)
+        await model.edit(Self.mine, note: "", kind: nil, happenedAt: Self.mine.created.addingTimeInterval(-2 * 3600))
+        // A note change alone moves nothing in time, so it is not a rewind.
+        await model.edit(Self.mine, note: "just words", kind: nil)
+
+        XCTAssertEqual(played, [.reacted, .rewound])
+    }
+
     func testYouCanReactToSomebodyElsesMomentButNotYourOwn() {
         XCTAssertTrue(model.canReact(to: Self.theirs))
         XCTAssertFalse(model.canReact(to: Self.mine))

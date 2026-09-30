@@ -150,6 +150,20 @@ func (w *feedWorld) unread(t *testing.T) int {
 
 func TestFeedReportsSomebodyElsesMomentAsUnread(t *testing.T) {
 	w := newFeedWorld(t)
+	// Unread means created strictly after Alice last looked, and timestamps are
+	// to the millisecond: on a warm run her membership and Bob's post could
+	// share one and the post would not count. Having her look a second ago
+	// makes the order the test means independent of how fast it runs.
+	membership, err := w.app.FindFirstRecordByFilter("pair_members",
+		"pair = {:pair} && user = {:user}",
+		map[string]any{"pair": w.pair.Id, "user": w.alice.Id})
+	if err != nil {
+		t.Fatalf("membership: %v", err)
+	}
+	membership.Set("last_seen_at", types.NowDateTime().Add(-time.Second))
+	if err := w.app.Save(membership); err != nil {
+		t.Fatalf("stamp: %v", err)
+	}
 	w.newPost(t, w.bob, "from Bob")
 
 	if got := w.unread(t); got != 1 {

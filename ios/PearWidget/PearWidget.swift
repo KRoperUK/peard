@@ -112,11 +112,11 @@ struct PearTimelineProvider: AppIntentTimelineProvider {
     func placeholder(in context: Context) -> PearEntry { .placeholder }
 
     func snapshot(for configuration: SelectConnectionIntent, in context: Context) async -> PearEntry {
-        await loadEntry(pairID: configuration.connection?.id)
+        await loadEntry(pairID: configuration.connection?.id, family: context.family)
     }
 
     func timeline(for configuration: SelectConnectionIntent, in context: Context) async -> Timeline<PearEntry> {
-        let entry = await loadEntry(pairID: configuration.connection?.id)
+        let entry = await loadEntry(pairID: configuration.connection?.id, family: context.family)
         // A tap's acknowledgement is shown now and taken down by a second entry
         // WidgetKit renders on its own schedule, without waking this provider.
         if let log = entry.pendingLog {
@@ -128,7 +128,7 @@ struct PearTimelineProvider: AppIntentTimelineProvider {
         return Timeline(entries: [entry], policy: .after(Date().addingTimeInterval(Self.refreshInterval)))
     }
 
-    private func loadEntry(pairID: String?) async -> PearEntry {
+    private func loadEntry(pairID: String?, family: WidgetFamily) async -> PearEntry {
         let store = SharedStore.shared
         guard
             let token = store.widgetToken, !token.isEmpty,
@@ -138,7 +138,11 @@ struct PearTimelineProvider: AppIntentTimelineProvider {
         }
 
         do {
-            let feed = try await APIClient(baseURL: baseURL).widgetFeed(token: token, pairID: pairID)
+            let feed = try await APIClient(baseURL: baseURL).widgetFeed(
+                token: token,
+                pairID: pairID,
+                largePhoto: family == .systemLarge
+            )
             // The configured pair when there is one, else whichever the server
             // chose — so a button logs into the connection on screen.
             let resolvedPairID = pairID ?? feed.connection?.id

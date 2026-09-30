@@ -22,6 +22,10 @@ public enum Haptic: Equatable, Sendable {
     case rewound
     /// A reaction was added or taken back.
     case reacted
+    /// Another connection was chosen on the rail.
+    case switchedConnection
+    /// The tallies were switched to another period.
+    case changedPeriod
 
     enum Feedback: Equatable {
         case impact(Weight)
@@ -41,7 +45,7 @@ public enum Haptic: Equatable, Sendable {
         case .cancelled: return .notification(.warning)
         case .failed: return .notification(.error)
         case .rewound: return .impact(.medium)
-        case .reacted: return .selection
+        case .reacted, .switchedConnection, .changedPeriod: return .selection
         }
     }
 }

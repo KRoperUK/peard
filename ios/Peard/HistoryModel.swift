@@ -35,6 +35,8 @@ final class HistoryModel {
     private let unreadWatermark: Date?
 
     private(set) var posts: [Post] = []
+    /// Replaceable so a test can see what was felt.
+    var playHaptic: (Haptic) -> Void = { Haptics.play($0) }
     private(set) var customKinds: [MomentKind] = []
     private(set) var isLoadingFirstPage = false
     private(set) var isLoadingMore = false
@@ -189,6 +191,7 @@ final class HistoryModel {
     /// only way out was to leave it. The same control does both, because
     /// "cheers" and "un-cheers" are the same thought.
     func toggleReaction(to post: Post, kind: ReactionKind) async {
+        playHaptic(.reacted)
         if myReaction(to: post.id, kind: kind) != nil {
             await removeReaction(from: post, kind: kind)
         } else {
@@ -538,11 +541,14 @@ final class HistoryModel {
             // deletion against a server that could not do it — and "Not found"
             // tells somebody trying to fix a typo nothing at all.
             self.error = "This server can't edit moments yet. Deleting and logging it again works."
+            playHaptic(.failed)
             return false
         } catch {
             self.error = APIError.userMessage(for: error)
+            playHaptic(.failed)
             return false
         }
+        if timeChanged && newRewound { playHaptic(.rewound) }
 
         replace(post.id) { old in
             Post(

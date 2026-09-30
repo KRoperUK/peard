@@ -89,7 +89,8 @@ names and avatars while never getting an email address.
 | `happened_at` | date | when it happened. The timeline sorts by this, and tallies, recap, streaks and "last happened" count by it. Defaults to now; a create may set it up to 24 hours back — see [Rewinding a moment](#rewinding-a-moment) |
 | `rewound` | bool | somebody picked `happened_at`, as opposed to the moment arriving late from the offline queue. Drives the "⏪ Rewound" chip |
 
-Thumbnail URL: `GET /api/files/posts/{id}/{media}?thumb=512x512`.
+Thumbnail URL: `GET /api/files/posts/{id}/{media}?thumb=512x512`. `256x256` and
+`1024x1024` are also declared; the large widget uses the 1024 one.
 
 ### Rewinding a moment
 
@@ -765,7 +766,9 @@ column keeps milliseconds, so a strict `>` labels moments nobody touched.
 
 `POST /api/peard/widget/token` → `{ "id": "<record id>", "token": "<hex>" }`.
 
-`GET /api/peard/widget/feed?token=<token>[&pair=<id>][&tz=<IANA zone>]` (no PocketBase session):
+`GET /api/peard/widget/feed?token=<token>[&pair=<id>][&tz=<IANA zone>][&photo=large]` (no PocketBase session).
+`photo=large` makes `post.media_url` ask for the `1024x1024` thumbnail instead of
+`512x512`, for the large widget:
 
 ```json
 {

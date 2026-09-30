@@ -371,8 +371,15 @@ func feedHandler(app core.App) func(e *core.RequestEvent) error {
 
 		mediaURL := ""
 		if media := latest.GetString("media"); media != "" {
-			mediaURL = fmt.Sprintf("%s/api/files/%s/%s/%s?thumb=512x512",
-				baseURL(app, e), latest.Collection().Id, latest.Id, url.PathEscape(media))
+			// The large widget spans its full width with the photo, where 512
+			// is soft; it asks for more with photo=large. Every other family
+			// keeps the smaller one, which is all it can show.
+			thumb := "512x512"
+			if e.Request.URL.Query().Get("photo") == "large" {
+				thumb = "1024x1024"
+			}
+			mediaURL = fmt.Sprintf("%s/api/files/%s/%s/%s?thumb=%s",
+				baseURL(app, e), latest.Collection().Id, latest.Id, url.PathEscape(media), thumb)
 			// posts.media is a protected file field, so the bytes need a file
 			// token. The widget cannot mint one — that endpoint wants a real
 			// session and the extension has only its widget token — so the
