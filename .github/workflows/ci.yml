@@ -23,15 +23,20 @@ on:
   workflow_dispatch:
 
 concurrency:
-  # One run per pull request or branch, and a newer run cancels the older one:
-  # on main as well as on pull requests, including a run waiting for a
-  # TestFlight approval, because the newer run offers a newer build. Closing or
-  # merging a pull request starts a run that does nothing but join this group,
-  # which cancels whatever was still running for it. That used to take a
-  # separate workflow calling the API. The deploy and TestFlight jobs also have
-  # job-level groups, so two runs never do either at once.
-  group: ${{ github.workflow }}-${{ github.event.pull_request.number || github.ref }}
-  cancel-in-progress: true
+  # One run per pull request or branch, and on a pull request a newer run
+  # cancels the older one. Closing or merging a pull request starts a run that
+  # does nothing but join this group, which cancels whatever was still running
+  # for it. That used to take a separate workflow calling the API.
+  #
+  # Not on main. Each push there gets a group of its own, so merging one pull
+  # request no longer cancels the run of the one before it: that used to kill a
+  # TestFlight build part-way through its upload, and with a few merges in a row
+  # no build finished at all. The deploy and TestFlight jobs have job-level
+  # groups instead, so two runs still never deploy or upload at once; a newer
+  # one waits its turn. An older run still waiting for approval can be
+  # rejected in the Actions tab when a newer build should go instead.
+  group: ${{ github.workflow }}-${{ github.event.pull_request.number || (github.ref == 'refs/heads/main' && github.run_id) || github.ref }}
+  cancel-in-progress: ${{ github.ref != 'refs/heads/main' }}
 
 # Read-only by default. These jobs hold the App Store Connect and Komodo
 # secrets, and a token able to write to the repository is not something any of
@@ -208,6 +213,53 @@ jobs:
           docker compose logs
           exit 1
 
+  # Whether a push to main touched the app, so the smoke test below only spends
+  # a macOS runner — seven to fourteen minutes of building the app — when there
+  # is something new to smoke-test. A tiny Linux job rather than a first step
+  # of that one, because by the time a step runs the macOS runner is already
+  # paid for. Manual runs always test.
+  app-scope:
+    name: Does this change the app?
+    runs-on: ubuntu-latest
+    if: >-
+      (github.event_name == 'push' && github.ref == 'refs/heads/main')
+      || github.event_name == 'workflow_dispatch'
+    outputs:
+      app: ${{ steps.scope.outputs.app }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          # Full history, so the range below is diffable however many commits
+          # the push carried.
+          fetch-depth: 0
+
+      - name: Does this change the app?
+        id: scope
+        run: |
+          set -euo pipefail
+          if [ "${{ github.event_name }}" = "workflow_dispatch" ]; then
+            echo "app=true" >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+          before='${{ github.event.before }}'
+          if [ -z "$before" ] || [ "$before" = "0000000000000000000000000000000000000000" ] \
+             || ! git cat-file -e "${before}^{commit}" 2>/dev/null; then
+            # A force-push or a first push: nothing reliable to diff against, so
+            # test rather than guess.
+            echo "No usable previous commit to diff against — testing."
+            echo "app=true" >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+          changed=$(git diff --name-only "$before" "$GITHUB_SHA")
+          # The app and everything its build reads, plus this workflow, which
+          # is how a change to the smoke test itself gets tested.
+          if echo "$changed" | grep -qE '^(ios/|scripts/(pick-simulator|select-newest-xcode)$|\.github/workflows/ci\.yml$)'; then
+            echo "app=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "Nothing the app is built from changed — skipping the smoke test."
+            echo "app=false" >> "$GITHUB_OUTPUT"
+          fi
+
   ui-smoke:
     name: App UI smoke test
     runs-on: macos-26
@@ -222,9 +274,8 @@ jobs:
     # that the first-launch path broke, on the commit that broke it. The
     # app-target unit tests, which do gate uploads, run inside the TestFlight
     # job and skip these (see fastlane test_app).
-    if: >-
-      (github.event_name == 'push' && github.ref == 'refs/heads/main')
-      || github.event_name == 'workflow_dispatch'
+    needs: app-scope
+    if: needs.app-scope.outputs.app == 'true'
     timeout-minutes: 30
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
@@ -255,8 +306,9 @@ jobs:
     if: github.event_name == 'push' && github.ref == 'refs/heads/main'
     # The first approval. The testflight-internal environment requires a
     # reviewer, so once SwiftLint and PeardCore's tests are green the run pauses
-    # here until somebody approves it in the Actions tab. A newer push to main
-    # cancels an unapproved run and offers its own build instead.
+    # here until somebody approves it in the Actions tab. A newer push's build
+    # waits behind it rather than cancelling it; reject an unapproved one there
+    # when the newer build should go instead.
     environment:
       name: testflight-internal
     concurrency:
@@ -300,18 +352,65 @@ jobs:
         id: release
         run: bundle exec fastlane ci_release skip_checks:true
 
+  # What to Test for internal testers. The upload no longer waits for App Store
+  # Connect to process the build — pilot did that on the macOS runner, which is
+  # the most expensive way to wait — so this does it on Linux afterwards,
+  # polling every 30 seconds, then sets the notes. No approval of its own: it
+  # only describes the build the internal approval already sent.
+  testflight-notes:
+    name: TestFlight (What to Test)
+    runs-on: ubuntu-latest
+    needs: ios-release
+    if: needs.ios-release.outputs.build_number != ''
+    timeout-minutes: 50
+    permissions:
+      contents: read
+      pull-requests: read
+    env:
+      APP_STORE_CONNECT_API_KEY_ID: ${{ secrets.APP_STORE_CONNECT_API_KEY_ID }}
+      APP_STORE_CONNECT_API_ISSUER_ID: ${{ secrets.APP_STORE_CONNECT_API_ISSUER_ID }}
+      APP_STORE_CONNECT_API_KEY_BASE64: ${{ secrets.APP_STORE_CONNECT_API_KEY_BASE64 }}
+      PEARD_PROMOTE_BUILD: ${{ needs.ios-release.outputs.build_number }}
+      PEARD_PROMOTE_VERSION: ${{ needs.ios-release.outputs.version }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+
+      - uses: ruby/setup-ruby@14594264cd68ce8a2345dd349bc3d138a4ef85c8 # v1.327.0
+        with:
+          ruby-version: "3.3"
+          bundler-cache: true
+
+      # The same notes the external job gives: the pending changelog, else
+      # CHANGELOG.md's entry for this version, else the commit message.
+      - name: Pending release notes
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          notes=$(gh pr list --repo "$GITHUB_REPOSITORY" --state open \
+            --label "autorelease: pending" --json body --jq '.[0].body // ""')
+          delimiter="NOTES_$(openssl rand -hex 8)"
+          { echo "PEARD_RELEASE_NOTES<<$delimiter"; echo "$notes"; echo "$delimiter"; } >> "$GITHUB_ENV"
+
+      - name: Wait for processing, then set What to Test
+        run: bundle exec fastlane testflight_changelog
+
   testflight-external:
     name: TestFlight (external)
-    runs-on: macos-26
+    # Linux: this only talks to App Store Connect's API — wait for processing,
+    # add the build to a group — so a macOS runner bought nothing but its price.
+    runs-on: ubuntu-latest
     needs: ios-release
     if: needs.ios-release.outputs.build_number != ''
     # The second approval. The testflight-external environment requires a
     # reviewer, so the run pauses here until somebody approves it in the Actions
-    # tab. The next push to main cancels an unapproved one, and its own run
-    # offers the newer build instead. Nothing is rebuilt: the build internal
-    # testers have is the one that goes out.
+    # tab; reject an older one there when a newer build should go instead.
+    # Nothing is rebuilt: the build internal testers have is the one that goes
+    # out.
     environment:
       name: testflight-external
+    concurrency:
+      group: testflight-external
+      cancel-in-progress: false
     # The pending release notes below list pull requests. A job-level block
     # replaces the workflow's rather than adding to it, hence contents again.
     permissions:
