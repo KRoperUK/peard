@@ -23,15 +23,20 @@ on:
   workflow_dispatch:
 
 concurrency:
-  # One run per pull request or branch, and a newer run cancels the older one:
-  # on main as well as on pull requests, including a run waiting for a
-  # TestFlight approval, because the newer run offers a newer build. Closing or
-  # merging a pull request starts a run that does nothing but join this group,
-  # which cancels whatever was still running for it. That used to take a
-  # separate workflow calling the API. The deploy and TestFlight jobs also have
-  # job-level groups, so two runs never do either at once.
-  group: ${{ github.workflow }}-${{ github.event.pull_request.number || github.ref }}
-  cancel-in-progress: true
+  # One run per pull request or branch, and on a pull request a newer run
+  # cancels the older one. Closing or merging a pull request starts a run that
+  # does nothing but join this group, which cancels whatever was still running
+  # for it. That used to take a separate workflow calling the API.
+  #
+  # Not on main. Each push there gets a group of its own, so merging one pull
+  # request no longer cancels the run of the one before it: that used to kill a
+  # TestFlight build part-way through its upload, and with a few merges in a row
+  # no build finished at all. The deploy and TestFlight jobs have job-level
+  # groups instead, so two runs still never deploy or upload at once; a newer
+  # one waits its turn. An older run still waiting for approval can be
+  # rejected in the Actions tab when a newer build should go instead.
+  group: ${{ github.workflow }}-${{ github.event.pull_request.number || (github.ref == 'refs/heads/main' && github.run_id) || github.ref }}
+  cancel-in-progress: ${{ github.ref != 'refs/heads/main' }}
 
 # Read-only by default. These jobs hold the App Store Connect and Komodo
 # secrets, and a token able to write to the repository is not something any of
@@ -255,8 +260,9 @@ jobs:
     if: github.event_name == 'push' && github.ref == 'refs/heads/main'
     # The first approval. The testflight-internal environment requires a
     # reviewer, so once SwiftLint and PeardCore's tests are green the run pauses
-    # here until somebody approves it in the Actions tab. A newer push to main
-    # cancels an unapproved run and offers its own build instead.
+    # here until somebody approves it in the Actions tab. A newer push's build
+    # waits behind it rather than cancelling it; reject an unapproved one there
+    # when the newer build should go instead.
     environment:
       name: testflight-internal
     concurrency:
@@ -307,11 +313,14 @@ jobs:
     if: needs.ios-release.outputs.build_number != ''
     # The second approval. The testflight-external environment requires a
     # reviewer, so the run pauses here until somebody approves it in the Actions
-    # tab. The next push to main cancels an unapproved one, and its own run
-    # offers the newer build instead. Nothing is rebuilt: the build internal
-    # testers have is the one that goes out.
+    # tab; reject an older one there when a newer build should go instead.
+    # Nothing is rebuilt: the build internal testers have is the one that goes
+    # out.
     environment:
       name: testflight-external
+    concurrency:
+      group: testflight-external
+      cancel-in-progress: false
     # The pending release notes below list pull requests. A job-level block
     # replaces the workflow's rather than adding to it, hence contents again.
     permissions:
