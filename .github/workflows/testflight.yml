@@ -1,0 +1,176 @@
+name: TestFlight
+
+# Releasing the app from main: "TestFlight (internal)" waits for approval (the
+# testflight-internal environment's required reviewer), then runs the
+# app-target tests, archives and uploads for internal testers; "TestFlight (What to
+# Test)" sets the notes once App Store Connect has processed the build; and
+# "TestFlight (external)" waits for a second approval, then sends that same
+# build to external testers.
+#
+# A workflow of its own, rather than jobs in CI, so that a newer push to main
+# can cut CI's older run — its smoke test and all — without also killing an
+# upload in progress. GitHub cancels a run whole; a job cannot opt out. Here
+# nothing is cancelled at the workflow level, and the internal job's
+# concurrency group lets a running upload finish while a newer build waits.
+
+on:
+  push:
+    branches: [main]
+
+# Read-only by default. These jobs hold the App Store Connect secrets, and a
+# token able to write to the repository is not something any of them needs;
+# the jobs that read pull requests say so themselves.
+permissions:
+  contents: read
+
+jobs:
+  ios-release:
+    name: TestFlight (internal)
+    runs-on: macos-26
+    # The first approval. The testflight-internal environment requires a
+    # reviewer, so the run pauses here until somebody approves it in the Actions
+    # tab. Once this job is running nothing cancels it; a newer push's job waits
+    # behind it, and GitHub keeps only the newest of those waiting.
+    environment:
+      name: testflight-internal
+    concurrency:
+      group: testflight-internal
+      cancel-in-progress: false
+    outputs:
+      build_number: ${{ steps.release.outputs.build_number }}
+      version: ${{ steps.release.outputs.version }}
+    env:
+      APP_STORE_CONNECT_API_KEY_ID: ${{ secrets.APP_STORE_CONNECT_API_KEY_ID }}
+      APP_STORE_CONNECT_API_ISSUER_ID: ${{ secrets.APP_STORE_CONNECT_API_ISSUER_ID }}
+      APP_STORE_CONNECT_API_KEY_BASE64: ${{ secrets.APP_STORE_CONNECT_API_KEY_BASE64 }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+
+      - name: Toolchain
+        # App Store Connect refuses anything built with an SDK older than iOS
+        # 26. macos-26's default Xcode meets that; picking the newest keeps it
+        # so when the image adds one.
+        run: scripts/select-newest-xcode
+
+      - uses: ruby/setup-ruby@14594264cd68ce8a2345dd349bc3d138a4ef85c8 # v1.327.0
+        with:
+          # fastlane's supported range; the Gemfile pins fastlane itself.
+          ruby-version: "3.3"
+          bundler-cache: true
+
+      - name: Tools
+        # XcodeGen generates the project, which is not committed; SwiftLint is
+        # usually on the image already.
+        run: |
+          brew install xcodegen
+          command -v swiftlint >/dev/null || brew install swiftlint
+
+      # The app-target tests, which need a simulator and so run only here,
+      # then archive and upload for internal testers. SwiftLint and PeardCore's
+      # tests are skipped: every commit on main passed both on the pull request
+      # that merged it, and re-running SwiftLint here would use Homebrew's
+      # version rather than CI's pinned one. Nothing uploads unless the tests
+      # pass. The build number is the upload time in Unix seconds, the scheme
+      # every upload has used.
+      - name: Test, build and upload
+        id: release
+        run: bundle exec fastlane ci_release skip_checks:true
+
+  # What to Test for internal testers. The upload no longer waits for App Store
+  # Connect to process the build — pilot did that on the macOS runner, which is
+  # the most expensive way to wait — so this does it on Linux afterwards,
+  # polling every 30 seconds, then sets the notes. No approval of its own: it
+  # only describes the build the internal approval already sent.
+  testflight-notes:
+    name: TestFlight (What to Test)
+    runs-on: ubuntu-latest
+    needs: ios-release
+    if: needs.ios-release.outputs.build_number != ''
+    timeout-minutes: 50
+    permissions:
+      contents: read
+      pull-requests: read
+    env:
+      APP_STORE_CONNECT_API_KEY_ID: ${{ secrets.APP_STORE_CONNECT_API_KEY_ID }}
+      APP_STORE_CONNECT_API_ISSUER_ID: ${{ secrets.APP_STORE_CONNECT_API_ISSUER_ID }}
+      APP_STORE_CONNECT_API_KEY_BASE64: ${{ secrets.APP_STORE_CONNECT_API_KEY_BASE64 }}
+      PEARD_PROMOTE_BUILD: ${{ needs.ios-release.outputs.build_number }}
+      PEARD_PROMOTE_VERSION: ${{ needs.ios-release.outputs.version }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+
+      - uses: ruby/setup-ruby@14594264cd68ce8a2345dd349bc3d138a4ef85c8 # v1.327.0
+        with:
+          ruby-version: "3.3"
+          bundler-cache: true
+
+      # The same notes the external job gives: the pending changelog, else
+      # CHANGELOG.md's entry for this version, else the commit message.
+      - name: Pending release notes
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          notes=$(gh pr list --repo "$GITHUB_REPOSITORY" --state open \
+            --label "autorelease: pending" --json body --jq '.[0].body // ""')
+          delimiter="NOTES_$(openssl rand -hex 8)"
+          { echo "PEARD_RELEASE_NOTES<<$delimiter"; echo "$notes"; echo "$delimiter"; } >> "$GITHUB_ENV"
+
+      - name: Wait for processing, then set What to Test
+        run: bundle exec fastlane testflight_changelog
+
+  testflight-external:
+    name: TestFlight (external)
+    # Linux: this only talks to App Store Connect's API — wait for processing,
+    # add the build to a group — so a macOS runner bought nothing but its price.
+    runs-on: ubuntu-latest
+    needs: ios-release
+    if: needs.ios-release.outputs.build_number != ''
+    # The second approval. The testflight-external environment requires a
+    # reviewer, so the run pauses here until somebody approves it in the Actions
+    # tab; reject an older one there when a newer build should go instead.
+    # Nothing is rebuilt: the build internal testers have is the one that goes
+    # out.
+    environment:
+      name: testflight-external
+    concurrency:
+      group: testflight-external
+      cancel-in-progress: false
+    # The pending release notes below list pull requests. A job-level block
+    # replaces the workflow's rather than adding to it, hence contents again.
+    permissions:
+      contents: read
+      pull-requests: read
+    env:
+      APP_STORE_CONNECT_API_KEY_ID: ${{ secrets.APP_STORE_CONNECT_API_KEY_ID }}
+      APP_STORE_CONNECT_API_ISSUER_ID: ${{ secrets.APP_STORE_CONNECT_API_ISSUER_ID }}
+      APP_STORE_CONNECT_API_KEY_BASE64: ${{ secrets.APP_STORE_CONNECT_API_KEY_BASE64 }}
+      PEARD_TESTFLIGHT_EXTERNAL_GROUP: ${{ vars.PEARD_TESTFLIGHT_EXTERNAL_GROUP }}
+      PEARD_PROMOTE_BUILD: ${{ needs.ios-release.outputs.build_number }}
+      PEARD_PROMOTE_VERSION: ${{ needs.ios-release.outputs.version }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+
+      - uses: ruby/setup-ruby@14594264cd68ce8a2345dd349bc3d138a4ef85c8 # v1.327.0
+        with:
+          ruby-version: "3.3"
+          bundler-cache: true
+
+      # "What to Test" is the pending changelog: the body of the release pull
+      # request release-please keeps open. Read after the approval, so it is
+      # current. With none open (this push was the release itself, or nothing
+      # releasable has landed since), the lane falls back to CHANGELOG.md's
+      # entry for this version, then to the commit message.
+      - name: Pending release notes
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          notes=$(gh pr list --repo "$GITHUB_REPOSITORY" --state open \
+            --label "autorelease: pending" --json body --jq '.[0].body // ""')
+          delimiter="NOTES_$(openssl rand -hex 8)"
+          { echo "PEARD_RELEASE_NOTES<<$delimiter"; echo "$notes"; echo "$delimiter"; } >> "$GITHUB_ENV"
+
+      # Waits for App Store Connect to finish processing that build, then adds
+      # it to the external group. The first build of each version is submitted
+      # for Beta App Review on the way.
+      - name: Send to external testers
+        run: bundle exec fastlane promote_external
