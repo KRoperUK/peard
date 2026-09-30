@@ -213,6 +213,53 @@ jobs:
           docker compose logs
           exit 1
 
+  # Whether a push to main touched the app, so the smoke test below only spends
+  # a macOS runner — seven to fourteen minutes of building the app — when there
+  # is something new to smoke-test. A tiny Linux job rather than a first step
+  # of that one, because by the time a step runs the macOS runner is already
+  # paid for. Manual runs always test.
+  app-scope:
+    name: Does this change the app?
+    runs-on: ubuntu-latest
+    if: >-
+      (github.event_name == 'push' && github.ref == 'refs/heads/main')
+      || github.event_name == 'workflow_dispatch'
+    outputs:
+      app: ${{ steps.scope.outputs.app }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          # Full history, so the range below is diffable however many commits
+          # the push carried.
+          fetch-depth: 0
+
+      - name: Does this change the app?
+        id: scope
+        run: |
+          set -euo pipefail
+          if [ "${{ github.event_name }}" = "workflow_dispatch" ]; then
+            echo "app=true" >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+          before='${{ github.event.before }}'
+          if [ -z "$before" ] || [ "$before" = "0000000000000000000000000000000000000000" ] \
+             || ! git cat-file -e "${before}^{commit}" 2>/dev/null; then
+            # A force-push or a first push: nothing reliable to diff against, so
+            # test rather than guess.
+            echo "No usable previous commit to diff against — testing."
+            echo "app=true" >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+          changed=$(git diff --name-only "$before" "$GITHUB_SHA")
+          # The app and everything its build reads, plus this workflow, which
+          # is how a change to the smoke test itself gets tested.
+          if echo "$changed" | grep -qE '^(ios/|scripts/(pick-simulator|select-newest-xcode)$|\.github/workflows/ci\.yml$)'; then
+            echo "app=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "Nothing the app is built from changed — skipping the smoke test."
+            echo "app=false" >> "$GITHUB_OUTPUT"
+          fi
+
   ui-smoke:
     name: App UI smoke test
     runs-on: macos-26
@@ -227,9 +274,8 @@ jobs:
     # that the first-launch path broke, on the commit that broke it. The
     # app-target unit tests, which do gate uploads, run inside the TestFlight
     # job and skip these (see fastlane test_app).
-    if: >-
-      (github.event_name == 'push' && github.ref == 'refs/heads/main')
-      || github.event_name == 'workflow_dispatch'
+    needs: app-scope
+    if: needs.app-scope.outputs.app == 'true'
     timeout-minutes: 30
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
