@@ -8,6 +8,10 @@
 # guide: it lists a watchOS SDK even when the platform is not installed and
 # every build fails with "watchOS … is not installed". A watchOS simulator
 # runtime is present exactly when the platform is, so that is what is checked.
+#
+# The macOS jobs run on macos-26, whose image ships the watchOS platform for its
+# Xcodes, so this normally just confirms it. On macos-15 the newest Xcode had
+# none, and the download held the TestFlight job up for minutes.
 # Run after scripts/select-newest-xcode, so the check is against the Xcode that
 # will build.
 set -euo pipefail

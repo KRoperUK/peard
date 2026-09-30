@@ -106,7 +106,7 @@ jobs:
 
   core:
     name: PeardCore unit tests
-    runs-on: macos-15
+    runs-on: macos-26
     if: github.event.action != 'closed'
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
@@ -210,7 +210,7 @@ jobs:
 
   ui-smoke:
     name: App UI smoke test
-    runs-on: macos-15
+    runs-on: macos-26
     # Main only, and after the merge rather than on the pull request: it boots a
     # simulator and drives the real app for a minute or two, which is too slow
     # and too costly on a macOS runner to put in front of every push to a pull
@@ -235,6 +235,7 @@ jobs:
 
       - name: watchOS platform
         # The app embeds the watch app, so building it builds for watchOS too.
+        # macos-26 ships the platform, so this should only ever confirm it.
         run: scripts/ensure-watchos-platform
 
       - name: Tools
@@ -254,7 +255,7 @@ jobs:
 
   ios-release:
     name: TestFlight (internal)
-    runs-on: macos-15
+    runs-on: macos-26
     needs: [lint, core]
     if: github.event_name == 'push' && github.ref == 'refs/heads/main'
     # The first approval. The testflight-internal environment requires a
@@ -278,11 +279,13 @@ jobs:
 
       - name: Toolchain
         # App Store Connect refuses anything built with an SDK older than iOS
-        # 26, and the image's default Xcode is older than that.
+        # 26. macos-26's default Xcode meets that; picking the newest keeps it
+        # so when the image adds one.
         run: scripts/select-newest-xcode
 
       - name: watchOS platform
         # The archive embeds the watch app, so it builds for watchOS too.
+        # macos-26 ships the platform, so this should only ever confirm it.
         run: scripts/ensure-watchos-platform
 
       - uses: ruby/setup-ruby@14594264cd68ce8a2345dd349bc3d138a4ef85c8 # v1.327.0
@@ -309,7 +312,7 @@ jobs:
 
   testflight-external:
     name: TestFlight (external)
-    runs-on: macos-15
+    runs-on: macos-26
     needs: ios-release
     if: needs.ios-release.outputs.build_number != ''
     # The second approval. The testflight-external environment requires a
