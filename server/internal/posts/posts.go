@@ -62,7 +62,7 @@ const rewoundAfter = time.Minute
 
 func Register(app core.App) {
 	app.OnRecordCreateRequest("posts").BindFunc(func(e *core.RecordRequestEvent) error {
-		if msg := checkHappenedAt(e.Record.GetDateTime("happened_at"), time.Now()); msg != "" {
+		if msg := CheckHappenedAt(e.Record.GetDateTime("happened_at"), time.Now()); msg != "" {
 			return e.BadRequestError(msg, nil)
 		}
 		if e.Record.GetString("type") == noteType && strings.TrimSpace(e.Record.GetString("note")) == "" {
@@ -157,7 +157,7 @@ func editHandler(app core.App) func(e *core.RequestEvent) error {
 				if err != nil || at.IsZero() {
 					return e.BadRequestError("that time could not be read", err)
 				}
-				if msg := checkHappenedAt(at, logged); msg != "" {
+				if msg := CheckHappenedAt(at, logged); msg != "" {
 					return e.BadRequestError(msg, nil)
 				}
 				// Editing the time is choosing it, so an edit far enough back is
@@ -184,9 +184,11 @@ func editHandler(app core.App) func(e *core.RequestEvent) error {
 	}
 }
 
-// checkHappenedAt returns why a requested time is refused, or "" when it is
+// CheckHappenedAt returns why a requested time is refused, or "" when it is
 // fine. A zero time is fine: it means "now", and stampHappenedAt fills it in.
-func checkHappenedAt(at types.DateTime, logged time.Time) string {
+// Exported for routes that create posts with app.Save, which the create-request
+// hook below does not see — the widget's moment route.
+func CheckHappenedAt(at types.DateTime, logged time.Time) string {
 	if at.IsZero() {
 		return ""
 	}
