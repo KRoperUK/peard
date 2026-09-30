@@ -865,8 +865,8 @@ widgets.
   later, and on request from a watch that opens without one. Signing out on the
   phone signs the watch out.
 - Built as its own scheme (`PeardWatch`) and embedded in the iPhone app. Building
-  either needs the watchOS platform installed (Xcode → Settings → Components);
-  CI installs it when the runner lacks it (`scripts/ensure-watchos-platform`).
+  either needs the watchOS platform installed (Xcode → Settings → Components).
+  CI's macOS jobs run on `macos-26`, whose image ships it.
 
 ## Siri and Shortcuts
 
