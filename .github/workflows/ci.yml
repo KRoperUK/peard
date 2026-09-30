@@ -233,11 +233,6 @@ jobs:
         # The newest Xcode on the image, as the other macOS jobs use.
         run: scripts/select-newest-xcode
 
-      - name: watchOS platform
-        # The app embeds the watch app, so building it builds for watchOS too.
-        # macos-26 ships the platform, so this should only ever confirm it.
-        run: scripts/ensure-watchos-platform
-
       - name: Tools
         run: brew install xcodegen
 
@@ -282,11 +277,6 @@ jobs:
         # 26. macos-26's default Xcode meets that; picking the newest keeps it
         # so when the image adds one.
         run: scripts/select-newest-xcode
-
-      - name: watchOS platform
-        # The archive embeds the watch app, so it builds for watchOS too.
-        # macos-26 ships the platform, so this should only ever confirm it.
-        run: scripts/ensure-watchos-platform
 
       - uses: ruby/setup-ruby@14594264cd68ce8a2345dd349bc3d138a4ef85c8 # v1.327.0
         with:
