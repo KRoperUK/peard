@@ -352,6 +352,48 @@ jobs:
         id: release
         run: bundle exec fastlane ci_release skip_checks:true
 
+  # What to Test for internal testers. The upload no longer waits for App Store
+  # Connect to process the build — pilot did that on the macOS runner, which is
+  # the most expensive way to wait — so this does it on Linux afterwards,
+  # polling every 30 seconds, then sets the notes. No approval of its own: it
+  # only describes the build the internal approval already sent.
+  testflight-notes:
+    name: TestFlight (What to Test)
+    runs-on: ubuntu-latest
+    needs: ios-release
+    if: needs.ios-release.outputs.build_number != ''
+    timeout-minutes: 50
+    permissions:
+      contents: read
+      pull-requests: read
+    env:
+      APP_STORE_CONNECT_API_KEY_ID: ${{ secrets.APP_STORE_CONNECT_API_KEY_ID }}
+      APP_STORE_CONNECT_API_ISSUER_ID: ${{ secrets.APP_STORE_CONNECT_API_ISSUER_ID }}
+      APP_STORE_CONNECT_API_KEY_BASE64: ${{ secrets.APP_STORE_CONNECT_API_KEY_BASE64 }}
+      PEARD_PROMOTE_BUILD: ${{ needs.ios-release.outputs.build_number }}
+      PEARD_PROMOTE_VERSION: ${{ needs.ios-release.outputs.version }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+
+      - uses: ruby/setup-ruby@14594264cd68ce8a2345dd349bc3d138a4ef85c8 # v1.327.0
+        with:
+          ruby-version: "3.3"
+          bundler-cache: true
+
+      # The same notes the external job gives: the pending changelog, else
+      # CHANGELOG.md's entry for this version, else the commit message.
+      - name: Pending release notes
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          notes=$(gh pr list --repo "$GITHUB_REPOSITORY" --state open \
+            --label "autorelease: pending" --json body --jq '.[0].body // ""')
+          delimiter="NOTES_$(openssl rand -hex 8)"
+          { echo "PEARD_RELEASE_NOTES<<$delimiter"; echo "$notes"; echo "$delimiter"; } >> "$GITHUB_ENV"
+
+      - name: Wait for processing, then set What to Test
+        run: bundle exec fastlane testflight_changelog
+
   testflight-external:
     name: TestFlight (external)
     runs-on: macos-26

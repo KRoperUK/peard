@@ -177,14 +177,15 @@ platform :ios do
   desc "Archive and upload to TestFlight"
   lane :beta do
     archive
+    # No changelog here. Given one, pilot waits on this macOS runner for the
+    # build to appear on App Store Connect so it can set it — minutes of the
+    # most expensive runner doing nothing. testflight_changelog does it from a
+    # Linux job afterwards instead.
     upload_to_testflight(
       ipa: "#{OUTPUT_DIR}/Peard.ipa",
       app_identifier: "com.peard.app",
       apple_id: APP_STORE_APP_ID,
-      skip_waiting_for_build_processing: true,
-      # The same notes external testers get, so internal testers see what is
-      # new too rather than a placeholder nobody updates.
-      changelog: release_notes || what_to_test
+      skip_waiting_for_build_processing: true
     )
     # Handed to the external job, which promotes exactly this build.
     if (output = ENV["GITHUB_OUTPUT"])
@@ -223,6 +224,26 @@ platform :ios do
     beta
   end
 
+  desc "Set What to Test on a build already uploaded, once it has processed"
+  # Run by CI on Linux after `beta`, which uploads without waiting: this waits
+  # instead, cheaply, for that exact build, then gives internal testers the same
+  # notes external testers get rather than a placeholder nobody updates.
+  lane :testflight_changelog do |options|
+    require_distribution_credentials!
+    build, version = promoted_build(options)
+    UI.message("Setting What to Test on #{version} (#{build})")
+    wait_for_processing(version, build)
+    upload_to_testflight(
+      app_identifier: "com.peard.app",
+      apple_id: APP_STORE_APP_ID,
+      app_platform: "ios",
+      distribute_only: true,
+      build_number: build,
+      app_version: version,
+      changelog: release_notes(version) || what_to_test
+    )
+  end
+
   desc "Send a build already on TestFlight to the external testers' group"
   # No build here: the binary internal testers have been running is the one that
   # goes out, rather than a fresh archive of the same commit that nobody tried.
@@ -233,31 +254,9 @@ platform :ios do
     group = ENV["PEARD_TESTFLIGHT_EXTERNAL_GROUP"]
     UI.user_error!("Set PEARD_TESTFLIGHT_EXTERNAL_GROUP to the external testers' group name") if group.to_s.empty?
 
-    build = options[:build_number].to_s.strip
-    build = ENV["PEARD_PROMOTE_BUILD"].to_s.strip if build.empty?
-    version = options[:version].to_s.strip
-    version = ENV["PEARD_PROMOTE_VERSION"].to_s.strip if version.empty?
-    if build.empty?
-      build = latest_testflight_build_number(app_identifier: "com.peard.app").to_s
-      version = lane_context[SharedValues::LATEST_TESTFLIGHT_VERSION].to_s if version.empty?
-    end
-    version = marketing_version if version.empty?
+    build, version = promoted_build(options)
     UI.message("Sending #{version} (#{build}) to #{group}")
-
-    # A build uploaded minutes ago is not visible to the API straight away, and
-    # an external group only takes one that has finished processing. pilot's
-    # distribute looks it up once and gives up ("No build to distribute!" — or
-    # this lane's own earlier lookup: "No TestFlight build … for app …"), so
-    # wait here first, for this exact build.
-    FastlaneCore::BuildWatcher.wait_for_build_processing_to_be_complete(
-      app_id: APP_STORE_APP_ID,
-      platform: "IOS",
-      app_version: version,
-      build_version: build,
-      poll_interval: 30,
-      timeout_duration: 45 * 60,
-      return_spaceship_testflight_build: false
-    )
+    wait_for_processing(version, build)
 
     upload_to_testflight(
       app_identifier: "com.peard.app",
@@ -278,6 +277,37 @@ platform :ios do
   end
 
   # --- helpers ---
+
+  # The build a lane after the upload acts on: the one CI hands over, else the
+  # newest on TestFlight.
+  def promoted_build(options)
+    build = options[:build_number].to_s.strip
+    build = ENV["PEARD_PROMOTE_BUILD"].to_s.strip if build.empty?
+    version = options[:version].to_s.strip
+    version = ENV["PEARD_PROMOTE_VERSION"].to_s.strip if version.empty?
+    if build.empty?
+      build = latest_testflight_build_number(app_identifier: "com.peard.app").to_s
+      version = lane_context[SharedValues::LATEST_TESTFLIGHT_VERSION].to_s if version.empty?
+    end
+    version = marketing_version if version.empty?
+    [build, version]
+  end
+
+  # A build uploaded minutes ago is not visible to the API straight away, and
+  # neither What to Test nor an external group can be set until it has finished
+  # processing. pilot looks it up once and gives up ("No build to distribute!"),
+  # so wait here first, for this exact build, polling every 30 seconds.
+  def wait_for_processing(version, build)
+    FastlaneCore::BuildWatcher.wait_for_build_processing_to_be_complete(
+      app_id: APP_STORE_APP_ID,
+      platform: "IOS",
+      app_version: version,
+      build_version: build,
+      poll_interval: 30,
+      timeout_duration: 45 * 60,
+      return_spaceship_testflight_build: false
+    )
+  end
 
   # Distribution needs credentials that cannot be inferred. Failing here with a
   # readable message beats failing 8 minutes into an archive.
