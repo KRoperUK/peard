@@ -188,6 +188,24 @@ final class APIClientTests: XCTestCase {
         XCTAssertEqual(components.queryItems?.first { $0.name == "tz" }?.value, TimeZone.current.identifier)
     }
 
+    /// Only the large widget asks for the sharper photo; every other family
+    /// leaves the query as it was.
+    func testOnlyTheLargeWidgetAsksForTheLargePhoto() async throws {
+        StubURLProtocol.respond(json: #"{"state":"unpaired"}"#)
+
+        _ = try await client.widgetFeed(token: "widget-token")
+        let plain = try XCTUnwrap(URLComponents(
+            url: try XCTUnwrap(StubURLProtocol.lastRequest?.url), resolvingAgainstBaseURL: false
+        ))
+        XCTAssertNil(plain.queryItems?.first { $0.name == "photo" })
+
+        _ = try await client.widgetFeed(token: "widget-token", largePhoto: true)
+        let large = try XCTUnwrap(URLComponents(
+            url: try XCTUnwrap(StubURLProtocol.lastRequest?.url), resolvingAgainstBaseURL: false
+        ))
+        XCTAssertEqual(large.queryItems?.first { $0.name == "photo" }?.value, "large")
+    }
+
     // MARK: Errors
 
     func testServerErrorPrefersMessageField() async throws {

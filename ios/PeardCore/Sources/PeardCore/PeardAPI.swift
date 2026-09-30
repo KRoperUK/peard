@@ -14,9 +14,18 @@ public extension APIClient {
     /// over at 7pm in New York. A name rather than an offset, because the
     /// offset is wrong for the hours after a clock change until the next
     /// refresh.
-    func widgetFeed(token: String, pairID: String? = nil, timeZone: TimeZone = .current) async throws -> WidgetFeed {
+    /// - Parameter largePhoto: ask for the sharper thumbnail the large widget
+    ///   spans its width with, rather than the 512-square every other family
+    ///   draws.
+    func widgetFeed(
+        token: String,
+        pairID: String? = nil,
+        timeZone: TimeZone = .current,
+        largePhoto: Bool = false
+    ) async throws -> WidgetFeed {
         var query = ["token": token, "tz": timeZone.identifier]
         if let pairID, !pairID.isEmpty { query["pair"] = pairID }
+        if largePhoto { query["photo"] = "large" }
         let data = try await data(path: "/api/peard/widget/feed", query: query)
         do {
             return try JSONDecoder.peard.decode(WidgetFeed.self, from: data)
