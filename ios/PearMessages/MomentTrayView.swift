@@ -7,6 +7,13 @@ struct MomentTrayView: View {
     let model: MomentTrayModel
     let onTap: (WidgetFeed.AvailableMoment) -> Void
 
+    private enum Section: String, CaseIterable {
+        case moments = "Moments"
+        case stickers = "Stickers"
+    }
+
+    @State private var section: Section = .moments
+
     var body: some View {
         Group {
             switch model.phase {
@@ -35,21 +42,78 @@ struct MomentTrayView: View {
 
     private var tray: some View {
         VStack(spacing: 8) {
-            connectionBar
-            summary
-            // Scrolls because a connection may have published a dozen moments
-            // and Messages gives the tray about as much height as one row.
-            ScrollView(.horizontal, showsIndicators: false) {
-                HStack(spacing: 12) {
-                    ForEach(model.moments) { moment in
-                        button(for: moment)
-                    }
+            HStack {
+                if section == .moments { connectionBar }
+                Spacer(minLength: 8)
+                Picker("Show", selection: $section) {
+                    ForEach(Section.allCases, id: \.self) { Text($0.rawValue).tag($0) }
                 }
-                .padding(.horizontal, 16)
+                .pickerStyle(.segmented)
+                .fixedSize()
             }
-            statusLine
+            .padding(.horizontal, 16)
+            switch section {
+            case .moments:
+                offer
+                summary
+                // Scrolls because a connection may have published a dozen moments
+                // and Messages gives the tray about as much height as one row.
+                ScrollView(.horizontal, showsIndicators: false) {
+                    HStack(spacing: 12) {
+                        ForEach(model.moments) { moment in
+                            button(for: moment)
+                        }
+                    }
+                    .padding(.horizontal, 16)
+                }
+                statusLine
+            case .stickers:
+                stickers
+            }
         }
         .padding(.vertical, 12)
+    }
+
+    private var stickers: some View {
+        ScrollView(.horizontal, showsIndicators: false) {
+            HStack(spacing: 12) {
+                ForEach(PearStickers.all) { item in
+                    if let sticker = PearStickers.sticker(item) {
+                        StickerCell(sticker: sticker)
+                            .frame(width: 96, height: 96)
+                            .accessibilityLabel(item.description)
+                    }
+                }
+            }
+            .padding(.horizontal, 16)
+        }
+    }
+
+    /// Somebody else's bubble, tapped: their moment, offered back. Only when
+    /// this connection has that moment — the server would refuse anything else,
+    /// and a button that can only fail is worse than a line saying why not.
+    @ViewBuilder
+    private var offer: some View {
+        if let moment = model.offeredMoment {
+            Button {
+                onTap(moment)
+            } label: {
+                Text("Log \(moment.emoji) \(moment.label) too")
+                    .font(.subheadline.bold())
+                    .frame(maxWidth: .infinity)
+                    .padding(.vertical, 8)
+            }
+            .buttonStyle(.plain)
+            .foregroundStyle(PearColor.onAccent)
+            .background(PearColor.accent, in: RoundedRectangle(cornerRadius: 12))
+            .disabled(model.isBusy)
+            .padding(.horizontal, 16)
+        } else if let offered = model.offered, let connection = model.selectedConnection {
+            Text("\(offered.emoji) \(offered.label) isn't a moment in \(connection.title)")
+                .font(.caption2)
+                .foregroundStyle(PearColor.textSecondary)
+                .padding(.horizontal, 16)
+        }
     }
 
     /// What the others have been up to.

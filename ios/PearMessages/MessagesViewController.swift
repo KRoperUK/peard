@@ -29,7 +29,25 @@ final class MessagesViewController: MSMessagesAppViewController {
     /// would not appear until the whole extension was evicted.
     override func willBecomeActive(with conversation: MSConversation) {
         super.willBecomeActive(with: conversation)
+        model.offer(Self.bubble(selectedIn: conversation))
         Task { @MainActor in await model.load() }
+    }
+
+    /// A bubble tapped while the tray is already open.
+    override func didSelect(_ message: MSMessage, conversation: MSConversation) {
+        super.didSelect(message, conversation: conversation)
+        model.offer(Self.bubble(selectedIn: conversation))
+    }
+
+    /// The moment in the bubble the tray was opened from — somebody else's
+    /// only. Your own bubble offering "log one too" would log the same moment
+    /// twice.
+    private static func bubble(selectedIn conversation: MSConversation) -> MomentBubble? {
+        guard
+            let message = conversation.selectedMessage,
+            message.senderParticipantIdentifier != conversation.localParticipantIdentifier
+        else { return nil }
+        return MomentBubble(url: message.url)
     }
 
     private func presentTray() {
@@ -64,21 +82,33 @@ final class MessagesViewController: MSMessagesAppViewController {
     private func log(_ moment: WidgetFeed.AvailableMoment) {
         Task { @MainActor in
             guard await model.log(moment) else { return }
+            if model.offered?.kind == moment.kind { model.offer(nil) }
             insertBubble(for: moment)
         }
     }
 
     private func insertBubble(for moment: WidgetFeed.AvailableMoment) {
         guard let conversation = activeConversation else { return }
+        let bubble = MomentBubble(kind: moment.kind, emoji: moment.emoji, label: moment.label)
         let message = MSMessage()
         let layout = MSMessageTemplateLayout()
-        layout.caption = "\(moment.emoji) \(moment.label) logged"
+        layout.image = BubbleCard.image(emoji: moment.emoji)
+        layout.caption = bubble.caption
+        layout.subcaption = MomentBubble.subcaption
+        layout.trailingCaption = Date().formatted(date: .omitted, time: .shortened)
         // Deliberately not the connection's name. The tray says where the moment
         // went because that is for the person who logged it; the bubble goes
         // into a thread with somebody who may not be in that connection at all,
         // and naming it there would tell them something about who else you share
         // with.
         message.layout = layout
+        // What a notification or the conversation list shows for it.
+        message.summaryText = bubble.caption
+        // Carries the moment for "log one too", and opens the site on a device
+        // without the extension. See MomentBubble for why only the moment.
+        if let base = SharedStore.shared.apiBaseURL {
+            message.url = bubble.url(base: base)
+        }
         conversation.insert(message) { error in
             if let error {
                 // Best effort — the moment is logged either way by this point;

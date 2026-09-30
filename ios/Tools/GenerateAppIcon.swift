@@ -274,7 +274,9 @@ private func components(_ rgb: UInt32) -> [CGFloat] {
     ]
 }
 
-private func render(palette: Palette, side: Int) -> CGImage {
+/// `outline` rings the artwork in a solid colour first, for stickers, which sit
+/// on whatever a conversation's background is. `onlyFront` draws one pear.
+private func render(palette: Palette, side: Int, outline: UInt32? = nil, onlyFront: Bool = false) -> CGImage {
     let canvas = CGFloat(side)
     let space = CGColorSpace(name: CGColorSpace.sRGB)!
     let alpha: CGImageAlphaInfo = palette.opaque ? .noneSkipLast : .premultipliedLast
@@ -293,7 +295,9 @@ private func render(palette: Palette, side: Int) -> CGImage {
     // Measure the artwork at identity, then scale and centre it so the two
     // pears together fill `contentFraction` of the canvas.
     let measured = CGMutablePath()
-    measured.addPath(shapes(for: backPear, canvas: canvas, fit: .identity, withLeaf: true).silhouette)
+    if !onlyFront {
+        measured.addPath(shapes(for: backPear, canvas: canvas, fit: .identity, withLeaf: true).silhouette)
+    }
     measured.addPath(shapes(for: frontPear, canvas: canvas, fit: .identity, withLeaf: true).silhouette)
     let box = measured.boundingBoxOfPath
     let fitScale = contentFraction * canvas / max(box.width, box.height)
@@ -327,6 +331,27 @@ private func render(palette: Palette, side: Int) -> CGImage {
         context.addPath(path)
         context.setFillColor(CGColor(colorSpace: space, components: components(rgb))!)
         context.fillPath()
+    }
+
+    if let outline {
+        let ring = CGMutablePath()
+        if !onlyFront { ring.addPath(back.silhouette) }
+        ring.addPath(front.silhouette)
+        context.addPath(ring)
+        context.setStrokeColor(CGColor(colorSpace: space, components: components(outline))!)
+        context.setLineWidth(canvas * 0.07)
+        context.setLineJoin(.round)
+        context.strokePath()
+        if !onlyFront { fill(back.silhouette, outline) }
+        fill(front.silhouette, outline)
+    }
+
+    if onlyFront {
+        fill(front.fruit, palette.frontBody)
+        fill(front.stem, palette.backStemLeaf)
+        if let leaf = front.leaf { fill(leaf, palette.frontLeaf) }
+        guard let image = context.makeImage() else { fatalError("could not snapshot the context") }
+        return image
     }
 
     // Back pear first, then a seam around the front pear, then the front pear.
@@ -544,3 +569,47 @@ for family in families {
     writeContents(for: family, in: set)
     writePreview(for: family)
 }
+
+// MARK: - Stickers
+
+// The iMessage app's stickers: the same mark, on transparency with a cream
+// ring so it reads on a light or a dark conversation. Apple's emoji cannot be
+// shipped as sticker images, so the pears are the set. 618px is the large
+// sticker size (206pt at 3x).
+private let stickers = URL(fileURLWithPath: #filePath)
+    .deletingLastPathComponent()   // Tools
+    .deletingLastPathComponent()   // ios
+    .appendingPathComponent("PearMessages/Stickers")
+try? FileManager.default.createDirectory(at: stickers, withIntermediateDirectories: true)
+
+private let stickerOutline: UInt32 = 0xFB_F7_EC
+
+for family in families {
+    let light = family.light
+    let palette = Palette(
+        background: nil,
+        backBody: light.backBody,
+        backStemLeaf: light.backStemLeaf,
+        frontBody: light.frontBody,
+        frontLeaf: light.frontLeaf,
+        seam: stickerOutline,
+        opaque: false
+    )
+    let name = "Pears\(family.title).png"
+    write(render(palette: palette, side: 618, outline: stickerOutline), to: stickers.appendingPathComponent(name))
+    print("wrote Stickers/\(name)")
+}
+
+write(
+    render(palette: Palette(
+        background: nil,
+        backBody: Palette.light.backBody,
+        backStemLeaf: Palette.light.backStemLeaf,
+        frontBody: Palette.light.frontBody,
+        frontLeaf: Palette.light.frontLeaf,
+        seam: stickerOutline,
+        opaque: false
+    ), side: 618, outline: stickerOutline, onlyFront: true),
+    to: stickers.appendingPathComponent("Pear.png")
+)
+print("wrote Stickers/Pear.png")
