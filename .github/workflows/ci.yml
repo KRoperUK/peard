@@ -5,13 +5,9 @@ name: CI
 # touches it. They are small jobs in parallel, none of which builds the app or
 # boots a simulator, and every merge is gated on them.
 #
-# On main, releasing is two approvals rather than automatic. With the checks
-# green, "TestFlight (internal)" waits for approval (the testflight-internal
-# environment's required reviewer), then runs the app-target tests, archives
-# and uploads for internal testers. "TestFlight (external)" waits for a second
-# approval, then sends that same build to external testers. The server's
-# deploy runs alongside without waiting for either, and so does the app's UI
-# smoke test, which nothing waits on.
+# On main the server deploys and, when the app changed, the UI smoke test runs.
+# Releasing the app is testflight.yml, a workflow of its own so that cutting an
+# older run here never cuts an upload in progress.
 
 on:
   push:
@@ -23,20 +19,15 @@ on:
   workflow_dispatch:
 
 concurrency:
-  # One run per pull request or branch, and on a pull request a newer run
-  # cancels the older one. Closing or merging a pull request starts a run that
-  # does nothing but join this group, which cancels whatever was still running
-  # for it. That used to take a separate workflow calling the API.
-  #
-  # Not on main. Each push there gets a group of its own, so merging one pull
-  # request no longer cancels the run of the one before it: that used to kill a
-  # TestFlight build part-way through its upload, and with a few merges in a row
-  # no build finished at all. The deploy and TestFlight jobs have job-level
-  # groups instead, so two runs still never deploy or upload at once; a newer
-  # one waits its turn. An older run still waiting for approval can be
-  # rejected in the Actions tab when a newer build should go instead.
-  group: ${{ github.workflow }}-${{ github.event.pull_request.number || (github.ref == 'refs/heads/main' && github.run_id) || github.ref }}
-  cancel-in-progress: ${{ github.ref != 'refs/heads/main' }}
+  # One run per pull request or branch, and a newer run cancels the older one —
+  # on main too, where a stale run's smoke test is only spending a macOS runner
+  # on a commit that has already been superseded. Closing or merging a pull
+  # request starts a run that does nothing but join this group, which cancels
+  # whatever was still running for it. The app's TestFlight jobs are in
+  # testflight.yml so that none of this reaches an upload in progress; the
+  # deploy keeps its own job-level group, so two runs never deploy at once.
+  group: ${{ github.workflow }}-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: true
 
 # Read-only by default. These jobs hold the App Store Connect and Komodo
 # secrets, and a token able to write to the repository is not something any of
@@ -268,12 +259,12 @@ jobs:
     # and too costly on a macOS runner to put in front of every push to a pull
     # request. A manual run can ask for it too.
     #
-    # Nothing depends on it, deliberately. It is not in the deploy's or
-    # TestFlight's `needs`, and it has no environment, so it never waits for an
-    # approval and a red run never holds up a server fix or a build — it says
-    # that the first-launch path broke, on the commit that broke it. The
-    # app-target unit tests, which do gate uploads, run inside the TestFlight
-    # job and skip these (see fastlane test_app).
+    # Nothing depends on it, deliberately. It is not in the deploy's `needs`,
+    # TestFlight is another workflow, and it has no environment, so it never
+    # waits for an approval and a red run never holds up a server fix or a
+    # build — it says that the first-launch path broke, on the commit that
+    # broke it. The app-target unit tests, which do gate uploads, run inside the
+    # TestFlight job and skip these (see fastlane test_app).
     needs: app-scope
     if: needs.app-scope.outputs.app == 'true'
     timeout-minutes: 30
@@ -298,158 +289,6 @@ jobs:
           xcodebuild -project ios/Peard.xcodeproj -scheme Peard -configuration Debug \
             -destination "platform=iOS Simulator,id=$udid" \
             -derivedDataPath ios/build -only-testing:PeardUITests test
-
-  ios-release:
-    name: TestFlight (internal)
-    runs-on: macos-26
-    needs: [lint, core]
-    if: github.event_name == 'push' && github.ref == 'refs/heads/main'
-    # The first approval. The testflight-internal environment requires a
-    # reviewer, so once SwiftLint and PeardCore's tests are green the run pauses
-    # here until somebody approves it in the Actions tab. A newer push's build
-    # waits behind it rather than cancelling it; reject an unapproved one there
-    # when the newer build should go instead.
-    environment:
-      name: testflight-internal
-    concurrency:
-      group: testflight-internal
-      cancel-in-progress: false
-    outputs:
-      build_number: ${{ steps.release.outputs.build_number }}
-      version: ${{ steps.release.outputs.version }}
-    env:
-      APP_STORE_CONNECT_API_KEY_ID: ${{ secrets.APP_STORE_CONNECT_API_KEY_ID }}
-      APP_STORE_CONNECT_API_ISSUER_ID: ${{ secrets.APP_STORE_CONNECT_API_ISSUER_ID }}
-      APP_STORE_CONNECT_API_KEY_BASE64: ${{ secrets.APP_STORE_CONNECT_API_KEY_BASE64 }}
-    steps:
-      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
-
-      - name: Toolchain
-        # App Store Connect refuses anything built with an SDK older than iOS
-        # 26. macos-26's default Xcode meets that; picking the newest keeps it
-        # so when the image adds one.
-        run: scripts/select-newest-xcode
-
-      - uses: ruby/setup-ruby@14594264cd68ce8a2345dd349bc3d138a4ef85c8 # v1.327.0
-        with:
-          # fastlane's supported range; the Gemfile pins fastlane itself.
-          ruby-version: "3.3"
-          bundler-cache: true
-
-      - name: Tools
-        # XcodeGen generates the project, which is not committed; SwiftLint is
-        # usually on the image already.
-        run: |
-          brew install xcodegen
-          command -v swiftlint >/dev/null || brew install swiftlint
-
-      # The app-target tests, which need a simulator and so run only here,
-      # then archive and upload for internal testers. SwiftLint and PeardCore's
-      # tests already passed in their own jobs, so the lane skips them. Nothing
-      # uploads unless the tests pass. The build number is the upload time in
-      # Unix seconds, the scheme every upload has used.
-      - name: Test, build and upload
-        id: release
-        run: bundle exec fastlane ci_release skip_checks:true
-
-  # What to Test for internal testers. The upload no longer waits for App Store
-  # Connect to process the build — pilot did that on the macOS runner, which is
-  # the most expensive way to wait — so this does it on Linux afterwards,
-  # polling every 30 seconds, then sets the notes. No approval of its own: it
-  # only describes the build the internal approval already sent.
-  testflight-notes:
-    name: TestFlight (What to Test)
-    runs-on: ubuntu-latest
-    needs: ios-release
-    if: needs.ios-release.outputs.build_number != ''
-    timeout-minutes: 50
-    permissions:
-      contents: read
-      pull-requests: read
-    env:
-      APP_STORE_CONNECT_API_KEY_ID: ${{ secrets.APP_STORE_CONNECT_API_KEY_ID }}
-      APP_STORE_CONNECT_API_ISSUER_ID: ${{ secrets.APP_STORE_CONNECT_API_ISSUER_ID }}
-      APP_STORE_CONNECT_API_KEY_BASE64: ${{ secrets.APP_STORE_CONNECT_API_KEY_BASE64 }}
-      PEARD_PROMOTE_BUILD: ${{ needs.ios-release.outputs.build_number }}
-      PEARD_PROMOTE_VERSION: ${{ needs.ios-release.outputs.version }}
-    steps:
-      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
-
-      - uses: ruby/setup-ruby@14594264cd68ce8a2345dd349bc3d138a4ef85c8 # v1.327.0
-        with:
-          ruby-version: "3.3"
-          bundler-cache: true
-
-      # The same notes the external job gives: the pending changelog, else
-      # CHANGELOG.md's entry for this version, else the commit message.
-      - name: Pending release notes
-        env:
-          GH_TOKEN: ${{ github.token }}
-        run: |
-          notes=$(gh pr list --repo "$GITHUB_REPOSITORY" --state open \
-            --label "autorelease: pending" --json body --jq '.[0].body // ""')
-          delimiter="NOTES_$(openssl rand -hex 8)"
-          { echo "PEARD_RELEASE_NOTES<<$delimiter"; echo "$notes"; echo "$delimiter"; } >> "$GITHUB_ENV"
-
-      - name: Wait for processing, then set What to Test
-        run: bundle exec fastlane testflight_changelog
-
-  testflight-external:
-    name: TestFlight (external)
-    # Linux: this only talks to App Store Connect's API — wait for processing,
-    # add the build to a group — so a macOS runner bought nothing but its price.
-    runs-on: ubuntu-latest
-    needs: ios-release
-    if: needs.ios-release.outputs.build_number != ''
-    # The second approval. The testflight-external environment requires a
-    # reviewer, so the run pauses here until somebody approves it in the Actions
-    # tab; reject an older one there when a newer build should go instead.
-    # Nothing is rebuilt: the build internal testers have is the one that goes
-    # out.
-    environment:
-      name: testflight-external
-    concurrency:
-      group: testflight-external
-      cancel-in-progress: false
-    # The pending release notes below list pull requests. A job-level block
-    # replaces the workflow's rather than adding to it, hence contents again.
-    permissions:
-      contents: read
-      pull-requests: read
-    env:
-      APP_STORE_CONNECT_API_KEY_ID: ${{ secrets.APP_STORE_CONNECT_API_KEY_ID }}
-      APP_STORE_CONNECT_API_ISSUER_ID: ${{ secrets.APP_STORE_CONNECT_API_ISSUER_ID }}
-      APP_STORE_CONNECT_API_KEY_BASE64: ${{ secrets.APP_STORE_CONNECT_API_KEY_BASE64 }}
-      PEARD_TESTFLIGHT_EXTERNAL_GROUP: ${{ vars.PEARD_TESTFLIGHT_EXTERNAL_GROUP }}
-      PEARD_PROMOTE_BUILD: ${{ needs.ios-release.outputs.build_number }}
-      PEARD_PROMOTE_VERSION: ${{ needs.ios-release.outputs.version }}
-    steps:
-      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
-
-      - uses: ruby/setup-ruby@14594264cd68ce8a2345dd349bc3d138a4ef85c8 # v1.327.0
-        with:
-          ruby-version: "3.3"
-          bundler-cache: true
-
-      # "What to Test" is the pending changelog: the body of the release pull
-      # request release-please keeps open. Read after the approval, so it is
-      # current. With none open (this push was the release itself, or nothing
-      # releasable has landed since), the lane falls back to CHANGELOG.md's
-      # entry for this version, then to the commit message.
-      - name: Pending release notes
-        env:
-          GH_TOKEN: ${{ github.token }}
-        run: |
-          notes=$(gh pr list --repo "$GITHUB_REPOSITORY" --state open \
-            --label "autorelease: pending" --json body --jq '.[0].body // ""')
-          delimiter="NOTES_$(openssl rand -hex 8)"
-          { echo "PEARD_RELEASE_NOTES<<$delimiter"; echo "$notes"; echo "$delimiter"; } >> "$GITHUB_ENV"
-
-      # Waits for App Store Connect to finish processing that build, then adds
-      # it to the external group. The first build of each version is submitted
-      # for Beta App Review on the way.
-      - name: Send to external testers
-        run: bundle exec fastlane promote_external
 
   deploy:
     name: Deploy server

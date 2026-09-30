@@ -191,15 +191,24 @@ gated on them:
 - **Docker image + compose**, when a pull request touches the image, and always
   on `main`.
 
-**Pushes to `main`** then offer the release, as two approvals:
+**Pushes to `main`** then offer the release, as two approvals, in a workflow of
+its own (`.github/workflows/testflight.yml`). CI's runs on `main` cancel each
+other so a stale smoke test stops at once; GitHub cancels a run whole, so the
+upload lives elsewhere, where nothing cuts it once it has started.
 
-- **TestFlight (internal)** waits for SwiftLint and PeardCore's tests, then for
-  approval (the `testflight-internal` environment's required reviewer). It runs
-  `fastlane ci_release skip_checks:true`: the app-target tests, then a Release
-  archive uploaded to TestFlight. Nothing uploads unless they pass. Internal
-  testers get the build automatically, because the internal group has automatic
-  distribution on. The build number is the upload time in Unix seconds.
-- **TestFlight (external)** waits for a second approval (the
+- **TestFlight (internal)** waits for approval (the `testflight-internal`
+  environment's required reviewer). It runs `fastlane ci_release skip_checks:true`:
+  the app-target tests, then a Release archive uploaded to TestFlight. Nothing
+  uploads unless they pass. SwiftLint and PeardCore's tests are not repeated:
+  every commit on `main` passed them on its pull request. A newer push's build waits
+  behind one already running rather than cancelling it, and GitHub keeps only
+  the newest of those waiting. Internal testers get the build automatically,
+  because the internal group has automatic distribution on. The build number is
+  the upload time in Unix seconds.
+- **TestFlight (What to Test)**, on Linux, waits for App Store Connect to
+  finish processing that build, then sets its notes, so the macOS upload does
+  not sit waiting for Apple.
+- **TestFlight (external)**, on Linux, waits for a second approval (the
   `testflight-external` environment's required reviewer). Approving it waits for App Store Connect to
   finish processing *that* build, then adds it to the external group
   (`fastlane promote_external`). Nothing is rebuilt, so what goes out is exactly
