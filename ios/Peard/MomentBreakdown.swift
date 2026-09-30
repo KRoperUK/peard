@@ -121,6 +121,7 @@ struct MomentBreakdownPicker: View {
         }
         .pickerStyle(.segmented)
         .accessibilityLabel("Tally period")
+        .onChange(of: window) { Haptics.play(.changedPeriod) }
     }
 }
 

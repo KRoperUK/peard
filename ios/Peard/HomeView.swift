@@ -143,7 +143,10 @@ struct HomeView: View {
                 connections: connections,
                 selectedID: model.pairID,
                 serverURL: model.serverURL,
-                onSelect: { app.select(connectionID: $0) },
+                onSelect: { id in
+                    if id != model.pairID { Haptics.play(.switchedConnection) }
+                    app.select(connectionID: id)
+                },
                 onAdd: { app.startAddingConnection() }
             )
         }
