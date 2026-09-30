@@ -30,11 +30,13 @@ import (
 	// For UnreadCount — one definition of "unread" shared with the connections
 	// route and the push badge. `pairs` imports nothing internal, so no cycle.
 	"peard/internal/pairs"
+	"peard/internal/posts"
 	"peard/internal/zone"
 
 	"github.com/pocketbase/dbx"
 	"github.com/pocketbase/pocketbase/apis"
 	"github.com/pocketbase/pocketbase/core"
+	"github.com/pocketbase/pocketbase/tools/types"
 )
 
 // Bounds mirroring internal/pairs, used when the widget routes walk a caller's
@@ -144,6 +146,9 @@ func momentHandler(app core.App) func(e *core.RequestEvent) error {
 			Pair     string `json:"pair" form:"pair"`
 			Kind     string `json:"kind" form:"kind"`
 			ClientID string `json:"client_id" form:"client_id"`
+			// When it happened, for a moment sent late — the watch's offline
+			// queue. Absent means now.
+			HappenedAt string `json:"happened_at" form:"happened_at"`
 		}
 		if err := e.BindBody(&body); err != nil {
 			return e.BadRequestError("invalid request body", err)
@@ -182,6 +187,23 @@ func momentHandler(app core.App) func(e *core.RequestEvent) error {
 			return e.BadRequestError("that moment isn't available in this connection", nil)
 		}
 
+		var happenedAt types.DateTime
+		if raw := strings.TrimSpace(body.HappenedAt); raw != "" {
+			// ParseDateTime answers garbage with a zero time rather than an
+			// error, and zero means "now" below, so both are refused here.
+			parsed, perr := types.ParseDateTime(raw)
+			if perr != nil || parsed.IsZero() {
+				return e.BadRequestError("happened_at is not a date", perr)
+			}
+			// The same limits as creating a post directly, which this route's
+			// app.Save does not go through: nothing in the future, nothing more
+			// than a day back.
+			if msg := posts.CheckHappenedAt(parsed, time.Now()); msg != "" {
+				return e.BadRequestError(msg, nil)
+			}
+			happenedAt = parsed
+		}
+
 		col, cerr := app.FindCollectionByNameOrId("posts")
 		if cerr != nil {
 			return e.InternalServerError("posts collection missing", cerr)
@@ -193,6 +215,11 @@ func momentHandler(app core.App) func(e *core.RequestEvent) error {
 		post.Set("event_kind", kind)
 		if id := strings.TrimSpace(body.ClientID); id != "" {
 			post.Set("client_id", id)
+		}
+		// Not a rewind: nobody picked the time, the moment just arrived late,
+		// which is how the app's own offline queue sends it too.
+		if !happenedAt.IsZero() {
+			post.Set("happened_at", happenedAt)
 		}
 		if err := app.Save(post); err != nil {
 			return e.BadRequestError("failed to log that moment", err)

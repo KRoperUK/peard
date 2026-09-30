@@ -58,12 +58,16 @@ public extension APIClient {
     /// Authenticated with the widget token rather than the session, because the
     /// extension has no access to the Keychain. `clientID` makes the write
     /// idempotent, so a tap whose response is lost cannot double-log.
+    ///
+    /// `happenedAt` is for a moment sent late — the watch's offline queue — so
+    /// it lands at the time it was tapped rather than the time it got through.
     @discardableResult
     func logWidgetMoment(
         token: String,
         kind: EventKind,
         pairID: String? = nil,
-        clientID: String = UUID().uuidString
+        clientID: String = UUID().uuidString,
+        happenedAt: Date? = nil
     ) async throws -> WidgetMomentResult {
         var fields = [
             "token": token,
@@ -71,6 +75,7 @@ public extension APIClient {
             "client_id": clientID,
         ]
         if let pairID, !pairID.isEmpty { fields["pair"] = pairID }
+        if let happenedAt { fields["happened_at"] = Rewind.wireString(happenedAt) }
         return try await post(path: "/api/peard/widget/moment", fields: fields)
     }
 
