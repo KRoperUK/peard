@@ -1,5 +1,7 @@
 import Foundation
-#if canImport(UIKit) && !os(watchOS)
+#if os(watchOS)
+import WatchKit
+#elseif canImport(UIKit)
 import UIKit
 #endif
 
@@ -55,7 +57,18 @@ public enum Haptics {
     /// Taptic Engine to play it on.
     @MainActor
     public static func play(_ haptic: Haptic) {
-        #if canImport(UIKit) && !os(watchOS)
+        #if os(watchOS)
+        // The watch has its own vocabulary, closest match for each.
+        let type: WKHapticType
+        switch haptic.feedback {
+        case .impact(.light), .selection: type = .click
+        case .impact(.medium): type = .directionDown
+        case .notification(.success): type = .success
+        case .notification(.warning): type = .retry
+        case .notification(.error): type = .failure
+        }
+        WKInterfaceDevice.current().play(type)
+        #elseif canImport(UIKit)
         switch haptic.feedback {
         case .impact(.light): UIImpactFeedbackGenerator(style: .light).impactOccurred()
         case .impact(.medium): UIImpactFeedbackGenerator(style: .medium).impactOccurred()

@@ -40,6 +40,8 @@ peard/
 │   ├── PearMessages/      iMessage extension target
 │   ├── PearNotificationService/  notification service extension (photo in the alert)
 │   ├── PearShare/         share extension (send a photo from the share sheet)
+│   ├── PeardWatch/        watchOS app (the moment grid), embedded in the app
+│   ├── PeardWatchWidgets/ watch-face complications
 │   ├── PeardTests/        app-target XCTest bundle
 │   ├── PeardCore/         shared Swift package (models, API client, App Group)
 │   ├── Tools/             icon generators, run by `make icons`
@@ -849,6 +851,22 @@ liveliest.
   published, and carries a client id so a lost response cannot double-log.
 - Timelines refresh every ~15 min, on every new post, and after every button tap
   (best-effort, subject to the system's reload budget).
+
+## Apple Watch
+
+The watch app is the moment grid and nothing else: a tap logs to the connection
+shown, and a switcher picks another. Complications show the latest moment and
+today's count, from the same feed and `LockScreenSummary` as the Lock Screen
+widgets.
+
+- It uses the same widget token as the widget, never the session. The phone
+  sends it (`Peard/WatchSync.swift`) as WatchConnectivity application context
+  whenever the token is issued or cleared, again when the watch app is installed
+  later, and on request from a watch that opens without one. Signing out on the
+  phone signs the watch out.
+- Built as its own scheme (`PeardWatch`) and embedded in the iPhone app. Building
+  either needs the watchOS platform installed (Xcode → Settings → Components);
+  CI installs it when the runner lacks it (`scripts/ensure-watchos-platform`).
 
 ## Siri and Shortcuts
 

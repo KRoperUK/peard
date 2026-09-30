@@ -125,6 +125,7 @@ final class AppDelegate: NSObject, UIApplicationDelegate, UNUserNotificationCent
         UNUserNotificationCenter.current().delegate = self
         PushCoordinator.registerNotificationCategories()
         QuickActions.install()
+        WatchSync.shared.activate()
 
         // A launch *from* a quick action delivers it here rather than through
         // the delegate callback below, and returning false suppresses that

@@ -233,6 +233,10 @@ jobs:
         # The newest Xcode on the image, as the other macOS jobs use.
         run: scripts/select-newest-xcode
 
+      - name: watchOS platform
+        # The app embeds the watch app, so building it builds for watchOS too.
+        run: scripts/ensure-watchos-platform
+
       - name: Tools
         run: brew install xcodegen
 
@@ -276,6 +280,10 @@ jobs:
         # App Store Connect refuses anything built with an SDK older than iOS
         # 26, and the image's default Xcode is older than that.
         run: scripts/select-newest-xcode
+
+      - name: watchOS platform
+        # The archive embeds the watch app, so it builds for watchOS too.
+        run: scripts/ensure-watchos-platform
 
       - uses: ruby/setup-ruby@14594264cd68ce8a2345dd349bc3d138a4ef85c8 # v1.327.0
         with:

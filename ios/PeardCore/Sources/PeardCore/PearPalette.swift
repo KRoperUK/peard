@@ -26,7 +26,11 @@ public enum PearColor {
     public static let divider = named("PearDivider", light: 0xE3DAC6, dark: 0x413828)
 
     private static func named(_ name: String, light: UInt32, dark: UInt32) -> Color {
-        #if canImport(UIKit)
+        #if os(watchOS)
+        // A watch is always dark, and watchOS has no trait-driven UIColor to
+        // choose between the two with.
+        return UIColor(named: name) != nil ? Color(name) : Color(rgb: dark)
+        #elseif canImport(UIKit)
         if UIColor(named: name) != nil {
             return Color(name)
         }

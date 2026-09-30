@@ -22,6 +22,7 @@ final class WidgetSync {
         do {
             let issue = try await api.issueWidgetToken()
             store.writeWidgetCredentials(token: issue.token, baseURL: baseURL)
+            WatchSync.shared.update(WatchCredentials(store: store))
             reloadTimelines()
         } catch {
             // Widget sync is opportunistic; the app works without the widget.
@@ -31,6 +32,7 @@ final class WidgetSync {
     /// Removes the token and refreshes timelines (Requirement 16.4).
     func clear() {
         store.removeWidgetToken()
+        WatchSync.shared.update(nil)
         reloadTimelines()
     }
 
