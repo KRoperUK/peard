@@ -127,8 +127,8 @@ test-app: $(PROJECT)
 
 # The launch smoke test (PeardUITests): privacy consent, sign-in and an invite
 # link, through the real UI. Needs no server — it points the app at a closed
-# port and resets the simulator's consent and session itself. CI runs it on
-# every push to main.
+# port and resets the simulator's consent and session itself. CI runs it with
+# each TestFlight (internal) build, after the upload.
 test-ui: $(PROJECT)
 	$(XCODEBUILD) -configuration Debug -destination '$(DESTINATION)' \
 		-derivedDataPath ios/build -only-testing:PeardUITests test
