@@ -95,6 +95,9 @@ targets:
       - target: PearMessagesExtension
       - target: PearNotificationServiceExtension
       - target: PearShareExtension
+      # The watch app (issue #8), embedded so it ships with the iPhone app and
+      # installs on a paired watch from it.
+      - target: PeardWatch
     settings:
       base:
         ASSETCATALOG_COMPILER_APPICON_NAME: AppIcon
