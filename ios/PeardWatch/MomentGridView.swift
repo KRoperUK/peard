@@ -46,6 +46,15 @@ struct MomentGridView: View {
                     }
                 }
                 .padding(.horizontal, 4)
+                if model.waitingCount > 0 {
+                    Label(
+                        model.waitingCount == 1 ? "1 waiting to send" : "\(model.waitingCount) waiting to send",
+                        systemImage: "clock"
+                    )
+                    .font(.footnote)
+                    .foregroundStyle(.secondary)
+                    .padding(.top, 4)
+                }
             }
         }
     }
@@ -62,6 +71,7 @@ struct MomentGridView: View {
                 switch state {
                 case .sending: ProgressView()
                 case .logged: Image(systemName: "checkmark.circle.fill").foregroundStyle(PearColor.accent)
+                case .queued: Image(systemName: "clock.fill").foregroundStyle(PearColor.accent)
                 case .failed: Image(systemName: "exclamationmark.circle.fill").foregroundStyle(PearColor.error)
                 case nil: EmptyView()
                 }
@@ -76,6 +86,7 @@ struct MomentGridView: View {
         switch state {
         case .sending: return "Logging \(moment.label)"
         case .logged: return "\(moment.label) logged"
+        case .queued: return "\(moment.label) saved, sends when back online"
         case .failed: return "Couldn't log \(moment.label)"
         case nil: return "Log \(moment.label)"
         }
