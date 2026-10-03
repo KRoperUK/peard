@@ -3,11 +3,16 @@
 // Polls the App Store Connect "diagnostic signatures" endpoint for hangs,
 // excessive disk writes and slow launches, then turns each new signature into
 // a triaged + refined GitHub issue (device/OS distribution and top stack
-// frames pulled through). Unlike the feedback poller nothing is deleted or
+// frames pulled through). If triage fails the issue is opened anyway, labelled
+// `needs-triage` rather than `refined`, and the run fails; the next run
+// re-triages it in place (see retriageSignatures). See testflight-shared.js for
+// the triage request itself.
+//
+// Unlike the feedback poller nothing is deleted or
 // mutated in App Store Connect here — there is no API to mark a diagnostic
 // signature "resolved" (it isn't a field this resource has), so de-duplication
 // relies entirely on the `tf-diag-id` marker already present on GitHub issues
-// (see loadProcessedIds below) — closing the issue is enough to stop it being
+// (see shared.loadProcessedIssues) — closing the issue is enough to stop it being
 // re-created; the signature itself simply won't resurface as "new" once its
 // id has been seen.
 //
@@ -45,14 +50,12 @@
 // diagnostic logs through different mechanisms). Filtering/requesting any of
 // those raises HTTP 400 PARAMETER_ERROR.INVALID.
 
-const crypto = require('crypto');
+const shared = require('./testflight-shared');
 
-const ASC_BASE = 'https://api.appstoreconnect.apple.com';
-const ASC_AUDIENCE = 'appstoreconnect-v1';
-const DEFAULT_BUNDLE_ID = 'com.peard.app';
 const DIAGNOSTICS_LABEL = 'testflight-diagnostics';
-const ID_MARKER = (id) => `<!-- tf-diag-id: ${id} -->`;
-const REFINED_MARKER = '<!-- issue-refined -->';
+const ID_KIND = 'diag';
+const ID_MARKER = (id) => shared.idMarker(ID_KIND, id);
+const REFINED_MARKER = shared.REFINED_MARKER;
 
 // The diagnostic types we poll and the presentation/label metadata for each.
 // Must match DiagnosticSignature.Attributes.diagnosticType exactly — App Store
@@ -73,33 +76,29 @@ const SIGNATURE_FIELDS = ['diagnosticType', 'signature', 'weight', 'insight'].jo
 const BUILD_FIELDS = ['version', 'preReleaseVersion'].join(',');
 
 module.exports = async ({ github, context, core }) => {
-    // Pin the REST API version on every request (silences Octokit's Sunset
-    // deprecation warning — 2022-11-28 is itself now deprecated in favour of
-    // 2026-03-10, see https://docs.github.com/rest/about-the-rest-api/api-versions).
-    github.hook.before('request', (options) => {
-        options.headers['x-github-api-version'] = '2026-03-10';
-    });
-
+    shared.pinApiVersion(github);
 
     const cfg = loadConfig(core);
     const { owner, repo } = context.repo;
 
-    const token = makeAscToken(cfg);
-    const appId = cfg.appId || (await resolveAppId(token, cfg.bundleId, core));
+    const token = shared.makeAscToken(cfg);
+    const appId = cfg.appId || (await shared.resolveAppId(token, cfg.bundleId, core));
     core.info(`Polling App Store Connect diagnostic signatures for app ${appId}…`);
+    // Logged every run: a wrong OPENROUTER_MODEL is the failure that silently
+    // degraded triage before, and it is invisible unless the slug is in the log.
+    core.info(`Triaging with OpenRouter model ${cfg.model}.`);
 
     const builds = await listRecentBuilds(token, appId, cfg.buildLimit, core);
     core.info(`Checking ${builds.length} recent build(s) for diagnostic signatures.`);
 
     const signatures = await listSignatures(token, builds, cfg.limit, core);
     core.info(`Found ${signatures.length} diagnostic signature(s).`);
-    if (signatures.length === 0) {
-        return;
-    }
 
-    const existing = await loadProcessedIds({ github, owner, repo });
+    // Loaded even when there are no new signatures: an issue left needs-triage by
+    // an earlier run is retried below, and that is the only chance to heal it.
+    const existing = await shared.loadProcessedIssues({ github, owner, repo }, { label: DIAGNOSTICS_LABEL, kind: ID_KIND });
 
-    const summary = { created: 0, skipped: 0, failed: 0 };
+    const summary = { created: 0, untriaged: 0, retriaged: 0, skipped: 0, failed: 0 };
 
     for (const sig of signatures) {
         const id = sig.id;
@@ -117,7 +116,8 @@ module.exports = async ({ github, context, core }) => {
             const triage = await triageSignature(cfg, detail, diag, core);
 
             if (cfg.dryRun) {
-                core.info(`${id}: DRY_RUN — would create "${triage.titlePrefix}${triage.title}" (${detail.diagnosticType}) with ${diag.frames.length} frame(s), ${diag.distribution.length} device/OS row(s).`);
+                core.info(`${id}: DRY_RUN — would create "${triage.titlePrefix}${triage.title}" (${detail.diagnosticType})${triage.ok ? '' : ' [UNTRIAGED]'} with ${diag.frames.length} frame(s), ${diag.distribution.length} device/OS row(s).`);
+                if (!triage.ok) summary.untriaged++;
                 summary.created++;
                 continue;
             }
@@ -126,145 +126,110 @@ module.exports = async ({ github, context, core }) => {
                 { github, owner, repo },
                 { id, detail, diag, triage, core }
             );
-            core.info(`${id}: opened issue #${issue.number} — ${issue.html_url}`);
             summary.created++;
+            if (triage.ok) {
+                core.info(`${id}: opened issue #${issue.number} — ${issue.html_url}`);
+            } else {
+                summary.untriaged++;
+                core.warning(`${id}: opened issue #${issue.number} without triage — ${issue.html_url}`);
+            }
         } catch (err) {
             summary.failed++;
             core.warning(`${id}: failed — ${err.message} (left in App Store Connect for retry)`);
         }
     }
 
-    core.notice(
-        `TestFlight diagnostics: created ${summary.created}, skipped ${summary.skipped}, ` +
-        `failed ${summary.failed}.`
+    // Re-triage anything an earlier run had to open without a triage. Diagnostic
+    // signatures are never deleted from App Store Connect, so a needs-triage
+    // issue's signature is re-polled every run and can be rewritten in place.
+    await retriageSignatures(
+        { github, owner, repo },
+        { existing, signatures, token, cfg, summary, core }
     );
-    if (summary.failed > 0) {
-        core.setFailed(`${summary.failed} signature(s) failed — see logs.`);
+
+    core.notice(
+        `TestFlight diagnostics: created ${summary.created} (${summary.untriaged} untriaged), ` +
+        `re-triaged ${summary.retriaged}, skipped ${summary.skipped}, failed ${summary.failed}.`
+    );
+    // An untriaged issue is a real failure, not a lesser success: the run goes red
+    // so somebody notices instead of a degraded issue quietly accumulating.
+    if (summary.failed + summary.untriaged > 0) {
+        core.setFailed(`${summary.failed + summary.untriaged} signature(s) failed or could not be triaged — see logs.`);
     }
 };
+
+// ---- re-triage -----------------------------------------------------------
+
+// Issues an earlier run had to open without a brief, still labelled
+// `needs-triage`. The signature is re-polled on every run, so the issue can be
+// rebuilt from fresh data once triage works again.
+async function retriageSignatures({ github, owner, repo }, { existing, signatures, token, cfg, summary, core }) {
+    const stale = [...existing.entries()].filter(([, issue]) => shared.needsRetriage(issue));
+    if (!stale.length) return;
+    core.info(`Re-triaging ${stale.length} issue(s) left needs-triage by an earlier run.`);
+
+    for (const [id, issue] of stale) {
+        try {
+            const sig = signatures.find((s) => s.id === id);
+            if (!sig) {
+                core.warning(`${id}: signature no longer returned — issue #${issue.number} left un-triaged.`);
+                continue;
+            }
+
+            const detail = describeSignature(sig, signatures.included);
+            const logs = await fetchSignatureLogs(token, id, core);
+            const diag = extractLogData(logs, detail, core);
+            const triage = await triageSignature(cfg, detail, diag, core);
+            if (!triage.ok) {
+                summary.failed++;
+                core.warning(`${id}: re-triage failed again — issue #${issue.number} left needs-triage.`);
+                continue;
+            }
+
+            if (cfg.dryRun) {
+                core.info(`${id}: DRY_RUN — would re-triage issue #${issue.number}.`);
+                summary.retriaged++;
+                continue;
+            }
+
+            const labels = [DIAGNOSTICS_LABEL, shared.REFINED_LABEL];
+            if (triage.typeLabel) labels.push(triage.typeLabel);
+            await github.rest.issues.update({
+                owner,
+                repo,
+                issue_number: issue.number,
+                title: `${triage.titlePrefix}${triage.title}`,
+                body: buildIssueBody({ id, detail, diag, triage }),
+                labels,
+            });
+            await github.rest.issues.createComment({
+                owner,
+                repo,
+                issue_number: issue.number,
+                body: `Re-triaged automatically — the earlier run could not reach the model.\n\n${REFINED_MARKER}`,
+            });
+            summary.retriaged++;
+            core.info(`${id}: re-triaged issue #${issue.number}.`);
+        } catch (err) {
+            summary.failed++;
+            core.warning(`${id}: re-triage failed — ${err.message}.`);
+        }
+    }
+}
 
 // ---- config --------------------------------------------------------------
 
 function loadConfig(core) {
-    const need = (key) => {
-        const v = (process.env[key] || '').trim();
-        if (!v) throw new Error(`Missing required env ${key}`);
-        return v;
-    };
     return {
-        keyId: need('ASC_KEY_ID'),
-        issuerId: need('ASC_ISSUER_ID'),
-        privateKey: loadPrivateKey(need('ASC_KEY_CONTENT')),
-        appId: (process.env.ASC_APP_ID || '').trim(),
-        bundleId: (process.env.ASC_BUNDLE_ID || '').trim() || DEFAULT_BUNDLE_ID,
-        openRouterKey: need('OPENROUTER_API_KEY'),
-        model: (process.env.OPENROUTER_MODEL || '').trim() || 'deepseek/deepseek-v4.1-flash',
+        ...shared.loadAscConfig(),
+        ...shared.loadOpenRouterConfig(),
         limit: Number.parseInt(process.env.DIAGNOSTICS_LIMIT || '200', 10),
         buildLimit: Number.parseInt(process.env.DIAGNOSTICS_BUILD_LIMIT || '10', 10),
-        dryRun: /^(1|true|yes)$/i.test(process.env.DRY_RUN || ''),
+        dryRun: shared.isDryRun(),
     };
-}
-
-// Accept the .p8 as a real PEM, an escaped-newline PEM, a base64-encoded PEM
-// (how the fastlane ASC_KEY_CONTENT secret is commonly stored), or bare base64
-// DER.
-function loadPrivateKey(raw) {
-    let s = raw.trim();
-    if (s.includes('\\n')) s = s.replace(/\\n/g, '\n');
-
-    // Already PEM text.
-    if (s.includes('PRIVATE KEY')) return crypto.createPrivateKey(s);
-
-    // base64 of a whole .p8 PEM file → decode and use the PEM inside.
-    try {
-        const decoded = Buffer.from(s.replace(/\s+/g, ''), 'base64').toString('utf8');
-        if (decoded.includes('PRIVATE KEY')) return crypto.createPrivateKey(decoded);
-    } catch (_) { /* not base64-encoded text — fall through */ }
-
-    // Bare base64 DER → wrap as a PKCS#8 PEM.
-    const body = s.replace(/\s+/g, '').match(/.{1,64}/g).join('\n');
-    const marker = (edge) => `-----${edge} PRIVATE KEY-----`;
-    return crypto.createPrivateKey(`${marker('BEGIN')}\n${body}\n${marker('END')}`);
-}
-
-// ---- App Store Connect JWT (ES256) ---------------------------------------
-
-function b64url(input) {
-    return Buffer.from(input)
-        .toString('base64')
-        .replace(/\+/g, '-')
-        .replace(/\//g, '_')
-        .replace(/=+$/, '');
-}
-
-function makeAscToken({ keyId, issuerId, privateKey }) {
-    const header = { alg: 'ES256', kid: keyId, typ: 'JWT' };
-    const now = Math.floor(Date.now() / 1000);
-    const payload = { iss: issuerId, iat: now, exp: now + 19 * 60, aud: ASC_AUDIENCE };
-    const signingInput = `${b64url(JSON.stringify(header))}.${b64url(JSON.stringify(payload))}`;
-    // ES256 wants the raw r||s (IEEE P1363) signature, not Node's default DER.
-    const sig = crypto.sign('sha256', Buffer.from(signingInput), {
-        key: privateKey,
-        dsaEncoding: 'ieee-p1363',
-    });
-    return `${signingInput}.${b64url(sig)}`;
 }
 
 // ---- App Store Connect REST ----------------------------------------------
-
-async function asc(token, path, opts = {}) {
-    const res = await fetch(`${ASC_BASE}${path}`, {
-        ...opts,
-        headers: {
-            Authorization: `Bearer ${token}`,
-            'Content-Type': 'application/json',
-            ...(opts.headers || {}),
-        },
-    });
-    return res;
-}
-
-// Page through an ASC collection, retrying transient 5xx per page, up to `limit`
-// data rows. Returns the rows with a non-enumerable-ish `.included` array
-// carrying every sideloaded resource seen across pages.
-async function fetchPaged(token, startPath, limit) {
-    const out = [];
-    const included = [];
-    let path = startPath;
-    while (path && out.length < limit) {
-        let res;
-        for (let attempt = 1; attempt <= 3; attempt++) {
-            res = await asc(token, path);
-            if (res.ok || res.status < 500) break;
-            await new Promise((r) => setTimeout(r, 2 ** attempt * 1000));
-        }
-        if (!res.ok) {
-            const body = await res.text();
-            const err = new Error(`HTTP ${res.status}: ${body}`);
-            err.status = res.status;
-            throw err;
-        }
-        const json = await res.json();
-        out.push(...(json.data || []));
-        included.push(...(json.included || []));
-        const next = json.links?.next;
-        path = next ? next.replace(ASC_BASE, '') : null;
-    }
-    out.included = included;
-    return out;
-}
-
-async function resolveAppId(token, bundleId, core) {
-    const res = await asc(token, `/v1/apps?filter[bundleId]=${encodeURIComponent(bundleId)}&fields[apps]=bundleId&limit=1`);
-    if (!res.ok) {
-        throw new Error(`app lookup failed (${res.status}): ${await res.text()}`);
-    }
-    const json = await res.json();
-    const app = json.data?.[0];
-    if (!app) throw new Error(`no app found for bundle id ${bundleId}`);
-    core.info(`Resolved bundle ${bundleId} → app id ${app.id}.`);
-    return app.id;
-}
 
 // The most recently uploaded builds for the app — diagnostic signatures are
 // only reachable per-build (there is no top-level, app-filterable collection
@@ -276,7 +241,7 @@ async function listRecentBuilds(token, appId, buildLimit, core) {
         'fields[builds]': BUILD_FIELDS,
         limit: String(Math.min(buildLimit, 200)),
     });
-    const res = await asc(token, `/v1/builds?${params.toString()}`);
+    const res = await shared.asc(token, `/v1/builds?${params.toString()}`);
     if (!res.ok) {
         throw new Error(`list builds failed (${res.status}): ${await res.text()}`);
     }
@@ -307,7 +272,7 @@ async function listSignatures(token, builds, limit, core) {
     for (const build of builds) {
         polled++;
         try {
-            const data = await fetchPaged(token, `/v1/builds/${build.id}/diagnosticSignatures?${params.toString()}`, limit - all.length);
+            const data = await shared.fetchPaged(token, `/v1/builds/${build.id}/diagnosticSignatures?${params.toString()}`, limit - all.length);
             for (const sig of data) {
                 // Stash the owning build inline (as "included") so downstream
                 // shaping (describeSignature) keeps working unchanged.
@@ -357,9 +322,9 @@ async function fetchSignatureLogs(token, id, core) {
     try {
         let res;
         for (let attempt = 1; attempt <= 3; attempt++) {
-            res = await asc(token, `/v1/diagnosticSignatures/${id}/logs?limit=10`);
+            res = await shared.asc(token, `/v1/diagnosticSignatures/${id}/logs?limit=10`);
             if (res.ok || res.status < 500) break;
-            await new Promise((r) => setTimeout(r, 2 ** attempt * 1000));
+            await shared.sleep(2 ** attempt * 1000);
         }
         if (!res.ok) {
             core.warning(`${id}: logs fetch returned ${res.status} — continuing without log detail.`);
@@ -527,12 +492,13 @@ async function triageSignature(cfg, detail, diag, core) {
     const rawTitle = appFrame || detail.signature || `${detail.diagnosticType || 'diagnostic'} signature`;
     const title = rawTitle.replace(/\s+/g, ' ').trim().slice(0, 80);
 
-    const brief = await briefFromOpenRouter(cfg, detail, diag, core);
+    const { brief, ok } = await briefFromOpenRouter(cfg, detail, diag, core);
 
     return {
+        ok,
         titlePrefix: meta.prefix,
         title,
-        typeLabel: meta.label,
+        typeLabel: ok ? meta.label : null,
         brief,
     };
 }
@@ -562,49 +528,9 @@ async function briefFromOpenRouter(cfg, detail, diag, core) {
         '{"brief":"Markdown brief with sections: Problem, Likely cause, Affected areas, Suggested fix"}',
     ].join('\n');
 
-    const parsed = await callOpenRouter(cfg, systemPrompt, userPrompt, core);
-    return parsed?.brief || fallbackBrief(detail, diag);
-}
-
-async function callOpenRouter(cfg, systemPrompt, userPrompt, core) {
-    const maxAttempts = 3;
-    let lastError;
-    for (let attempt = 1; attempt <= maxAttempts; attempt++) {
-        if (attempt > 1) await new Promise((r) => setTimeout(r, 2 ** attempt * 1000));
-        try {
-            const res = await fetch('https://openrouter.ai/api/v1/chat/completions', {
-                method: 'POST',
-                headers: {
-                    Authorization: `Bearer ${cfg.openRouterKey}`,
-                    'Content-Type': 'application/json',
-                    'HTTP-Referer': `https://github.com/${process.env.GITHUB_REPOSITORY}`,
-                },
-                body: JSON.stringify({
-                    model: cfg.model,
-                    messages: [
-                        { role: 'system', content: systemPrompt },
-                        { role: 'user', content: userPrompt },
-                    ],
-                    max_tokens: 2048,
-                    response_format: { type: 'json_object' },
-                }),
-            });
-            if (!res.ok) throw new Error(`OpenRouter ${res.status}: ${await res.text()}`);
-            const data = await res.json();
-            const content = data.choices?.[0]?.message?.content;
-            if (!content) throw new Error('empty content');
-            return JSON.parse(stripFences(content));
-        } catch (err) {
-            lastError = err.message;
-        }
-    }
-    core.warning(`triage failed after ${maxAttempts} attempts (${lastError}) — using fallback.`);
-    return null;
-}
-
-function stripFences(s) {
-    const m = s.match(/```(?:json)?\s*([\s\S]*?)```/);
-    return (m ? m[1] : s).trim();
+    const parsed = await shared.triageJson(cfg, { systemPrompt, userPrompt }, core);
+    const ok = Boolean(parsed && typeof parsed.brief === 'string' && parsed.brief.trim());
+    return { ok, brief: (ok && parsed.brief) || fallbackBrief(detail, diag) };
 }
 
 function fallbackBrief(detail, diag) {
@@ -618,54 +544,38 @@ function fallbackBrief(detail, diag) {
             : '_No stack frames were retrievable — inspect the signature string below._',
         '',
         '### Affected areas',
-        '_Automated triage was unavailable; please map the frames to source areas manually._',
+        `_${shared.FALLBACK_SENTINEL}; please map the frames to source areas manually._`,
         '',
         '### Suggested fix',
-        '_Automated triage was unavailable; please refine manually._',
+        `_${shared.FALLBACK_SENTINEL}; please refine manually._`,
     ].join('\n');
 }
 
 // ---- GitHub issue --------------------------------------------------------
 
-async function loadProcessedIds({ github, owner, repo }) {
-    const ids = new Set();
-    const issues = await github.paginate(github.rest.issues.listForRepo, {
-        owner,
-        repo,
-        state: 'all',
-        labels: DIAGNOSTICS_LABEL,
-        per_page: 100,
-    });
-    const re = /<!-- tf-diag-id: ([^\s]+) -->/g;
-    for (const issue of issues) {
-        for (const m of (issue.body || '').matchAll(re)) ids.add(m[1]);
-    }
-    return ids;
-}
-
 async function ensureLabels(github, owner, repo) {
-    const labels = [
+    await shared.ensureLabels(github, owner, repo, [
         { name: DIAGNOSTICS_LABEL, color: '6F42C1', description: 'Imported from TestFlight diagnostic signatures' },
-        { name: 'refined', color: '0E8A16', description: 'Issue has been through refinement' },
+        { name: shared.REFINED_LABEL, color: '0E8A16', description: 'Issue has been through refinement' },
+        { name: shared.NEEDS_TRIAGE_LABEL, color: 'FBCA04', description: 'Automated triage failed; will be retried' },
         { name: 'hang', color: 'D93F0B', description: 'TestFlight hang report' },
         { name: 'disk-write', color: 'BFDADC', description: 'TestFlight disk write report' },
         { name: 'slow-launch', color: 'D4C5F9', description: 'TestFlight slow-launch report' },
-    ];
-    for (const label of labels) {
-        try {
-            await github.rest.issues.createLabel({ owner, repo, ...label });
-        } catch (err) {
-            if (err.status !== 422) throw err; // 422 = already exists
-        }
-    }
+    ]);
 }
 
 async function createIssue({ github, owner, repo }, { id, detail, diag, triage, core }) {
     await ensureLabels(github, owner, repo);
 
     const body = buildIssueBody({ id, detail, diag, triage });
-    const labels = [DIAGNOSTICS_LABEL, 'refined'];
-    if (triage.typeLabel) labels.push(triage.typeLabel);
+    const labels = [DIAGNOSTICS_LABEL];
+    if (triage.ok) {
+        labels.push(shared.REFINED_LABEL);
+        if (triage.typeLabel) labels.push(triage.typeLabel);
+    } else {
+        // No `refined` and no diagnostic-type label: neither is known to be true.
+        labels.push(shared.NEEDS_TRIAGE_LABEL);
+    }
 
     const { data: issue } = await github.rest.issues.create({
         owner,
@@ -675,14 +585,14 @@ async function createIssue({ github, owner, repo }, { id, detail, diag, triage, 
         labels,
     });
 
-    // One tracking comment: the human-readable anchor plus the markers. The
-    // refined brief itself lives in the issue body (not repeated here), and the
-    // issue-refined marker stops the refinement bot from re-refining it.
+    // One tracking comment: the human-readable anchor plus the markers. See the
+    // feedback poller for why an untriaged issue gets only the id marker.
+    const markers = triage.ok ? `${REFINED_MARKER}\n${ID_MARKER(id)}` : ID_MARKER(id);
     await github.rest.issues.createComment({
         owner,
         repo,
         issue_number: issue.number,
-        body: `This issue relates to diagnostic signature ${id}.\n\n${REFINED_MARKER}\n${ID_MARKER(id)}`,
+        body: `This issue relates to diagnostic signature ${id}.\n\n${markers}`,
     });
 
     return issue;
@@ -692,6 +602,15 @@ function buildIssueBody({ id, detail, diag, triage }) {
     const lines = [
         ID_MARKER(id),
         '> 🩺 Imported automatically from TestFlight diagnostic signatures.',
+    ];
+    if (!triage.ok) {
+        lines.push(
+            '',
+            '> ⚠️ **Automated triage failed for this issue.** It is labelled `needs-triage`',
+            '> and will be retried on the next run.',
+        );
+    }
+    lines.push(
         '',
         triage.brief,
         '',
@@ -704,7 +623,7 @@ function buildIssueBody({ id, detail, diag, triage }) {
         `- **Weight (0-1, how critical this signature is):** ${detail.weight != null ? detail.weight : 'unknown'}`,
         '',
         '### Affected builds',
-    ];
+    );
     if (detail.builds.length) {
         for (const b of detail.builds) {
             lines.push(`- ${b.version}${b.bundleId ? ` (${b.bundleId})` : ''}`);

@@ -5,6 +5,11 @@
 // context pulled through), then deletes the submission from App Store Connect so
 // it isn't processed again.
 //
+// If triage fails the issue is opened anyway, labelled `needs-triage` rather
+// than `refined`, the submission is kept, and the run fails. The next run
+// re-triages it in place (see retriageIssues). See testflight-shared.js for the
+// triage request itself.
+//
 // The repo is public, so nothing identifying a tester goes into an issue, and
 // screenshots (which show testers' connections) are only published when
 // PUBLISH_SCREENSHOTS is set. Otherwise they stay in App Store Connect, and the
@@ -21,14 +26,13 @@
 //   GET    /v1/apps/{id}/betaFeedbackScreenshotSubmissions   (list, full objects)
 //   DELETE /v1/betaFeedbackScreenshotSubmissions/{id}        (204 on success)
 
-const crypto = require('crypto');
+const shared = require('./testflight-shared');
 
-const ASC_BASE = 'https://api.appstoreconnect.apple.com';
-const ASC_AUDIENCE = 'appstoreconnect-v1';
-const DEFAULT_BUNDLE_ID = 'com.peard.app';
 const FEEDBACK_LABEL = 'testflight-feedback';
-const ID_MARKER = (id) => `<!-- tf-feedback-id: ${id} -->`;
-const REFINED_MARKER = '<!-- issue-refined -->';
+const ID_KIND = 'feedback';
+const ID_MARKER = (id) => shared.idMarker(ID_KIND, id);
+const REFINED_MARKER = shared.REFINED_MARKER;
+const MAX_TITLE_LENGTH = shared.MAX_TITLE_LENGTH;
 
 // Attribute fields we want back for each submission (see the API reference).
 const SUBMISSION_FIELDS = [
@@ -39,37 +43,33 @@ const SUBMISSION_FIELDS = [
 ].join(',');
 
 module.exports = async ({ github, context, core }) => {
-  // Pin the REST API version on every request (silences Octokit's Sunset
-  // deprecation warning — 2022-11-28 is itself now deprecated in favour of
-  // 2026-03-10, see https://docs.github.com/rest/about-the-rest-api/api-versions).
-  github.hook.before('request', (options) => {
-    options.headers['x-github-api-version'] = '2026-03-10';
-  });
-
+  shared.pinApiVersion(github);
 
   const cfg = loadConfig(core);
   const { owner, repo } = context.repo;
 
-  const token = makeAscToken(cfg);
-  const appId = cfg.appId || (await resolveAppId(token, cfg.bundleId, core));
+  const token = shared.makeAscToken(cfg);
+  const appId = cfg.appId || (await shared.resolveAppId(token, cfg.bundleId, core));
   core.info(`Polling App Store Connect feedback for app ${appId}…`);
+  // Logged every run: a wrong OPENROUTER_MODEL is the failure that silently
+  // degraded triage before, and it is invisible unless the slug is in the log.
+  core.info(`Triaging with OpenRouter model ${cfg.model}.`);
 
   const submissions = await listSubmissions(token, appId, cfg.limit, core);
   core.info(`Found ${submissions.length} screenshot submission(s).`);
-  if (submissions.length === 0) {
-    return;
-  }
 
-  const existing = await loadProcessedIds({ github, owner, repo });
+  // Loaded even when there are no new submissions: an issue left needs-triage by
+  // an earlier run is retried below, and that is the only chance to heal it.
+  const existing = await shared.loadProcessedIssues({ github, owner, repo }, { label: FEEDBACK_LABEL, kind: ID_KIND });
 
-  const summary = { created: 0, skipped: 0, deleted: 0, failed: 0 };
+  const summary = { created: 0, untriaged: 0, retriaged: 0, skipped: 0, deleted: 0, failed: 0 };
 
   for (const sub of submissions) {
     const id = sub.id;
     try {
       if (existing.has(id)) {
         summary.skipped++;
-        if (cfg.publishScreenshots || existing.get(id) === 'closed') {
+        if (cfg.publishScreenshots || existing.get(id).state === 'closed') {
           core.info(`#${id}: issue already exists — deleting submission only.`);
           if (await deleteSubmission(token, id, cfg, core)) summary.deleted++;
         } else {
@@ -90,7 +90,8 @@ module.exports = async ({ github, context, core }) => {
       const triage = await triageFeedback(cfg, detail, shots, core);
 
       if (cfg.dryRun) {
-        core.info(`#${id}: DRY_RUN — would create "${triage.titlePrefix}${triage.title}" (${triage.type}) with ${hosted.length} screenshot(s).`);
+        core.info(`#${id}: DRY_RUN — would create "${triage.titlePrefix}${triage.title}" (${triage.type})${triage.ok ? '' : ' [UNTRIAGED]'} with ${hosted.length} screenshot(s).`);
+        if (!triage.ok) summary.untriaged++;
         summary.created++;
         continue;
       }
@@ -99,12 +100,19 @@ module.exports = async ({ github, context, core }) => {
         { github, owner, repo },
         { id, detail, triage, hosted, keptShots: hosted.length ? 0 : shots.length, core }
       );
-      core.info(`#${id}: opened issue #${issue.number} — ${issue.html_url}`);
       summary.created++;
+      if (triage.ok) {
+        core.info(`#${id}: opened issue #${issue.number} — ${issue.html_url}`);
+      } else {
+        summary.untriaged++;
+        core.warning(`#${id}: opened issue #${issue.number} without triage — ${issue.html_url}`);
+      }
 
-      // Triaged → safe to remove from App Store Connect, unless the screenshots
-      // only live there; then a later run deletes it once the issue is closed.
-      if (hosted.length || shots.length === 0) {
+      // Only a triaged issue is safe to remove from App Store Connect. An
+      // untriaged one is kept so a later run can re-triage it against the same
+      // submission, and the issue is still open; deleting it would destroy the
+      // only copy of the feedback before anyone has read it.
+      if (triage.ok && (hosted.length || shots.length === 0)) {
         if (await deleteSubmission(token, id, cfg, core)) summary.deleted++;
       }
     } catch (err) {
@@ -113,107 +121,36 @@ module.exports = async ({ github, context, core }) => {
     }
   }
 
+  // Re-triage anything an earlier run had to open without a triage. This runs
+  // against the snapshot taken before the loop, so a submission that failed to
+  // triage moments ago is not retried immediately; it waits for the next run,
+  // when the model may well be behaving again.
+  await retriageIssues({ github, owner, repo }, { existing, submissions, token, cfg, summary, core });
+
   core.notice(
-    `TestFlight feedback: created ${summary.created}, skipped ${summary.skipped}, ` +
-    `deleted ${summary.deleted}, failed ${summary.failed}.`
+    `TestFlight feedback: created ${summary.created} (${summary.untriaged} untriaged), ` +
+    `re-triaged ${summary.retriaged}, skipped ${summary.skipped}, deleted ${summary.deleted}, failed ${summary.failed}.`
   );
-  if (summary.failed > 0) {
-    core.setFailed(`${summary.failed} submission(s) failed — see logs.`);
+  // An untriaged issue is a real failure, not a lesser success: the run goes red
+  // so somebody notices instead of a degraded issue quietly accumulating.
+  if (summary.failed + summary.untriaged > 0) {
+    core.setFailed(`${summary.failed + summary.untriaged} submission(s) failed or could not be triaged — see logs.`);
   }
 };
 
 // ---- config --------------------------------------------------------------
 
 function loadConfig(core) {
-  const need = (key) => {
-    const v = (process.env[key] || '').trim();
-    if (!v) throw new Error(`Missing required env ${key}`);
-    return v;
-  };
   return {
-    keyId: need('ASC_KEY_ID'),
-    issuerId: need('ASC_ISSUER_ID'),
-    privateKey: loadPrivateKey(need('ASC_KEY_CONTENT')),
-    appId: (process.env.ASC_APP_ID || '').trim(),
-    bundleId: (process.env.ASC_BUNDLE_ID || '').trim() || DEFAULT_BUNDLE_ID,
-    openRouterKey: need('OPENROUTER_API_KEY'),
-    model: (process.env.OPENROUTER_MODEL || '').trim() || 'deepseek/deepseek-v4.1-flash',
+    ...shared.loadAscConfig(),
+    ...shared.loadOpenRouterConfig(),
     limit: Number.parseInt(process.env.FEEDBACK_LIMIT || '50', 10),
-    publishScreenshots: /^(1|true|yes)$/i.test(process.env.PUBLISH_SCREENSHOTS || ''),
-    dryRun: /^(1|true|yes)$/i.test(process.env.DRY_RUN || ''),
+    publishScreenshots: shared.publishScreenshots(),
+    dryRun: shared.isDryRun(),
   };
-}
-
-// Accept the .p8 as a real PEM, an escaped-newline PEM, a base64-encoded PEM
-// (how the fastlane ASC_KEY_CONTENT secret is commonly stored), or bare base64
-// DER.
-function loadPrivateKey(raw) {
-  let s = raw.trim();
-  if (s.includes('\\n')) s = s.replace(/\\n/g, '\n');
-
-  // Already PEM text.
-  if (s.includes('PRIVATE KEY')) return crypto.createPrivateKey(s);
-
-  // base64 of a whole .p8 PEM file → decode and use the PEM inside.
-  try {
-    const decoded = Buffer.from(s.replace(/\s+/g, ''), 'base64').toString('utf8');
-    if (decoded.includes('PRIVATE KEY')) return crypto.createPrivateKey(decoded);
-  } catch (_) { /* not base64-encoded text — fall through */ }
-
-  // Bare base64 DER → wrap as a PKCS#8 PEM.
-  const body = s.replace(/\s+/g, '').match(/.{1,64}/g).join('\n');
-  const marker = (edge) => `-----${edge} PRIVATE KEY-----`;
-  return crypto.createPrivateKey(`${marker('BEGIN')}\n${body}\n${marker('END')}`);
-}
-
-// ---- App Store Connect JWT (ES256) ---------------------------------------
-
-function b64url(input) {
-  return Buffer.from(input)
-    .toString('base64')
-    .replace(/\+/g, '-')
-    .replace(/\//g, '_')
-    .replace(/=+$/, '');
-}
-
-function makeAscToken({ keyId, issuerId, privateKey }) {
-  const header = { alg: 'ES256', kid: keyId, typ: 'JWT' };
-  const now = Math.floor(Date.now() / 1000);
-  const payload = { iss: issuerId, iat: now, exp: now + 19 * 60, aud: ASC_AUDIENCE };
-  const signingInput = `${b64url(JSON.stringify(header))}.${b64url(JSON.stringify(payload))}`;
-  // ES256 wants the raw r||s (IEEE P1363) signature, not Node's default DER.
-  const sig = crypto.sign('sha256', Buffer.from(signingInput), {
-    key: privateKey,
-    dsaEncoding: 'ieee-p1363',
-  });
-  return `${signingInput}.${b64url(sig)}`;
 }
 
 // ---- App Store Connect REST ----------------------------------------------
-
-async function asc(token, path, opts = {}) {
-  const res = await fetch(`${ASC_BASE}${path}`, {
-    ...opts,
-    headers: {
-      Authorization: `Bearer ${token}`,
-      'Content-Type': 'application/json',
-      ...(opts.headers || {}),
-    },
-  });
-  return res;
-}
-
-async function resolveAppId(token, bundleId, core) {
-  const res = await asc(token, `/v1/apps?filter[bundleId]=${encodeURIComponent(bundleId)}&fields[apps]=bundleId&limit=1`);
-  if (!res.ok) {
-    throw new Error(`app lookup failed (${res.status}): ${await res.text()}`);
-  }
-  const json = await res.json();
-  const app = json.data?.[0];
-  if (!app) throw new Error(`no app found for bundle id ${bundleId}`);
-  core.info(`Resolved bundle ${bundleId} → app id ${app.id}.`);
-  return app.id;
-}
 
 // These newer beta-feedback endpoints intermittently 500 on richer sparse
 // fieldset / include combinations, so try progressively simpler queries and
@@ -230,39 +167,13 @@ function submissionQueries() {
   return [rich.toString(), withInclude.toString(), plain.toString()];
 }
 
-async function fetchPaged(token, query, appId, limit) {
-  const out = [];
-  const included = [];
-  let path = `/v1/apps/${appId}/betaFeedbackScreenshotSubmissions?${query}`;
-  while (path && out.length < limit) {
-    let res;
-    for (let attempt = 1; attempt <= 3; attempt++) {
-      res = await asc(token, path);
-      if (res.ok || res.status < 500) break;
-      await new Promise((r) => setTimeout(r, 2 ** attempt * 1000));
-    }
-    if (!res.ok) {
-      const body = await res.text();
-      const err = new Error(`HTTP ${res.status}: ${body}`);
-      err.status = res.status;
-      throw err;
-    }
-    const json = await res.json();
-    out.push(...(json.data || []));
-    included.push(...(json.included || []));
-    const next = json.links?.next;
-    path = next ? next.replace(ASC_BASE, '') : null;
-  }
-  out.included = included;
-  return out;
-}
-
 async function listSubmissions(token, appId, limit, core) {
   const queries = submissionQueries();
   let lastErr;
   for (const [i, query] of queries.entries()) {
     try {
-      const data = await fetchPaged(token, query, appId, limit);
+      const path = `/v1/apps/${appId}/betaFeedbackScreenshotSubmissions?${query}`;
+      const data = await shared.fetchPaged(token, path, limit);
       if (i > 0) core.warning(`Used simplified feedback query #${i + 1} (richer query failed).`);
       const sliced = data.slice(0, limit);
       sliced.included = data.included;
@@ -280,7 +191,7 @@ async function deleteSubmission(token, id, cfg, core) {
     core.info(`#${id}: DRY_RUN — would delete submission.`);
     return false;
   }
-  const res = await asc(token, `/v1/betaFeedbackScreenshotSubmissions/${id}`, { method: 'DELETE' });
+  const res = await shared.asc(token, `/v1/betaFeedbackScreenshotSubmissions/${id}`, { method: 'DELETE' });
   if (res.status === 204 || res.status === 404) {
     core.info(`#${id}: submission deleted from App Store Connect.`);
     return true;
@@ -426,85 +337,26 @@ async function triageFeedback(cfg, detail, shots, core) {
     `{"type":"bug|feature|other","title":"short imperative title without a prefix, at most ${MAX_TITLE_LENGTH} characters","brief":"Markdown brief with sections: Problem / motivation, Proposed solution, Acceptance criteria, Affected files / areas, Notes / assumptions"}`,
   ].join('\n');
 
-  const parsed = await callOpenRouter(cfg, systemPrompt, userPrompt, shots, core);
-  const type = ['bug', 'feature', 'other'].includes(parsed?.type) ? parsed.type : 'other';
-  const title = shortenTitle(parsed?.title || fallbackTitle(detail));
-  const brief = parsed?.brief || fallbackBrief(detail);
+  const parsed = await shared.triageJson(cfg, { systemPrompt, userPrompt, images: shots }, core);
+  const ok = isUsableTriage(parsed);
+  const type = ok && ['bug', 'feature', 'other'].includes(parsed.type) ? parsed.type : 'other';
+  const title = shared.shortenTitle((ok && parsed.title) || fallbackTitle(detail));
+  const brief = (ok && parsed.brief) || fallbackBrief(detail);
   const titlePrefix = type === 'bug' ? 'bug: ' : type === 'feature' ? 'feat: ' : 'feedback: ';
-  const typeLabel = type === 'bug' ? 'bug' : type === 'feature' ? 'enhancement' : null;
-  return { type, title, brief, titlePrefix, typeLabel };
+  const typeLabel = ok && type === 'bug' ? 'bug' : ok && type === 'feature' ? 'enhancement' : null;
+  return { ok, type, title, brief, titlePrefix, typeLabel };
 }
 
-async function callOpenRouter(cfg, systemPrompt, userPrompt, shots, core) {
-  const maxAttempts = 3;
-  let lastError;
-
-  // Build multimodal user content: images first, then the text prompt.
-  const userContent = [];
-  for (const shot of (shots || [])) {
-    const ext = (shot.name.match(/\.([a-z]+)$/i)?.[1] || 'png').toLowerCase();
-    const mime = ext === 'jpg' || ext === 'jpeg' ? 'image/jpeg' : `image/${ext}`;
-    userContent.push({
-      type: 'image_url',
-      image_url: { url: `data:${mime};base64,${shot.data.toString('base64')}` },
-    });
-  }
-  userContent.push({ type: 'text', text: userPrompt });
-
-  for (let attempt = 1; attempt <= maxAttempts; attempt++) {
-    if (attempt > 1) await new Promise((r) => setTimeout(r, 2 ** attempt * 1000));
-    try {
-      const res = await fetch('https://openrouter.ai/api/v1/chat/completions', {
-        method: 'POST',
-        headers: {
-          Authorization: `Bearer ${cfg.openRouterKey}`,
-          'Content-Type': 'application/json',
-          'HTTP-Referer': `https://github.com/${process.env.GITHUB_REPOSITORY}`,
-        },
-        body: JSON.stringify({
-          model: cfg.model,
-          messages: [
-            { role: 'system', content: systemPrompt },
-            { role: 'user', content: userContent },
-          ],
-          max_tokens: 2048,
-        }),
-      });
-      if (!res.ok) throw new Error(`OpenRouter ${res.status}: ${await res.text()}`);
-      const data = await res.json();
-      const content = data.choices?.[0]?.message?.content;
-      if (!content) throw new Error('empty content');
-      return JSON.parse(stripFences(content));
-    } catch (err) {
-      lastError = err.message;
-    }
-  }
-  core.warning(`triage failed after ${maxAttempts} attempts (${lastError}) — using fallback.`);
-  return null;
-}
-
-function stripFences(s) {
-  const m = s.match(/```(?:json)?\s*([\s\S]*?)```/);
-  return (m ? m[1] : s).trim();
+// A triage is only usable if the model actually returned a title and a brief. A
+// partial object is treated as a failure: half a triage labelled `refined` is
+// worse than an honest `needs-triage`.
+function isUsableTriage(parsed) {
+  return Boolean(parsed) && shared.hasText(parsed.title) && shared.hasText(parsed.brief);
 }
 
 function fallbackTitle(detail) {
-  const c = detail.comment.replace(/\s+/g, ' ').trim();
-  return c ? shortenTitle(c) : `TestFlight feedback (${detail.deviceModel || 'device'})`;
-}
-
-// The prompt asks for a title this long; this is the net for one that is not.
-// Cut at the last whole word and marked, so a title never ends "on Timeli"
-// (#276) and a reader can tell that something was left off.
-const MAX_TITLE_LENGTH = 72;
-
-function shortenTitle(title, max = MAX_TITLE_LENGTH) {
-  const t = title.replace(/\s+/g, ' ').trim();
-  if (t.length <= max) return t;
-  const room = t.slice(0, max - 1);
-  const space = room.lastIndexOf(' ');
-  const cut = space > max / 2 ? room.slice(0, space) : room;
-  return `${cut.replace(/[\s,;:.\-–—]+$/, '')}…`;
+  const c = shared.stripLeadingLabel(detail.comment).replace(/\s+/g, ' ').trim();
+  return c ? shared.shortenTitle(c) : `TestFlight feedback (${detail.deviceModel || 'device'})`;
 }
 
 function fallbackBrief(detail) {
@@ -513,51 +365,35 @@ function fallbackBrief(detail) {
     detail.comment || '_Screenshot-only feedback — no written comment._',
     '',
     '### Notes / assumptions',
-    '_Automated triage was unavailable; please refine manually._',
+    `_${shared.FALLBACK_SENTINEL}; please refine manually._`,
   ].join('\n');
 }
 
 // ---- GitHub issue --------------------------------------------------------
 
-// Feedback id → the state ('open' or 'closed') of the issue made from it.
-async function loadProcessedIds({ github, owner, repo }) {
-  const ids = new Map();
-  const issues = await github.paginate(github.rest.issues.listForRepo, {
-    owner,
-    repo,
-    state: 'all',
-    labels: FEEDBACK_LABEL,
-    per_page: 100,
-  });
-  const re = /<!-- tf-feedback-id: ([^\s]+) -->/g;
-  for (const issue of issues) {
-    for (const m of (issue.body || '').matchAll(re)) ids.set(m[1], issue.state);
-  }
-  return ids;
-}
-
 async function ensureLabels(github, owner, repo) {
-  const labels = [
+  await shared.ensureLabels(github, owner, repo, [
     { name: FEEDBACK_LABEL, color: '1D76DB', description: 'Imported from TestFlight beta feedback' },
     { name: 'refined', color: '0E8A16', description: 'Issue has been through refinement' },
+    { name: shared.NEEDS_TRIAGE_LABEL, color: 'FBCA04', description: 'Automated triage failed; will be retried' },
     { name: 'bug', color: 'D73A4A', description: "Something isn't working" },
     { name: 'enhancement', color: 'A2EEEF', description: 'New feature or request' },
-  ];
-  for (const label of labels) {
-    try {
-      await github.rest.issues.createLabel({ owner, repo, ...label });
-    } catch (err) {
-      if (err.status !== 422) throw err; // 422 = already exists
-    }
-  }
+  ]);
 }
 
 async function createIssue({ github, owner, repo }, { id, detail, triage, hosted, keptShots, core }) {
   await ensureLabels(github, owner, repo);
 
   const body = buildIssueBody({ id, detail, triage, hosted, keptShots });
-  const labels = [FEEDBACK_LABEL, 'refined'];
-  if (triage.typeLabel) labels.push(triage.typeLabel);
+  const labels = [FEEDBACK_LABEL];
+  if (triage.ok) {
+    labels.push(shared.REFINED_LABEL);
+    if (triage.typeLabel) labels.push(triage.typeLabel);
+  } else {
+    // No `refined` and no type: neither is known to be true, and `refined` is
+    // what tells the refinement bot (and a reader) the issue is already triaged.
+    labels.push(shared.NEEDS_TRIAGE_LABEL);
+  }
 
   const { data: issue } = await github.rest.issues.create({
     owner,
@@ -569,28 +405,118 @@ async function createIssue({ github, owner, repo }, { id, detail, triage, hosted
 
   // One tracking comment: the human-readable anchor plus the markers. The
   // refined brief itself lives in the issue body (not repeated here), and the
-  // issue-refined marker stops the refinement bot from re-refining it.
+  // issue-refined marker stops the refinement bot from re-refining it. An
+  // untriaged issue gets only the id marker, so it stays eligible for both the
+  // refinement bot and this workflow's own re-triage.
+  const markers = triage.ok ? `${REFINED_MARKER}\n${ID_MARKER(id)}` : ID_MARKER(id);
   await github.rest.issues.createComment({
     owner,
     repo,
     issue_number: issue.number,
-    body: `This issue relates to feedback item ${id}.\n\n${REFINED_MARKER}\n${ID_MARKER(id)}`,
+    body: `This issue relates to feedback item ${id}.\n\n${markers}`,
   });
 
   return issue;
+}
+
+// ---- re-triage -----------------------------------------------------------
+
+// Issues an earlier run had to open without a triage, still labelled
+// `needs-triage`. Their submissions are guaranteed to still be in App Store
+// Connect — one is only purged once triaged — so the whole issue is
+// reconstructible from ASC and can be rewritten in place when triage works.
+async function retriageIssues({ github, owner, repo }, { existing, submissions, token, cfg, summary, core }) {
+  const stale = [...existing.entries()].filter(([, issue]) => shared.needsRetriage(issue));
+  if (!stale.length) return;
+  core.info(`Re-triaging ${stale.length} issue(s) left needs-triage by an earlier run.`);
+
+  for (const [id, issue] of stale) {
+    try {
+      const sub = submissions.find((s) => s.id === id);
+      if (!sub) {
+        core.warning(`#${id}: submission no longer in App Store Connect — issue #${issue.number} left un-triaged.`);
+        continue;
+      }
+
+      const detail = describeSubmission(sub, submissions.included);
+      const shots = await downloadScreenshots(detail.screenshots, core);
+      const triage = await triageFeedback(cfg, detail, shots, core);
+      if (!triage.ok) {
+        summary.failed++;
+        core.warning(`#${id}: re-triage failed again — issue #${issue.number} left needs-triage.`);
+        continue;
+      }
+
+      if (cfg.dryRun) {
+        core.info(`#${id}: DRY_RUN — would re-triage issue #${issue.number} as "${triage.titlePrefix}${triage.title}".`);
+        summary.retriaged++;
+        continue;
+      }
+
+      const hosted = cfg.publishScreenshots
+        ? await commitScreenshots({ github, owner, repo }, id, shots, core)
+        : [];
+      await refreshIssue({ github, owner, repo }, { issue, id, detail, triage, hosted, shots });
+      summary.retriaged++;
+      core.info(`#${id}: re-triaged issue #${issue.number} as "${triage.titlePrefix}${triage.title}".`);
+
+      // Same rule as a first-time triage: purge it now that it is triaged, unless
+      // the screenshots only live in App Store Connect.
+      if (hosted.length || shots.length === 0) {
+        if (await deleteSubmission(token, id, cfg, core)) summary.deleted++;
+      }
+    } catch (err) {
+      summary.failed++;
+      core.warning(`#${id}: re-triage failed — ${err.message}.`);
+    }
+  }
+}
+
+// Rewrite a needs-triage issue as a triaged one: new title and body, the
+// `needs-triage` label dropped, `refined` added, and the marker comment that
+// tells the refinement bot to leave it alone.
+async function refreshIssue({ github, owner, repo }, { issue, id, detail, triage, hosted, shots }) {
+  const labels = [FEEDBACK_LABEL, shared.REFINED_LABEL];
+  if (triage.typeLabel) labels.push(triage.typeLabel);
+
+  await github.rest.issues.update({
+    owner,
+    repo,
+    issue_number: issue.number,
+    title: `${triage.titlePrefix}${triage.title}`,
+    body: buildIssueBody({ id, detail, triage, hosted, keptShots: hosted.length ? 0 : shots.length }),
+    labels,
+  });
+
+  await github.rest.issues.createComment({
+    owner,
+    repo,
+    issue_number: issue.number,
+    body: `Re-triaged automatically — the earlier run could not reach the model.\n\n${REFINED_MARKER}`,
+  });
 }
 
 function buildIssueBody({ id, detail, triage, hosted, keptShots = 0 }) {
   const lines = [
     ID_MARKER(id),
     '> 🛫 Imported automatically from TestFlight beta feedback.',
+  ];
+  if (!triage.ok) {
+    lines.push(
+      '',
+      '> ⚠️ **Automated triage failed for this issue.** The brief below is the raw',
+      '> tester comment. It is labelled `needs-triage` and will be retried on the',
+      '> next run; the submission is still held in App Store Connect.',
+    );
+  }
+  lines.push(
     '',
     triage.brief,
     '',
     '---',
     '',
     '### Original tester comment',
-    detail.comment ? quote(detail.comment) : '_No written comment — screenshot only._',
+    detail.comment ? shared.quote(detail.comment) : '_No written comment — screenshot only._',
     '',
     '### Submission details',
     `- **Submitted:** ${detail.createdDate || 'unknown'}`,
@@ -598,7 +524,7 @@ function buildIssueBody({ id, detail, triage, hosted, keptShots = 0 }) {
     `- **App build:** ${detail.buildPreRelease || detail.buildVersion || 'unknown'}${detail.buildBundleId ? ` (${detail.buildBundleId})` : ''}`,
     `- **Locale / time zone:** ${detail.locale || 'unknown'}${detail.timeZone ? ` · ${detail.timeZone}` : ''}`,
     `- **Connection:** ${detail.connectionType || 'unknown'}${detail.batteryPercentage != null ? ` · battery ${detail.batteryPercentage}%` : ''}`,
-  ];
+  );
   if (hosted.length) {
     lines.push('', '### Screenshots');
     for (const s of hosted) lines.push('', `![${s.name}](${s.url})`);
@@ -611,9 +537,3 @@ function buildIssueBody({ id, detail, triage, hosted, keptShots = 0 }) {
   }
   return lines.join('\n');
 }
-
-function quote(text) {
-  return text.split('\n').map((l) => `> ${l}`).join('\n');
-}
-
-module.exports.shortenTitle = shortenTitle;
