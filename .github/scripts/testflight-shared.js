@@ -273,6 +273,15 @@ async function triageJson(cfg, { systemPrompt, userPrompt, images = [], maxAttem
   const variants = images.length ? [images, []] : [images];
   let lastError;
   for (const [v, imgs] of variants.entries()) {
+    // The caller's prompt says the screenshots are attached. On the text-only
+    // retry they are not, and a model that believes otherwise invents what it
+    // cannot see, so say so.
+    const droppedImages = images.length > 0 && imgs.length === 0;
+    const prompt = droppedImages
+      ? `${userPrompt}\n\nNote: the screenshot(s) could not be attached to this request. Triage from the written comment alone, and say in the brief that the finding is uncertain because the screenshots were unavailable.`
+      : userPrompt;
+    if (droppedImages) core?.info('Retrying triage without the screenshots.');
+
     for (let attempt = 1; attempt <= maxAttempts; attempt++) {
       if (attempt > 1) await sleep(2 ** attempt * 1000);
       try {
@@ -283,7 +292,7 @@ async function triageJson(cfg, { systemPrompt, userPrompt, images = [], maxAttem
             'Content-Type': 'application/json',
             'HTTP-Referer': `https://github.com/${process.env.GITHUB_REPOSITORY}`,
           },
-          body: JSON.stringify(buildChatRequest(cfg, { systemPrompt, userPrompt, images: imgs })),
+          body: JSON.stringify(buildChatRequest(cfg, { systemPrompt, userPrompt: prompt, images: imgs })),
         });
         if (!res.ok) throw new Error(`OpenRouter ${res.status}: ${await res.text()}`);
         const data = await res.json();

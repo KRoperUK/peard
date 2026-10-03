@@ -47,6 +47,64 @@ test('a fenced JSON reply is unwrapped', () => {
   assert.strictEqual(shared.stripFences('{"a":1}'), '{"a":1}');
 });
 
+test('when the screenshot call fails, triage retries text-only and admits it', async () => {
+  const originalFetch = global.fetch;
+  const calls = [];
+  global.fetch = async (_url, opts) => {
+    calls.push(JSON.parse(opts.body));
+    // Fail the call that carried the screenshot, then succeed.
+    if (calls.length === 1) return { ok: false, status: 500, text: async () => 'boom' };
+    return {
+      ok: true,
+      status: 200,
+      json: async () => ({ choices: [{ message: { content: '{"title":"t","brief":"b"}' } }] }),
+    };
+  };
+
+  try {
+    // maxAttempts 1 keeps the retry to one call per variant, so no backoff to wait out.
+    const out = await shared.triageJson(
+      { model: 'm', openRouterKey: 'k' },
+      {
+        systemPrompt: 'sys',
+        userPrompt: 'Tester comment: it broke',
+        images: [{ name: 'a.png', data: Buffer.from('x') }],
+        maxAttempts: 1,
+      },
+      null,
+    );
+
+    assert.deepStrictEqual(out, { title: 't', brief: 'b' });
+    assert.strictEqual(calls.length, 2);
+
+    const first = calls[0].messages[1].content;
+    assert.ok(first.some((p) => p.type === 'image_url'), 'the first call should carry the screenshot');
+
+    // The retry must not claim a screenshot it does not have, or the model
+    // invents what it cannot see.
+    const retry = calls[1].messages[1].content;
+    assert.ok(!retry.some((p) => p.type === 'image_url'));
+    assert.match(retry.find((p) => p.type === 'text').text, /could not be attached/);
+  } finally {
+    global.fetch = originalFetch;
+  }
+});
+
+test('a triage that never succeeds returns null rather than throwing', async () => {
+  const originalFetch = global.fetch;
+  global.fetch = async () => ({ ok: false, status: 500, text: async () => 'boom' });
+  try {
+    const out = await shared.triageJson(
+      { model: 'm', openRouterKey: 'k' },
+      { systemPrompt: 's', userPrompt: 'u', maxAttempts: 1 },
+      null,
+    );
+    assert.strictEqual(out, null);
+  } finally {
+    global.fetch = originalFetch;
+  }
+});
+
 // ---- triage usability -----------------------------------------------------
 
 test('a triage needs both a title and a brief to count', () => {
