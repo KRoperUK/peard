@@ -5,6 +5,11 @@
 // context pulled through), then deletes the submission from App Store Connect so
 // it isn't processed again.
 //
+// If triage fails the issue is opened anyway, labelled `needs-triage` rather
+// than `refined`, the submission is kept, and the run fails. The next run
+// re-triages it in place (see retriageIssues). See testflight-shared.js for the
+// triage request itself.
+//
 // The repo is public, so nothing identifying a tester goes into an issue, and
 // screenshots (which show testers' connections) are only published when
 // PUBLISH_SCREENSHOTS is set. Otherwise they stay in App Store Connect, and the
@@ -46,6 +51,9 @@ module.exports = async ({ github, context, core }) => {
   const token = shared.makeAscToken(cfg);
   const appId = cfg.appId || (await shared.resolveAppId(token, cfg.bundleId, core));
   core.info(`Polling App Store Connect feedback for app ${appId}…`);
+  // Logged every run: a wrong OPENROUTER_MODEL is the failure that silently
+  // degraded triage before, and it is invisible unless the slug is in the log.
+  core.info(`Triaging with OpenRouter model ${cfg.model}.`);
 
   const submissions = await listSubmissions(token, appId, cfg.limit, core);
   core.info(`Found ${submissions.length} screenshot submission(s).`);
@@ -348,7 +356,7 @@ function isUsableTriage(parsed) {
 }
 
 function fallbackTitle(detail) {
-  const c = detail.comment.replace(/\s+/g, ' ').trim();
+  const c = shared.stripLeadingLabel(detail.comment).replace(/\s+/g, ' ').trim();
   return c ? shared.shortenTitle(c) : `TestFlight feedback (${detail.deviceModel || 'device'})`;
 }
 

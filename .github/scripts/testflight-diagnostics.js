@@ -3,7 +3,12 @@
 // Polls the App Store Connect "diagnostic signatures" endpoint for hangs,
 // excessive disk writes and slow launches, then turns each new signature into
 // a triaged + refined GitHub issue (device/OS distribution and top stack
-// frames pulled through). Unlike the feedback poller nothing is deleted or
+// frames pulled through). If triage fails the issue is opened anyway, labelled
+// `needs-triage` rather than `refined`, and the run fails; the next run
+// re-triages it in place (see retriageSignatures). See testflight-shared.js for
+// the triage request itself.
+//
+// Unlike the feedback poller nothing is deleted or
 // mutated in App Store Connect here — there is no API to mark a diagnostic
 // signature "resolved" (it isn't a field this resource has), so de-duplication
 // relies entirely on the `tf-diag-id` marker already present on GitHub issues
@@ -79,6 +84,9 @@ module.exports = async ({ github, context, core }) => {
     const token = shared.makeAscToken(cfg);
     const appId = cfg.appId || (await shared.resolveAppId(token, cfg.bundleId, core));
     core.info(`Polling App Store Connect diagnostic signatures for app ${appId}…`);
+    // Logged every run: a wrong OPENROUTER_MODEL is the failure that silently
+    // degraded triage before, and it is invisible unless the slug is in the log.
+    core.info(`Triaging with OpenRouter model ${cfg.model}.`);
 
     const builds = await listRecentBuilds(token, appId, cfg.buildLimit, core);
     core.info(`Checking ${builds.length} recent build(s) for diagnostic signatures.`);

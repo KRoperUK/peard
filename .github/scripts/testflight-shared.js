@@ -193,6 +193,21 @@ function shortenTitle(title, max = MAX_TITLE_LENGTH) {
   return `${cut.replace(/[\s,;:.\-–—]+$/, '')}…`;
 }
 
+// Testers often open with a label of their own — "Bug.", "Fix.", "Feat / idea."
+// — which is useful context in the comment but noise at the front of a title,
+// where it reads like a triage decision nobody made. The label only counts when
+// punctuation follows it, so a genuine imperative ("Fix the progress bar") is
+// left alone.
+const LEADING_LABEL = /^\s*(?:(?:bug|fix|feature|feat|idea|issue|problem|request|suggestion|feedback|question)\b[\s/]*)+[.:–—-]+\s*/i;
+
+function stripLeadingLabel(text) {
+  const m = text.match(LEADING_LABEL);
+  if (!m) return text;
+  const rest = text.slice(m[0].length);
+  // Never strip to nothing: a comment that is only the word "Bug" keeps it.
+  return rest.trim().length > 3 ? rest : text;
+}
+
 // ---- triage (OpenRouter) -------------------------------------------------
 
 function stripFences(s) {
@@ -264,7 +279,9 @@ async function triageJson(cfg, { systemPrompt, userPrompt, images = [], maxAttem
       core?.warning(`triage failed with screenshots (${lastError}) — retrying without them.`);
     }
   }
-  core?.warning(`triage failed after ${maxAttempts} attempts (${lastError}) — using fallback.`);
+  // Not a warning: the caller decides what a missing triage means, and both
+  // callers treat it as a failure worth failing the run over.
+  core?.info(`OpenRouter triage failed after ${maxAttempts} attempts (${lastError}).`);
   return null;
 }
 
@@ -348,6 +365,7 @@ module.exports = {
   shortenTitle,
   sleep,
   stripFences,
+  stripLeadingLabel,
   triageJson,
   asc,
 };
