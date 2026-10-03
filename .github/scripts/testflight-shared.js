@@ -200,8 +200,17 @@ function stripFences(s) {
   return (m ? m[1] : s).trim();
 }
 
+// Reasoning models on OpenRouter (z-ai/glm-5.3-flash, the current
+// OPENROUTER_MODEL, is one) default to their highest reasoning effort and will
+// spend the entire completion budget thinking. What comes back is then an empty
+// `content` or a JSON object cut off mid-string — exactly the triage failures
+// that produced untriaged feedback issues (#300-#302). Triage is extraction, not
+// deliberation, so pin the cheapest effort and leave headroom for the answer.
+const TRIAGE_MAX_TOKENS = 8192;
+const TRIAGE_REASONING_EFFORT = 'low';
+
 // Build the chat-completions body. Images first, then the text prompt.
-function buildChatRequest(cfg, { systemPrompt, userPrompt, images = [], responseFormat = false }) {
+function buildChatRequest(cfg, { systemPrompt, userPrompt, images = [] }) {
   const content = images.map((shot) => {
     const ext = (shot.name.match(/\.([a-z]+)$/i)?.[1] || 'png').toLowerCase();
     const mime = ext === 'jpg' || ext === 'jpeg' ? 'image/jpeg' : `image/${ext}`;
@@ -209,41 +218,50 @@ function buildChatRequest(cfg, { systemPrompt, userPrompt, images = [], response
   });
   content.push({ type: 'text', text: userPrompt });
 
-  const body = {
+  return {
     model: cfg.model,
     messages: [
       { role: 'system', content: systemPrompt },
       { role: 'user', content },
     ],
-    max_tokens: 2048,
+    max_tokens: TRIAGE_MAX_TOKENS,
+    temperature: 0.2,
+    reasoning: { effort: TRIAGE_REASONING_EFFORT },
+    response_format: { type: 'json_object' },
   };
-  if (responseFormat) body.response_format = { type: 'json_object' };
-  return body;
 }
 
-// One triage call, retried on transient failure. Returns the parsed object, or
-// null when every attempt failed (callers decide what a missing triage means).
-async function triageJson(cfg, { systemPrompt, userPrompt, images = [], responseFormat = false, maxAttempts = 3 }, core) {
+// One triage call, retried on transient failure. Tries the screenshots first;
+// if the multimodal request keeps failing, retries text-only so the tester's
+// comment still gets triaged. Returns the parsed object, or null when every
+// attempt failed (callers decide what a missing triage means).
+async function triageJson(cfg, { systemPrompt, userPrompt, images = [], maxAttempts = 3 }, core) {
+  const variants = images.length ? [images, []] : [images];
   let lastError;
-  for (let attempt = 1; attempt <= maxAttempts; attempt++) {
-    if (attempt > 1) await sleep(2 ** attempt * 1000);
-    try {
-      const res = await fetch(OPENROUTER_URL, {
-        method: 'POST',
-        headers: {
-          Authorization: `Bearer ${cfg.openRouterKey}`,
-          'Content-Type': 'application/json',
-          'HTTP-Referer': `https://github.com/${process.env.GITHUB_REPOSITORY}`,
-        },
-        body: JSON.stringify(buildChatRequest(cfg, { systemPrompt, userPrompt, images, responseFormat })),
-      });
-      if (!res.ok) throw new Error(`OpenRouter ${res.status}: ${await res.text()}`);
-      const data = await res.json();
-      const content = data.choices?.[0]?.message?.content;
-      if (!content) throw new Error('empty content');
-      return JSON.parse(stripFences(content));
-    } catch (err) {
-      lastError = err.message;
+  for (const [v, imgs] of variants.entries()) {
+    for (let attempt = 1; attempt <= maxAttempts; attempt++) {
+      if (attempt > 1) await sleep(2 ** attempt * 1000);
+      try {
+        const res = await fetch(OPENROUTER_URL, {
+          method: 'POST',
+          headers: {
+            Authorization: `Bearer ${cfg.openRouterKey}`,
+            'Content-Type': 'application/json',
+            'HTTP-Referer': `https://github.com/${process.env.GITHUB_REPOSITORY}`,
+          },
+          body: JSON.stringify(buildChatRequest(cfg, { systemPrompt, userPrompt, images: imgs })),
+        });
+        if (!res.ok) throw new Error(`OpenRouter ${res.status}: ${await res.text()}`);
+        const data = await res.json();
+        const content = data.choices?.[0]?.message?.content;
+        if (!content) throw new Error('empty content');
+        return JSON.parse(stripFences(content));
+      } catch (err) {
+        lastError = err.message;
+      }
+    }
+    if (v + 1 < variants.length) {
+      core?.warning(`triage failed with screenshots (${lastError}) — retrying without them.`);
     }
   }
   core?.warning(`triage failed after ${maxAttempts} attempts (${lastError}) — using fallback.`);

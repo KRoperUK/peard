@@ -445,7 +445,7 @@ async function briefFromOpenRouter(cfg, detail, diag, core) {
         '{"brief":"Markdown brief with sections: Problem, Likely cause, Affected areas, Suggested fix"}',
     ].join('\n');
 
-    const parsed = await shared.triageJson(cfg, { systemPrompt, userPrompt, responseFormat: true }, core);
+    const parsed = await shared.triageJson(cfg, { systemPrompt, userPrompt }, core);
     return parsed?.brief || fallbackBrief(detail, diag);
 }
 
