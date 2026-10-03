@@ -243,8 +243,7 @@ final class TimelineReactionsTests: XCTestCase {
     // MARK: Haptics
 
     /// Issue #274's follow-up: the timeline feels a reaction and a rewind the
-    /// way Home does. (This stub never fails a write, so the error haptic on a
-    /// failed edit is not reachable here.)
+    /// way Home does.
     func testReactingAndRewindingAreFelt() async {
         var played: [Haptic] = []
         model.playHaptic = { played.append($0) }
@@ -266,6 +265,61 @@ final class TimelineReactionsTests: XCTestCase {
         XCTAssertFalse(model.canEdit(Self.theirs))
     }
 
+    // MARK: Failing writes
+
+    /// An edit that does not reach the server has to say so and leave the moment
+    /// alone, and the sheet stays open on the strength of the `false`.
+    func testAFailedEditReportsItAndKeepsTheMoment() async {
+        var played: [Haptic] = []
+        model.playHaptic = { played.append($0) }
+        TimelineStubProtocol.route(posts: [Self.mine, Self.theirs], reactions: [])
+        await model.loadFirstPage()
+
+        TimelineStubProtocol.failWrites(with: URLError(.notConnectedToInternet))
+        let saved = await model.edit(Self.mine, note: "hello", kind: nil)
+
+        XCTAssertFalse(saved, "the sheet must not close on an edit that was not saved")
+        XCTAssertNotNil(model.error)
+        XCTAssertEqual(played, [.failed])
+        XCTAssertNil(
+            model.posts.first { $0.id == Self.mine.id }?.note,
+            "an edit that failed must not be drawn as if it landed"
+        )
+    }
+
+    /// A 404 means the server is older than the app, which is worth saying: the
+    /// generic "Not found" tells somebody fixing a typo nothing at all.
+    func testAnEditAgainstAnOlderServerExplainsItself() async {
+        var played: [Haptic] = []
+        model.playHaptic = { played.append($0) }
+        TimelineStubProtocol.route(posts: [Self.mine], reactions: [])
+        await model.loadFirstPage()
+
+        TimelineStubProtocol.writesAnswer(status: 404)
+        let saved = await model.edit(Self.mine, note: "hello", kind: nil)
+
+        XCTAssertFalse(saved)
+        XCTAssertEqual(model.error, "This server can't edit moments yet. Deleting and logging it again works.")
+        XCTAssertEqual(played, [.failed])
+    }
+
+    /// A delete that fails leaves the moment in the timeline, or the row would
+    /// vanish and come back on the next refresh.
+    func testAFailedDeleteKeepsTheMoment() async {
+        TimelineStubProtocol.route(posts: [Self.mine, Self.theirs], reactions: [])
+        await model.loadFirstPage()
+
+        TimelineStubProtocol.failWrites(with: URLError(.notConnectedToInternet))
+        let deleted = await model.delete(Self.mine)
+
+        XCTAssertFalse(deleted)
+        XCTAssertNotNil(model.error)
+        XCTAssertEqual(
+            model.posts.map(\.id), [Self.mine.id, Self.theirs.id],
+            "a delete that failed must leave the moment where it was"
+        )
+    }
+
     // MARK: Helpers
 
     private func reaction(id: String, post: String, user: String, kind: ReactionKind) -> Reaction {
@@ -281,6 +335,8 @@ final class TimelineStubProtocol: URLProtocol {
     nonisolated(unsafe) private static var reactionsJSON = #"{"items":[]}"#
     nonisolated(unsafe) private static var reactionsError: Error?
     nonisolated(unsafe) private static var postsError: Error?
+    nonisolated(unsafe) private static var writeError: Error?
+    nonisolated(unsafe) private static var writeStatus: Int?
     nonisolated(unsafe) private static var deletedID: String?
 
     /// The id the last DELETE was aimed at, which is the whole question when a
@@ -303,6 +359,8 @@ final class TimelineStubProtocol: URLProtocol {
         reactionsJSON = envelope(reactions)
         reactionsError = nil
         postsError = nil
+        writeError = nil
+        writeStatus = nil
         lock.unlock()
     }
 
@@ -320,12 +378,37 @@ final class TimelineStubProtocol: URLProtocol {
         lock.unlock()
     }
 
+    /// Fails every write — the edit POST, the delete, a reaction — with a
+    /// transport error, leaving the reads alone.
+    ///
+    /// The mirror image of the two above: those stand in for a cancelled
+    /// refresh, which cancels a fetch, and deliberately never touch a write the
+    /// server has already accepted. This is for the write going wrong.
+    static func failWrites(with error: Error) {
+        lock.lock()
+        writeError = error
+        writeStatus = nil
+        lock.unlock()
+    }
+
+    /// Answers every write with an HTTP status rather than a transport error,
+    /// for the paths that read the code: the 404 an app meets on a server older
+    /// than the feature it is asking for.
+    static func writesAnswer(status: Int) {
+        lock.lock()
+        writeStatus = status
+        writeError = nil
+        lock.unlock()
+    }
+
     static func reset() {
         lock.lock()
         postsJSON = #"{"items":[]}"#
         reactionsJSON = #"{"items":[]}"#
         reactionsError = nil
         postsError = nil
+        writeError = nil
+        writeStatus = nil
         deletedID = nil
         lock.unlock()
     }
@@ -349,24 +432,29 @@ final class TimelineStubProtocol: URLProtocol {
     override func startLoading() {
         let path = request.url?.path ?? ""
         // Reading reactions and writing one hit the same collection, and only
-        // the read is the thing being failed here: `failReactions` stands in for
+        // the read is the thing being failed by `failReactions`: it stands in for
         // a cancelled refresh, which cancels the fetch, not a write the server
-        // has already accepted.
+        // has already accepted. `failWrites` is the other direction.
         let isRead = request.httpMethod == "GET"
         Self.lock.lock()
         if request.httpMethod == "DELETE" {
             Self.deletedID = request.url?.lastPathComponent
         }
         let error: Error?
+        var status = 200
         if !isRead {
-            error = nil
+            error = Self.writeError
+            if let writeStatus = Self.writeStatus { status = writeStatus }
         } else {
             error = path.contains("reactions") ? Self.reactionsError : Self.postsError
         }
         let json: String
         if !isRead {
-            // PocketBase echoes the created record back.
-            json = #"{"id":"created","post":"theirs","user":"me","kind":"cheers"}"#
+            // PocketBase echoes the created record back; a rejected write answers
+            // with its own shape, which is what `statusError` reads the code from.
+            json = (200...299).contains(status)
+                ? #"{"id":"created","post":"theirs","user":"me","kind":"cheers"}"#
+                : #"{"message":"Not found."}"#
         } else {
             json = path.contains("reactions") ? Self.reactionsJSON : Self.postsJSON
         }
@@ -377,7 +465,7 @@ final class TimelineStubProtocol: URLProtocol {
             return
         }
         let response = HTTPURLResponse(
-            url: request.url!, statusCode: 200, httpVersion: "HTTP/1.1",
+            url: request.url!, statusCode: status, httpVersion: "HTTP/1.1",
             headerFields: ["Content-Type": "application/json"]
         )!
         client?.urlProtocol(self, didReceive: response, cacheStoragePolicy: .notAllowed)
