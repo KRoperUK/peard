@@ -55,7 +55,7 @@ module.exports = async ({ github, context, core }) => {
 
   const existing = await shared.loadProcessedIssues({ github, owner, repo }, { label: FEEDBACK_LABEL, kind: ID_KIND });
 
-  const summary = { created: 0, skipped: 0, deleted: 0, failed: 0 };
+  const summary = { created: 0, untriaged: 0, skipped: 0, deleted: 0, failed: 0 };
 
   for (const sub of submissions) {
     const id = sub.id;
@@ -92,12 +92,19 @@ module.exports = async ({ github, context, core }) => {
         { github, owner, repo },
         { id, detail, triage, hosted, keptShots: hosted.length ? 0 : shots.length, core }
       );
-      core.info(`#${id}: opened issue #${issue.number} — ${issue.html_url}`);
       summary.created++;
+      if (triage.ok) {
+        core.info(`#${id}: opened issue #${issue.number} — ${issue.html_url}`);
+      } else {
+        summary.untriaged++;
+        core.warning(`#${id}: opened issue #${issue.number} without triage — ${issue.html_url}`);
+      }
 
-      // Triaged → safe to remove from App Store Connect, unless the screenshots
-      // only live there; then a later run deletes it once the issue is closed.
-      if (hosted.length || shots.length === 0) {
+      // Only a triaged issue is safe to remove from App Store Connect. An
+      // untriaged one is kept so a later run can re-triage it against the same
+      // submission, and the issue is still open; deleting it would destroy the
+      // only copy of the feedback before anyone has read it.
+      if (triage.ok && (hosted.length || shots.length === 0)) {
         if (await deleteSubmission(token, id, cfg, core)) summary.deleted++;
       }
     } catch (err) {
@@ -107,11 +114,13 @@ module.exports = async ({ github, context, core }) => {
   }
 
   core.notice(
-    `TestFlight feedback: created ${summary.created}, skipped ${summary.skipped}, ` +
-    `deleted ${summary.deleted}, failed ${summary.failed}.`
+    `TestFlight feedback: created ${summary.created} (${summary.untriaged} untriaged), ` +
+    `skipped ${summary.skipped}, deleted ${summary.deleted}, failed ${summary.failed}.`
   );
-  if (summary.failed > 0) {
-    core.setFailed(`${summary.failed} submission(s) failed — see logs.`);
+  // An untriaged issue is a real failure, not a lesser success: the run goes red
+  // so somebody notices instead of a degraded issue quietly accumulating.
+  if (summary.failed + summary.untriaged > 0) {
+    core.setFailed(`${summary.failed + summary.untriaged} submission(s) failed or could not be triaged — see logs.`);
   }
 };
 
@@ -315,12 +324,21 @@ async function triageFeedback(cfg, detail, shots, core) {
   ].join('\n');
 
   const parsed = await shared.triageJson(cfg, { systemPrompt, userPrompt, images: shots }, core);
-  const type = ['bug', 'feature', 'other'].includes(parsed?.type) ? parsed.type : 'other';
-  const title = shared.shortenTitle(parsed?.title || fallbackTitle(detail));
-  const brief = parsed?.brief || fallbackBrief(detail);
+  const ok = isUsableTriage(parsed);
+  const type = ok && ['bug', 'feature', 'other'].includes(parsed.type) ? parsed.type : 'other';
+  const title = shared.shortenTitle((ok && parsed.title) || fallbackTitle(detail));
+  const brief = (ok && parsed.brief) || fallbackBrief(detail);
   const titlePrefix = type === 'bug' ? 'bug: ' : type === 'feature' ? 'feat: ' : 'feedback: ';
-  const typeLabel = type === 'bug' ? 'bug' : type === 'feature' ? 'enhancement' : null;
-  return { type, title, brief, titlePrefix, typeLabel };
+  const typeLabel = ok && type === 'bug' ? 'bug' : ok && type === 'feature' ? 'enhancement' : null;
+  return { ok, type, title, brief, titlePrefix, typeLabel };
+}
+
+// A triage is only usable if the model actually returned a title and a brief. A
+// partial object is treated as a failure: half a triage labelled `refined` is
+// worse than an honest `needs-triage`.
+function isUsableTriage(parsed) {
+  return Boolean(parsed && typeof parsed.title === 'string' && parsed.title.trim()
+    && typeof parsed.brief === 'string' && parsed.brief.trim());
 }
 
 function fallbackTitle(detail) {
@@ -344,6 +362,7 @@ async function ensureLabels(github, owner, repo) {
   await shared.ensureLabels(github, owner, repo, [
     { name: FEEDBACK_LABEL, color: '1D76DB', description: 'Imported from TestFlight beta feedback' },
     { name: 'refined', color: '0E8A16', description: 'Issue has been through refinement' },
+    { name: 'needs-triage', color: 'FBCA04', description: 'Automated triage failed; will be retried' },
     { name: 'bug', color: 'D73A4A', description: "Something isn't working" },
     { name: 'enhancement', color: 'A2EEEF', description: 'New feature or request' },
   ]);
@@ -353,8 +372,15 @@ async function createIssue({ github, owner, repo }, { id, detail, triage, hosted
   await ensureLabels(github, owner, repo);
 
   const body = buildIssueBody({ id, detail, triage, hosted, keptShots });
-  const labels = [FEEDBACK_LABEL, 'refined'];
-  if (triage.typeLabel) labels.push(triage.typeLabel);
+  const labels = [FEEDBACK_LABEL];
+  if (triage.ok) {
+    labels.push('refined');
+    if (triage.typeLabel) labels.push(triage.typeLabel);
+  } else {
+    // No `refined` and no type: neither is known to be true, and `refined` is
+    // what tells the refinement bot (and a reader) the issue is already triaged.
+    labels.push('needs-triage');
+  }
 
   const { data: issue } = await github.rest.issues.create({
     owner,
@@ -366,12 +392,15 @@ async function createIssue({ github, owner, repo }, { id, detail, triage, hosted
 
   // One tracking comment: the human-readable anchor plus the markers. The
   // refined brief itself lives in the issue body (not repeated here), and the
-  // issue-refined marker stops the refinement bot from re-refining it.
+  // issue-refined marker stops the refinement bot from re-refining it. An
+  // untriaged issue gets only the id marker, so it stays eligible for both the
+  // refinement bot and this workflow's own re-triage.
+  const markers = triage.ok ? `${REFINED_MARKER}\n${ID_MARKER(id)}` : ID_MARKER(id);
   await github.rest.issues.createComment({
     owner,
     repo,
     issue_number: issue.number,
-    body: `This issue relates to feedback item ${id}.\n\n${REFINED_MARKER}\n${ID_MARKER(id)}`,
+    body: `This issue relates to feedback item ${id}.\n\n${markers}`,
   });
 
   return issue;
@@ -381,6 +410,16 @@ function buildIssueBody({ id, detail, triage, hosted, keptShots = 0 }) {
   const lines = [
     ID_MARKER(id),
     '> 🛫 Imported automatically from TestFlight beta feedback.',
+  ];
+  if (!triage.ok) {
+    lines.push(
+      '',
+      '> ⚠️ **Automated triage failed for this issue.** The brief below is the raw',
+      '> tester comment. It is labelled `needs-triage` and will be retried on the',
+      '> next run; the submission is still held in App Store Connect.',
+    );
+  }
+  lines.push(
     '',
     triage.brief,
     '',
@@ -395,7 +434,7 @@ function buildIssueBody({ id, detail, triage, hosted, keptShots = 0 }) {
     `- **App build:** ${detail.buildPreRelease || detail.buildVersion || 'unknown'}${detail.buildBundleId ? ` (${detail.buildBundleId})` : ''}`,
     `- **Locale / time zone:** ${detail.locale || 'unknown'}${detail.timeZone ? ` · ${detail.timeZone}` : ''}`,
     `- **Connection:** ${detail.connectionType || 'unknown'}${detail.batteryPercentage != null ? ` · battery ${detail.batteryPercentage}%` : ''}`,
-  ];
+  );
   if (hosted.length) {
     lines.push('', '### Screenshots');
     for (const s of hosted) lines.push('', `![${s.name}](${s.url})`);

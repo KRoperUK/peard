@@ -91,7 +91,7 @@ module.exports = async ({ github, context, core }) => {
 
     const existing = await shared.loadProcessedIssues({ github, owner, repo }, { label: DIAGNOSTICS_LABEL, kind: ID_KIND });
 
-    const summary = { created: 0, skipped: 0, failed: 0 };
+    const summary = { created: 0, untriaged: 0, skipped: 0, failed: 0 };
 
     for (const sig of signatures) {
         const id = sig.id;
@@ -118,8 +118,13 @@ module.exports = async ({ github, context, core }) => {
                 { github, owner, repo },
                 { id, detail, diag, triage, core }
             );
-            core.info(`${id}: opened issue #${issue.number} — ${issue.html_url}`);
             summary.created++;
+            if (triage.ok) {
+                core.info(`${id}: opened issue #${issue.number} — ${issue.html_url}`);
+            } else {
+                summary.untriaged++;
+                core.warning(`${id}: opened issue #${issue.number} without triage — ${issue.html_url}`);
+            }
         } catch (err) {
             summary.failed++;
             core.warning(`${id}: failed — ${err.message} (left in App Store Connect for retry)`);
@@ -127,11 +132,13 @@ module.exports = async ({ github, context, core }) => {
     }
 
     core.notice(
-        `TestFlight diagnostics: created ${summary.created}, skipped ${summary.skipped}, ` +
-        `failed ${summary.failed}.`
+        `TestFlight diagnostics: created ${summary.created} (${summary.untriaged} untriaged), ` +
+        `skipped ${summary.skipped}, failed ${summary.failed}.`
     );
-    if (summary.failed > 0) {
-        core.setFailed(`${summary.failed} signature(s) failed — see logs.`);
+    // An untriaged issue is a real failure, not a lesser success: the run goes red
+    // so somebody notices instead of a degraded issue quietly accumulating.
+    if (summary.failed + summary.untriaged > 0) {
+        core.setFailed(`${summary.failed + summary.untriaged} signature(s) failed or could not be triaged — see logs.`);
     }
 };
 
@@ -410,12 +417,13 @@ async function triageSignature(cfg, detail, diag, core) {
     const rawTitle = appFrame || detail.signature || `${detail.diagnosticType || 'diagnostic'} signature`;
     const title = rawTitle.replace(/\s+/g, ' ').trim().slice(0, 80);
 
-    const brief = await briefFromOpenRouter(cfg, detail, diag, core);
+    const { brief, ok } = await briefFromOpenRouter(cfg, detail, diag, core);
 
     return {
+        ok,
         titlePrefix: meta.prefix,
         title,
-        typeLabel: meta.label,
+        typeLabel: ok ? meta.label : null,
         brief,
     };
 }
@@ -446,7 +454,8 @@ async function briefFromOpenRouter(cfg, detail, diag, core) {
     ].join('\n');
 
     const parsed = await shared.triageJson(cfg, { systemPrompt, userPrompt }, core);
-    return parsed?.brief || fallbackBrief(detail, diag);
+    const ok = Boolean(parsed && typeof parsed.brief === 'string' && parsed.brief.trim());
+    return { ok, brief: (ok && parsed.brief) || fallbackBrief(detail, diag) };
 }
 
 function fallbackBrief(detail, diag) {
@@ -473,6 +482,7 @@ async function ensureLabels(github, owner, repo) {
     await shared.ensureLabels(github, owner, repo, [
         { name: DIAGNOSTICS_LABEL, color: '6F42C1', description: 'Imported from TestFlight diagnostic signatures' },
         { name: 'refined', color: '0E8A16', description: 'Issue has been through refinement' },
+        { name: 'needs-triage', color: 'FBCA04', description: 'Automated triage failed; will be retried' },
         { name: 'hang', color: 'D93F0B', description: 'TestFlight hang report' },
         { name: 'disk-write', color: 'BFDADC', description: 'TestFlight disk write report' },
         { name: 'slow-launch', color: 'D4C5F9', description: 'TestFlight slow-launch report' },
@@ -483,8 +493,14 @@ async function createIssue({ github, owner, repo }, { id, detail, diag, triage, 
     await ensureLabels(github, owner, repo);
 
     const body = buildIssueBody({ id, detail, diag, triage });
-    const labels = [DIAGNOSTICS_LABEL, 'refined'];
-    if (triage.typeLabel) labels.push(triage.typeLabel);
+    const labels = [DIAGNOSTICS_LABEL];
+    if (triage.ok) {
+        labels.push('refined');
+        if (triage.typeLabel) labels.push(triage.typeLabel);
+    } else {
+        // No `refined` and no diagnostic-type label: neither is known to be true.
+        labels.push('needs-triage');
+    }
 
     const { data: issue } = await github.rest.issues.create({
         owner,
@@ -494,14 +510,14 @@ async function createIssue({ github, owner, repo }, { id, detail, diag, triage, 
         labels,
     });
 
-    // One tracking comment: the human-readable anchor plus the markers. The
-    // refined brief itself lives in the issue body (not repeated here), and the
-    // issue-refined marker stops the refinement bot from re-refining it.
+    // One tracking comment: the human-readable anchor plus the markers. See the
+    // feedback poller for why an untriaged issue gets only the id marker.
+    const markers = triage.ok ? `${REFINED_MARKER}\n${ID_MARKER(id)}` : ID_MARKER(id);
     await github.rest.issues.createComment({
         owner,
         repo,
         issue_number: issue.number,
-        body: `This issue relates to diagnostic signature ${id}.\n\n${REFINED_MARKER}\n${ID_MARKER(id)}`,
+        body: `This issue relates to diagnostic signature ${id}.\n\n${markers}`,
     });
 
     return issue;
@@ -511,6 +527,15 @@ function buildIssueBody({ id, detail, diag, triage }) {
     const lines = [
         ID_MARKER(id),
         '> 🩺 Imported automatically from TestFlight diagnostic signatures.',
+    ];
+    if (!triage.ok) {
+        lines.push(
+            '',
+            '> ⚠️ **Automated triage failed for this issue.** It is labelled `needs-triage`',
+            '> and will be retried on the next run.',
+        );
+    }
+    lines.push(
         '',
         triage.brief,
         '',
@@ -523,7 +548,7 @@ function buildIssueBody({ id, detail, diag, triage }) {
         `- **Weight (0-1, how critical this signature is):** ${detail.weight != null ? detail.weight : 'unknown'}`,
         '',
         '### Affected builds',
-    ];
+    );
     if (detail.builds.length) {
         for (const b of detail.builds) {
             lines.push(`- ${b.version}${b.bundleId ? ` (${b.bundleId})` : ''}`);
