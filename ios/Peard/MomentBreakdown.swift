@@ -17,9 +17,14 @@ import SwiftUI
 struct MomentBreakdownRow: View {
     let kind: ConnectionTallies.Kind
     let window: TallyWindow
-    /// Everybody's moments in this window, whatever kind. The bar's denominator,
-    /// so a row's width reads as its share of what the connection logs.
-    let windowTotal: Int
+    /// The biggest count in this window, whatever kind. The bar's denominator, so
+    /// the busiest moment fills its row and the rest scale against it.
+    ///
+    /// This was the window total until #301, which made every bar short: a row
+    /// worth half of everything the connection logs read as "half filled" however
+    /// lopsided its own two-way split was. Still each side's share of the row —
+    /// only the length the row is drawn at changed.
+    let busiest: Int
     let mineLabel: String
     let othersLabel: String
 
@@ -69,13 +74,14 @@ struct MomentBreakdownRow: View {
     private var shareBar: some View {
         GeometryReader { geometry in
             let width = geometry.size.width
+            let bar = BreakdownBarFractions(mine: mine, others: others, busiest: busiest)
             HStack(spacing: mine > 0 && others > 0 ? 1 : 0) {
                 Capsule()
                     .fill(PearColor.accent)
-                    .frame(width: fraction(of: mine) * width)
+                    .frame(width: bar.mine * width)
                 Capsule()
                     .fill(PearColor.accent.opacity(0.35))
-                    .frame(width: fraction(of: others) * width)
+                    .frame(width: bar.others * width)
                 Spacer(minLength: 0)
             }
             .frame(height: 5)
@@ -83,13 +89,6 @@ struct MomentBreakdownRow: View {
         .frame(height: 5)
         .background(PearColor.divider.opacity(0.4), in: Capsule())
         .accessibilityHidden(true)
-    }
-
-    /// Guarded against a zero denominator: a window with no moments in it renders
-    /// no rows at all, but the row must not divide by zero if it ever does.
-    private func fraction(of count: Int) -> CGFloat {
-        guard windowTotal > 0, count > 0 else { return 0 }
-        return CGFloat(count) / CGFloat(windowTotal)
     }
 
     /// Names only the sides that logged something, so a moment only one person
@@ -106,6 +105,26 @@ struct MomentBreakdownRow: View {
     private var accessibilityText: String {
         let noun = total == 1 ? "moment" : "moments"
         return "\(kind.label): \(total) \(noun) \(window.phrase). \(splitText)."
+    }
+}
+
+/// One row's two-tone bar, as fractions of the busiest row in the window.
+///
+/// Split out of the view so the proportions can be asserted without rendering
+/// anything, which is what #301 was really about: a screenshot said "half filled"
+/// and no test could disagree.
+struct BreakdownBarFractions: Equatable {
+    let mine: CGFloat
+    let others: CGFloat
+
+    init(mine: Int, others: Int, busiest: Int) {
+        guard busiest > 0 else {
+            self.mine = 0
+            self.others = 0
+            return
+        }
+        self.mine = CGFloat(max(mine, 0)) / CGFloat(busiest)
+        self.others = CGFloat(max(others, 0)) / CGFloat(busiest)
     }
 }
 
@@ -158,6 +177,9 @@ struct MomentBreakdownSection: View {
 
     private var kinds: [ConnectionTallies.Kind] { tallies.rankedKinds(in: window) }
     private var total: Int { tallies.total(in: window) }
+    /// The busiest row draws at full width and the rest scale against it, so the
+    /// bars are comparable with one another and the top one actually fills.
+    private var busiest: Int { kinds.map { $0.total(in: window) }.max() ?? 0 }
 
     var body: some View {
         Section {
@@ -176,7 +198,7 @@ struct MomentBreakdownSection: View {
                     MomentBreakdownRow(
                         kind: kind,
                         window: window,
-                        windowTotal: total,
+                        busiest: busiest,
                         mineLabel: mineLabel,
                         othersLabel: othersLabel
                     )
