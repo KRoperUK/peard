@@ -365,7 +365,7 @@ function fallbackBrief(detail) {
     detail.comment || '_Screenshot-only feedback — no written comment._',
     '',
     '### Notes / assumptions',
-    '_Automated triage was unavailable; please refine manually._',
+    `_${shared.FALLBACK_SENTINEL}; please refine manually._`,
   ].join('\n');
 }
 

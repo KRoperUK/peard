@@ -29,12 +29,19 @@ const REFINED_MARKER = '<!-- issue-refined -->';
 const REFINED_LABEL = 'refined';
 const NEEDS_TRIAGE_LABEL = 'needs-triage';
 
-// An issue is due a re-triage when triage never succeeded: it is labelled
-// `needs-triage` and never gained `refined`. Anything `refined` is left alone,
-// whether this workflow or the refinement bot put it there.
+// Written into a brief when triage did not happen. It is the one durable mark of
+// a degraded issue, which matters because earlier runs labelled those `refined`
+// and de-duplicated them — a label check alone would never revisit them.
+const FALLBACK_SENTINEL = 'Automated triage was unavailable';
+
+// An issue is due a re-triage when triage never actually succeeded: it is
+// labelled `needs-triage` and never gained `refined`, or its brief still carries
+// the fallback sentinel (the issues from before this was fixed).
 function needsRetriage(issue) {
   const labels = issue?.labels || [];
-  return labels.includes(NEEDS_TRIAGE_LABEL) && !labels.includes(REFINED_LABEL);
+  const degraded = (issue?.body || '').includes(FALLBACK_SENTINEL);
+  if (labels.includes(REFINED_LABEL) && !degraded) return false;
+  return labels.includes(NEEDS_TRIAGE_LABEL) || degraded;
 }
 
 // A triage is usable only when it carries the text the caller needs. A partial
@@ -373,6 +380,7 @@ module.exports = {
   ASC_BASE,
   DEFAULT_BUNDLE_ID,
   DEFAULT_MODEL,
+  FALLBACK_SENTINEL,
   MAX_TITLE_LENGTH,
   NEEDS_TRIAGE_LABEL,
   OPENROUTER_URL,

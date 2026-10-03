@@ -292,12 +292,14 @@ submission so it is only picked up once.
 Triage can fail, and when it does the run says so rather than writing a degraded
 issue nobody would notice: the issue is still opened, but labelled `needs-triage`
 instead of `refined`, the submission is kept, and the run goes red. The next run
-re-tries the issues left `needs-triage` and rewrites them in place once the model
-answers — so a bad model slug or a provider wobble costs a day, not an issue
-nobody can read. Both pollers share their App Store Connect auth, paging and
-triage request in `.github/scripts/testflight-shared.js`; the triage call pins
-`reasoning.effort` to `low`, because the reasoning models worth using otherwise
-spend the whole completion budget thinking and return empty or truncated JSON.
+re-tries every issue whose triage never completed — including any an earlier
+version mislabelled `refined`, which the fallback brief's wording still marks —
+and rewrites them in place once the model answers. So a bad model slug or a
+provider wobble costs a day, not an issue nobody can read. Both pollers share
+their App Store Connect auth, paging and triage request in
+`.github/scripts/testflight-shared.js`; the triage call pins `reasoning.effort` to
+`low`, because the reasoning models worth using otherwise spend the whole
+completion budget thinking and return empty or truncated JSON.
 
 The repo is public, so an issue never names the tester, and screenshots, which
 usually show a tester's connections, stay in App Store Connect by default. The

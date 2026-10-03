@@ -544,10 +544,10 @@ function fallbackBrief(detail, diag) {
             : '_No stack frames were retrievable — inspect the signature string below._',
         '',
         '### Affected areas',
-        '_Automated triage was unavailable; please map the frames to source areas manually._',
+        `_${shared.FALLBACK_SENTINEL}; please map the frames to source areas manually._`,
         '',
         '### Suggested fix',
-        '_Automated triage was unavailable; please refine manually._',
+        `_${shared.FALLBACK_SENTINEL}; please refine manually._`,
     ].join('\n');
 }
 

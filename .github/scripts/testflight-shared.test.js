@@ -126,6 +126,25 @@ test('a refined issue is left alone, with or without needs-triage', () => {
   assert.ok(!shared.needsRetriage({ labels: ['refined', 'needs-triage'] }));
 });
 
+test('an issue mislabelled refined by an earlier run is still re-triaged', () => {
+  // #296, #300-#302: labelled `refined` and de-duplicated, but the brief is the
+  // fallback, so nothing else would ever revisit them.
+  const degraded = {
+    labels: ['testflight-feedback', 'refined'],
+    body: `> 🛫 Imported automatically from TestFlight beta feedback.\n\n### Notes / assumptions\n\n_${shared.FALLBACK_SENTINEL}; please refine manually._`,
+  };
+  assert.ok(shared.needsRetriage(degraded));
+});
+
+test('the fallback briefs actually carry the sentinel', () => {
+  // Read the two writers back: a sentinel that stops being written would make
+  // the repair above silently stop matching.
+  for (const file of ['testflight-feedback.js', 'testflight-diagnostics.js']) {
+    const source = require('node:fs').readFileSync(require('node:path').join(__dirname, file), 'utf8');
+    assert.match(source, /FALLBACK_SENTINEL/, `${file} must use the shared sentinel`);
+  }
+});
+
 test('an issue with neither label is not picked up', () => {
   assert.ok(!shared.needsRetriage({ labels: ['testflight-feedback'] }));
   assert.ok(!shared.needsRetriage({}));
