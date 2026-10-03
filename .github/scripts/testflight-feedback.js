@@ -126,7 +126,7 @@ module.exports = async ({ github, context, core }) => {
   // against the snapshot taken before the loop, so a submission that failed to
   // triage moments ago is not retried immediately; it waits for the next run,
   // when the model may well be behaving again.
-  await retriageIssues({ github, owner, repo }, { existing, submissions, cfg, summary, core });
+  await retriageIssues({ github, owner, repo }, { existing, submissions, token, cfg, summary, core });
 
   core.notice(
     `TestFlight feedback: created ${summary.created} (${summary.untriaged} untriaged), ` +
@@ -426,7 +426,7 @@ async function createIssue({ github, owner, repo }, { id, detail, triage, hosted
 // `needs-triage`. Their submissions are guaranteed to still be in App Store
 // Connect — one is only purged once triaged — so the whole issue is
 // reconstructible from ASC and can be rewritten in place when triage works.
-async function retriageIssues({ github, owner, repo }, { existing, submissions, cfg, summary, core }) {
+async function retriageIssues({ github, owner, repo }, { existing, submissions, token, cfg, summary, core }) {
   const stale = [...existing.entries()].filter(([, issue]) => shared.needsRetriage(issue));
   if (!stale.length) return;
   core.info(`Re-triaging ${stale.length} issue(s) left needs-triage by an earlier run.`);
@@ -460,6 +460,12 @@ async function retriageIssues({ github, owner, repo }, { existing, submissions, 
       await refreshIssue({ github, owner, repo }, { issue, id, detail, triage, hosted, shots });
       summary.retriaged++;
       core.info(`#${id}: re-triaged issue #${issue.number} as "${triage.titlePrefix}${triage.title}".`);
+
+      // Same rule as a first-time triage: purge it now that it is triaged, unless
+      // the screenshots only live in App Store Connect.
+      if (hosted.length || shots.length === 0) {
+        if (await deleteSubmission(token, id, cfg, core)) summary.deleted++;
+      }
     } catch (err) {
       summary.failed++;
       core.warning(`#${id}: re-triage failed — ${err.message}.`);
