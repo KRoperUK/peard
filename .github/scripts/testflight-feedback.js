@@ -351,8 +351,7 @@ async function triageFeedback(cfg, detail, shots, core) {
 // partial object is treated as a failure: half a triage labelled `refined` is
 // worse than an honest `needs-triage`.
 function isUsableTriage(parsed) {
-  return Boolean(parsed && typeof parsed.title === 'string' && parsed.title.trim()
-    && typeof parsed.brief === 'string' && parsed.brief.trim());
+  return Boolean(parsed) && shared.hasText(parsed.title) && shared.hasText(parsed.brief);
 }
 
 function fallbackTitle(detail) {
@@ -376,7 +375,7 @@ async function ensureLabels(github, owner, repo) {
   await shared.ensureLabels(github, owner, repo, [
     { name: FEEDBACK_LABEL, color: '1D76DB', description: 'Imported from TestFlight beta feedback' },
     { name: 'refined', color: '0E8A16', description: 'Issue has been through refinement' },
-    { name: 'needs-triage', color: 'FBCA04', description: 'Automated triage failed; will be retried' },
+    { name: shared.NEEDS_TRIAGE_LABEL, color: 'FBCA04', description: 'Automated triage failed; will be retried' },
     { name: 'bug', color: 'D73A4A', description: "Something isn't working" },
     { name: 'enhancement', color: 'A2EEEF', description: 'New feature or request' },
   ]);
@@ -388,12 +387,12 @@ async function createIssue({ github, owner, repo }, { id, detail, triage, hosted
   const body = buildIssueBody({ id, detail, triage, hosted, keptShots });
   const labels = [FEEDBACK_LABEL];
   if (triage.ok) {
-    labels.push('refined');
+    labels.push(shared.REFINED_LABEL);
     if (triage.typeLabel) labels.push(triage.typeLabel);
   } else {
     // No `refined` and no type: neither is known to be true, and `refined` is
     // what tells the refinement bot (and a reader) the issue is already triaged.
-    labels.push('needs-triage');
+    labels.push(shared.NEEDS_TRIAGE_LABEL);
   }
 
   const { data: issue } = await github.rest.issues.create({
@@ -427,8 +426,7 @@ async function createIssue({ github, owner, repo }, { id, detail, triage, hosted
 // Connect — one is only purged once triaged — so the whole issue is
 // reconstructible from ASC and can be rewritten in place when triage works.
 async function retriageIssues({ github, owner, repo }, { existing, submissions, cfg, summary, core }) {
-  const stale = [...existing.entries()]
-    .filter(([, issue]) => issue.labels.includes('needs-triage') && !issue.labels.includes('refined'));
+  const stale = [...existing.entries()].filter(([, issue]) => shared.needsRetriage(issue));
   if (!stale.length) return;
   core.info(`Re-triaging ${stale.length} issue(s) left needs-triage by an earlier run.`);
 
@@ -472,7 +470,7 @@ async function retriageIssues({ github, owner, repo }, { existing, submissions, 
 // `needs-triage` label dropped, `refined` added, and the marker comment that
 // tells the refinement bot to leave it alone.
 async function refreshIssue({ github, owner, repo }, { issue, id, detail, triage, hosted, shots }) {
-  const labels = [FEEDBACK_LABEL, 'refined'];
+  const labels = [FEEDBACK_LABEL, shared.REFINED_LABEL];
   if (triage.typeLabel) labels.push(triage.typeLabel);
 
   await github.rest.issues.update({
@@ -533,5 +531,3 @@ function buildIssueBody({ id, detail, triage, hosted, keptShots = 0 }) {
   }
   return lines.join('\n');
 }
-
-module.exports.shortenTitle = shared.shortenTitle;

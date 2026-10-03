@@ -164,8 +164,7 @@ module.exports = async ({ github, context, core }) => {
 // `needs-triage`. The signature is re-polled on every run, so the issue can be
 // rebuilt from fresh data once triage works again.
 async function retriageSignatures({ github, owner, repo }, { existing, signatures, token, cfg, summary, core }) {
-    const stale = [...existing.entries()]
-        .filter(([, issue]) => issue.labels.includes('needs-triage') && !issue.labels.includes('refined'));
+    const stale = [...existing.entries()].filter(([, issue]) => shared.needsRetriage(issue));
     if (!stale.length) return;
     core.info(`Re-triaging ${stale.length} issue(s) left needs-triage by an earlier run.`);
 
@@ -193,7 +192,7 @@ async function retriageSignatures({ github, owner, repo }, { existing, signature
                 continue;
             }
 
-            const labels = [DIAGNOSTICS_LABEL, 'refined'];
+            const labels = [DIAGNOSTICS_LABEL, shared.REFINED_LABEL];
             if (triage.typeLabel) labels.push(triage.typeLabel);
             await github.rest.issues.update({
                 owner,
@@ -557,8 +556,8 @@ function fallbackBrief(detail, diag) {
 async function ensureLabels(github, owner, repo) {
     await shared.ensureLabels(github, owner, repo, [
         { name: DIAGNOSTICS_LABEL, color: '6F42C1', description: 'Imported from TestFlight diagnostic signatures' },
-        { name: 'refined', color: '0E8A16', description: 'Issue has been through refinement' },
-        { name: 'needs-triage', color: 'FBCA04', description: 'Automated triage failed; will be retried' },
+        { name: shared.REFINED_LABEL, color: '0E8A16', description: 'Issue has been through refinement' },
+        { name: shared.NEEDS_TRIAGE_LABEL, color: 'FBCA04', description: 'Automated triage failed; will be retried' },
         { name: 'hang', color: 'D93F0B', description: 'TestFlight hang report' },
         { name: 'disk-write', color: 'BFDADC', description: 'TestFlight disk write report' },
         { name: 'slow-launch', color: 'D4C5F9', description: 'TestFlight slow-launch report' },
@@ -571,11 +570,11 @@ async function createIssue({ github, owner, repo }, { id, detail, diag, triage, 
     const body = buildIssueBody({ id, detail, diag, triage });
     const labels = [DIAGNOSTICS_LABEL];
     if (triage.ok) {
-        labels.push('refined');
+        labels.push(shared.REFINED_LABEL);
         if (triage.typeLabel) labels.push(triage.typeLabel);
     } else {
         // No `refined` and no diagnostic-type label: neither is known to be true.
-        labels.push('needs-triage');
+        labels.push(shared.NEEDS_TRIAGE_LABEL);
     }
 
     const { data: issue } = await github.rest.issues.create({

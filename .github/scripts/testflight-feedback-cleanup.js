@@ -10,26 +10,22 @@
 // Run from a workflow via actions/github-script:
 //   await require('./.github/scripts/testflight-feedback-cleanup.js')({ github, context, core })
 
+const shared = require('./testflight-shared');
+
 const ASSETS_BRANCH = 'testflight-feedback-assets';
 const ASSETS_README = 'Auto-managed TestFlight feedback screenshots. Do not edit by hand.\n';
 
 module.exports = async ({ github, context, core }) => {
-  // Pin the REST API version on every request (silences Octokit's Sunset
-  // deprecation warning — 2022-11-28 is itself now deprecated in favour of
-  // 2026-03-10, see https://docs.github.com/rest/about-the-rest-api/api-versions).
-  github.hook.before('request', (options) => {
-    options.headers['x-github-api-version'] = '2026-03-10';
-  });
+  shared.pinApiVersion(github);
 
   const { owner, repo } = context.repo;
   const issue = context.payload.issue;
 
-  const m = (issue.body || '').match(/<!-- tf-feedback-id: ([^\s]+) -->/);
-  if (!m) {
+  const id = shared.extractId('feedback', issue.body);
+  if (!id) {
     core.info(`Issue #${issue.number} has no tf-feedback-id marker — nothing to clean.`);
     return;
   }
-  const id = m[1];
   const prefix = `testflight-feedback/${id}/`;
 
   // Resolve the assets branch tip → tree.

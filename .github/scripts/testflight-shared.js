@@ -26,6 +26,24 @@ const OPENROUTER_URL = 'https://openrouter.ai/api/v1/chat/completions';
 // Stamped on a triaged issue so the refinement bot leaves it alone.
 const REFINED_MARKER = '<!-- issue-refined -->';
 
+const REFINED_LABEL = 'refined';
+const NEEDS_TRIAGE_LABEL = 'needs-triage';
+
+// An issue is due a re-triage when triage never succeeded: it is labelled
+// `needs-triage` and never gained `refined`. Anything `refined` is left alone,
+// whether this workflow or the refinement bot put it there.
+function needsRetriage(issue) {
+  const labels = issue?.labels || [];
+  return labels.includes(NEEDS_TRIAGE_LABEL) && !labels.includes(REFINED_LABEL);
+}
+
+// A triage is usable only when it carries the text the caller needs. A partial
+// object is a failure, not a lesser success: an issue half-triaged and labelled
+// `refined` is worse than an honest `needs-triage`.
+function hasText(value) {
+  return typeof value === 'string' && value.trim().length > 0;
+}
+
 // ---- markers -------------------------------------------------------------
 
 // Feedback and diagnostics each carry their own id marker, so the two pollers
@@ -39,8 +57,9 @@ function idMarkerRe(kind) {
 }
 
 function extractId(kind, body) {
-  const m = (body || '').match(idMarkerRe(kind));
-  return m ? m[1] : null;
+  // matchAll, not match: a /g regex makes match return whole matches, not groups.
+  for (const m of (body || '').matchAll(idMarkerRe(kind))) return m[1];
+  return null;
 }
 
 // ---- config --------------------------------------------------------------
@@ -346,18 +365,22 @@ module.exports = {
   DEFAULT_BUNDLE_ID,
   DEFAULT_MODEL,
   MAX_TITLE_LENGTH,
+  NEEDS_TRIAGE_LABEL,
   OPENROUTER_URL,
+  REFINED_LABEL,
   REFINED_MARKER,
   buildChatRequest,
   ensureLabels,
   extractId,
   fetchPaged,
+  hasText,
   idMarker,
   loadAscConfig,
   loadOpenRouterConfig,
   loadProcessedIssues,
   isDryRun,
   makeAscToken,
+  needsRetriage,
   pinApiVersion,
   publishScreenshots,
   quote,
