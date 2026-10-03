@@ -93,10 +93,9 @@ module.exports = async ({ github, context, core }) => {
 
     const signatures = await listSignatures(token, builds, cfg.limit, core);
     core.info(`Found ${signatures.length} diagnostic signature(s).`);
-    if (signatures.length === 0) {
-        return;
-    }
 
+    // Loaded even when there are no new signatures: an issue left needs-triage by
+    // an earlier run is retried below, and that is the only chance to heal it.
     const existing = await shared.loadProcessedIssues({ github, owner, repo }, { label: DIAGNOSTICS_LABEL, kind: ID_KIND });
 
     const summary = { created: 0, untriaged: 0, retriaged: 0, skipped: 0, failed: 0 };

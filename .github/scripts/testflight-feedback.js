@@ -57,10 +57,9 @@ module.exports = async ({ github, context, core }) => {
 
   const submissions = await listSubmissions(token, appId, cfg.limit, core);
   core.info(`Found ${submissions.length} screenshot submission(s).`);
-  if (submissions.length === 0) {
-    return;
-  }
 
+  // Loaded even when there are no new submissions: an issue left needs-triage by
+  // an earlier run is retried below, and that is the only chance to heal it.
   const existing = await shared.loadProcessedIssues({ github, owner, repo }, { label: FEEDBACK_LABEL, kind: ID_KIND });
 
   const summary = { created: 0, untriaged: 0, retriaged: 0, skipped: 0, deleted: 0, failed: 0 };
