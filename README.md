@@ -289,6 +289,16 @@ into a `bug:` or `feat:` issue with a brief that points at the likely files
 (system prompt: `.github/prompts/testflight-triage.md`), then deletes the
 submission so it is only picked up once.
 
+Triage can fail, and when it does the run says so rather than writing a degraded
+issue nobody would notice: the issue is still opened, but labelled `needs-triage`
+instead of `refined`, the submission is kept, and the run goes red. The next run
+re-tries the issues left `needs-triage` and rewrites them in place once the model
+answers — so a bad model slug or a provider wobble costs a day, not an issue
+nobody can read. Both pollers share their App Store Connect auth, paging and
+triage request in `.github/scripts/testflight-shared.js`; the triage call pins
+`reasoning.effort` to `low`, because the reasoning models worth using otherwise
+spend the whole completion budget thinking and return empty or truncated JSON.
+
 The repo is public, so an issue never names the tester, and screenshots, which
 usually show a tester's connections, stay in App Store Connect by default. The
 issue says how many there are, and the submission is only deleted once the
@@ -304,7 +314,7 @@ It reuses the App Store Connect secrets above, plus:
 | Where | Name | What |
 |---|---|---|
 | Secret | `OPENROUTER_API_KEY` | OpenRouter API key |
-| Variable | `OPENROUTER_MODEL` | Model slug; defaults to `deepseek/deepseek-v4.1-flash`; `minimax/minimax-m3` also works. Use a vision-capable model so screenshots are read |
+| Variable | `OPENROUTER_MODEL` | Model slug; defaults to `deepseek/deepseek-v4.1-flash`. Use a vision-capable model so screenshots are read. A reasoning model is fine — the request pins its effort to `low` — but check the slug exists: a typo is what made triage silently degrade before, so the run logs the model it used |
 | Variable | `TESTFLIGHT_PUBLISH_SCREENSHOTS` | `true` to put screenshots on the issue. Leave unset while the repo is public |
 
 No macOS job pins an `Xcode_NN.app` path or names a simulator: both come and go
