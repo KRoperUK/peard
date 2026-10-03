@@ -117,7 +117,8 @@ module.exports = async ({ github, context, core }) => {
             const triage = await triageSignature(cfg, detail, diag, core);
 
             if (cfg.dryRun) {
-                core.info(`${id}: DRY_RUN — would create "${triage.titlePrefix}${triage.title}" (${detail.diagnosticType}) with ${diag.frames.length} frame(s), ${diag.distribution.length} device/OS row(s).`);
+                core.info(`${id}: DRY_RUN — would create "${triage.titlePrefix}${triage.title}" (${detail.diagnosticType})${triage.ok ? '' : ' [UNTRIAGED]'} with ${diag.frames.length} frame(s), ${diag.distribution.length} device/OS row(s).`);
+                if (!triage.ok) summary.untriaged++;
                 summary.created++;
                 continue;
             }

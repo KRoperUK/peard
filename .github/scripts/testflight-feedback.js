@@ -91,7 +91,8 @@ module.exports = async ({ github, context, core }) => {
       const triage = await triageFeedback(cfg, detail, shots, core);
 
       if (cfg.dryRun) {
-        core.info(`#${id}: DRY_RUN — would create "${triage.titlePrefix}${triage.title}" (${triage.type}) with ${hosted.length} screenshot(s).`);
+        core.info(`#${id}: DRY_RUN — would create "${triage.titlePrefix}${triage.title}" (${triage.type})${triage.ok ? '' : ' [UNTRIAGED]'} with ${hosted.length} screenshot(s).`);
+        if (!triage.ok) summary.untriaged++;
         summary.created++;
         continue;
       }
