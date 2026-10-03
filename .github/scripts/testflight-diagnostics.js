@@ -91,7 +91,7 @@ module.exports = async ({ github, context, core }) => {
 
     const existing = await shared.loadProcessedIssues({ github, owner, repo }, { label: DIAGNOSTICS_LABEL, kind: ID_KIND });
 
-    const summary = { created: 0, untriaged: 0, skipped: 0, failed: 0 };
+    const summary = { created: 0, untriaged: 0, retriaged: 0, skipped: 0, failed: 0 };
 
     for (const sig of signatures) {
         const id = sig.id;
@@ -131,9 +131,17 @@ module.exports = async ({ github, context, core }) => {
         }
     }
 
+    // Re-triage anything an earlier run had to open without a triage. Diagnostic
+    // signatures are never deleted from App Store Connect, so a needs-triage
+    // issue's signature is re-polled every run and can be rewritten in place.
+    await retriageSignatures(
+        { github, owner, repo },
+        { existing, signatures, token, cfg, summary, core }
+    );
+
     core.notice(
         `TestFlight diagnostics: created ${summary.created} (${summary.untriaged} untriaged), ` +
-        `skipped ${summary.skipped}, failed ${summary.failed}.`
+        `re-triaged ${summary.retriaged}, skipped ${summary.skipped}, failed ${summary.failed}.`
     );
     // An untriaged issue is a real failure, not a lesser success: the run goes red
     // so somebody notices instead of a degraded issue quietly accumulating.
@@ -141,6 +149,66 @@ module.exports = async ({ github, context, core }) => {
         core.setFailed(`${summary.failed + summary.untriaged} signature(s) failed or could not be triaged — see logs.`);
     }
 };
+
+// ---- re-triage -----------------------------------------------------------
+
+// Issues an earlier run had to open without a brief, still labelled
+// `needs-triage`. The signature is re-polled on every run, so the issue can be
+// rebuilt from fresh data once triage works again.
+async function retriageSignatures({ github, owner, repo }, { existing, signatures, token, cfg, summary, core }) {
+    const stale = [...existing.entries()]
+        .filter(([, issue]) => issue.labels.includes('needs-triage') && !issue.labels.includes('refined'));
+    if (!stale.length) return;
+    core.info(`Re-triaging ${stale.length} issue(s) left needs-triage by an earlier run.`);
+
+    for (const [id, issue] of stale) {
+        try {
+            const sig = signatures.find((s) => s.id === id);
+            if (!sig) {
+                core.warning(`${id}: signature no longer returned — issue #${issue.number} left un-triaged.`);
+                continue;
+            }
+
+            const detail = describeSignature(sig, signatures.included);
+            const logs = await fetchSignatureLogs(token, id, core);
+            const diag = extractLogData(logs, detail, core);
+            const triage = await triageSignature(cfg, detail, diag, core);
+            if (!triage.ok) {
+                summary.failed++;
+                core.warning(`${id}: re-triage failed again — issue #${issue.number} left needs-triage.`);
+                continue;
+            }
+
+            if (cfg.dryRun) {
+                core.info(`${id}: DRY_RUN — would re-triage issue #${issue.number}.`);
+                summary.retriaged++;
+                continue;
+            }
+
+            const labels = [DIAGNOSTICS_LABEL, 'refined'];
+            if (triage.typeLabel) labels.push(triage.typeLabel);
+            await github.rest.issues.update({
+                owner,
+                repo,
+                issue_number: issue.number,
+                title: `${triage.titlePrefix}${triage.title}`,
+                body: buildIssueBody({ id, detail, diag, triage }),
+                labels,
+            });
+            await github.rest.issues.createComment({
+                owner,
+                repo,
+                issue_number: issue.number,
+                body: `Re-triaged automatically — the earlier run could not reach the model.\n\n${REFINED_MARKER}`,
+            });
+            summary.retriaged++;
+            core.info(`${id}: re-triaged issue #${issue.number}.`);
+        } catch (err) {
+            summary.failed++;
+            core.warning(`${id}: re-triage failed — ${err.message}.`);
+        }
+    }
+}
 
 // ---- config --------------------------------------------------------------
 

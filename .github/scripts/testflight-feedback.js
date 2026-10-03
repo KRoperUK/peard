@@ -55,7 +55,7 @@ module.exports = async ({ github, context, core }) => {
 
   const existing = await shared.loadProcessedIssues({ github, owner, repo }, { label: FEEDBACK_LABEL, kind: ID_KIND });
 
-  const summary = { created: 0, untriaged: 0, skipped: 0, deleted: 0, failed: 0 };
+  const summary = { created: 0, untriaged: 0, retriaged: 0, skipped: 0, deleted: 0, failed: 0 };
 
   for (const sub of submissions) {
     const id = sub.id;
@@ -113,9 +113,15 @@ module.exports = async ({ github, context, core }) => {
     }
   }
 
+  // Re-triage anything an earlier run had to open without a triage. This runs
+  // against the snapshot taken before the loop, so a submission that failed to
+  // triage moments ago is not retried immediately; it waits for the next run,
+  // when the model may well be behaving again.
+  await retriageIssues({ github, owner, repo }, { existing, submissions, cfg, summary, core });
+
   core.notice(
     `TestFlight feedback: created ${summary.created} (${summary.untriaged} untriaged), ` +
-    `skipped ${summary.skipped}, deleted ${summary.deleted}, failed ${summary.failed}.`
+    `re-triaged ${summary.retriaged}, skipped ${summary.skipped}, deleted ${summary.deleted}, failed ${summary.failed}.`
   );
   // An untriaged issue is a real failure, not a lesser success: the run goes red
   // so somebody notices instead of a degraded issue quietly accumulating.
@@ -404,6 +410,78 @@ async function createIssue({ github, owner, repo }, { id, detail, triage, hosted
   });
 
   return issue;
+}
+
+// ---- re-triage -----------------------------------------------------------
+
+// Issues an earlier run had to open without a triage, still labelled
+// `needs-triage`. Their submissions are guaranteed to still be in App Store
+// Connect — one is only purged once triaged — so the whole issue is
+// reconstructible from ASC and can be rewritten in place when triage works.
+async function retriageIssues({ github, owner, repo }, { existing, submissions, cfg, summary, core }) {
+  const stale = [...existing.entries()]
+    .filter(([, issue]) => issue.labels.includes('needs-triage') && !issue.labels.includes('refined'));
+  if (!stale.length) return;
+  core.info(`Re-triaging ${stale.length} issue(s) left needs-triage by an earlier run.`);
+
+  for (const [id, issue] of stale) {
+    try {
+      const sub = submissions.find((s) => s.id === id);
+      if (!sub) {
+        core.warning(`#${id}: submission no longer in App Store Connect — issue #${issue.number} left un-triaged.`);
+        continue;
+      }
+
+      const detail = describeSubmission(sub, submissions.included);
+      const shots = await downloadScreenshots(detail.screenshots, core);
+      const triage = await triageFeedback(cfg, detail, shots, core);
+      if (!triage.ok) {
+        summary.failed++;
+        core.warning(`#${id}: re-triage failed again — issue #${issue.number} left needs-triage.`);
+        continue;
+      }
+
+      if (cfg.dryRun) {
+        core.info(`#${id}: DRY_RUN — would re-triage issue #${issue.number} as "${triage.titlePrefix}${triage.title}".`);
+        summary.retriaged++;
+        continue;
+      }
+
+      const hosted = cfg.publishScreenshots
+        ? await commitScreenshots({ github, owner, repo }, id, shots, core)
+        : [];
+      await refreshIssue({ github, owner, repo }, { issue, id, detail, triage, hosted, shots });
+      summary.retriaged++;
+      core.info(`#${id}: re-triaged issue #${issue.number} as "${triage.titlePrefix}${triage.title}".`);
+    } catch (err) {
+      summary.failed++;
+      core.warning(`#${id}: re-triage failed — ${err.message}.`);
+    }
+  }
+}
+
+// Rewrite a needs-triage issue as a triaged one: new title and body, the
+// `needs-triage` label dropped, `refined` added, and the marker comment that
+// tells the refinement bot to leave it alone.
+async function refreshIssue({ github, owner, repo }, { issue, id, detail, triage, hosted, shots }) {
+  const labels = [FEEDBACK_LABEL, 'refined'];
+  if (triage.typeLabel) labels.push(triage.typeLabel);
+
+  await github.rest.issues.update({
+    owner,
+    repo,
+    issue_number: issue.number,
+    title: `${triage.titlePrefix}${triage.title}`,
+    body: buildIssueBody({ id, detail, triage, hosted, keptShots: hosted.length ? 0 : shots.length }),
+    labels,
+  });
+
+  await github.rest.issues.createComment({
+    owner,
+    repo,
+    issue_number: issue.number,
+    body: `Re-triaged automatically — the earlier run could not reach the model.\n\n${REFINED_MARKER}`,
+  });
 }
 
 function buildIssueBody({ id, detail, triage, hosted, keptShots = 0 }) {
