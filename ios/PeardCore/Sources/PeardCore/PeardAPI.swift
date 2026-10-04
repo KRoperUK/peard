@@ -581,6 +581,42 @@ public extension APIClient {
         return all
     }
 
+    // MARK: Replies
+
+    /// The photos some replies answer, for drawing them beside the reply.
+    ///
+    /// A reply can land a page or a week after its photo, so the photo is not
+    /// necessarily anywhere the screen has loaded. Chunked like the reactions,
+    /// to keep the filter short.
+    func posts(ids: [String]) async throws -> [Post] {
+        var all: [Post] = []
+        for chunk in stride(from: 0, to: ids.count, by: 10).map({
+            Array(ids[$0..<min($0 + 10, ids.count)])
+        }) {
+            all += try await list(
+                "posts",
+                of: Post.self,
+                filter: PeardFilter.anyEquals("id", chunk),
+                sort: nil,
+                perPage: chunk.count
+            )
+        }
+        return all
+    }
+
+    /// How many posts answer this one. One row asked for, because only the
+    /// count is wanted.
+    func replyCount(to postID: String) async throws -> Int {
+        let list: RecordList<Post> = try await get(
+            path: "/api/collections/posts/records",
+            query: [
+                "filter": PeardFilter.equals("reply_to", postID),
+                "perPage": "1",
+            ]
+        )
+        return list.totalItems ?? list.items.count
+    }
+
     // MARK: Health
 
     /// `GET /api/health` — used by the Debug launch probe (Requirement 21.5).

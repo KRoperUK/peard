@@ -269,6 +269,14 @@ struct HomeView: View {
                             .lineLimit(2)
                     }
 
+                    if post.replyTo != nil {
+                        ReplyChip(
+                            original: model.original(for: post),
+                            title: model.replyTitle(for: post),
+                            serverURL: model.serverURL
+                        ) { viewingPhoto = $0 }
+                    }
+
                     reactionRow
                 }
                 Spacer(minLength: 0)

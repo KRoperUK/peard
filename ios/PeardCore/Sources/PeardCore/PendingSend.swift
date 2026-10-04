@@ -34,6 +34,9 @@ public struct PendingSend: Codable, Hashable, Sendable, Identifiable {
     /// When the moment happened, if somebody rewound it. `nil` means it
     /// happened when it was tapped, and the server stamps it on arrival.
     public let happenedAt: Date?
+    /// The photo this send answers, when it is a comment on one or a photo sent
+    /// back; see `reply(to:authorID:note:withPhoto:)`.
+    public let replyTo: String?
     /// How many times a flush has tried and failed. Drives the retry backoff.
     public var attempts: Int
     /// When the last attempt failed, for the backoff calculation.
@@ -49,6 +52,7 @@ public struct PendingSend: Codable, Hashable, Sendable, Identifiable {
         case postType = "post_type"
         case hasPhoto = "has_photo"
         case happenedAt = "happened_at"
+        case replyTo = "reply_to"
         case lastAttemptAt = "last_attempt_at"
         case lastError = "last_error"
     }
@@ -65,6 +69,7 @@ public struct PendingSend: Codable, Hashable, Sendable, Identifiable {
         postType: PostType = .event,
         hasPhoto: Bool = false,
         happenedAt: Date? = nil,
+        replyTo: String? = nil,
         attempts: Int = 0,
         lastAttemptAt: Date? = nil,
         lastError: String? = nil
@@ -80,6 +85,7 @@ public struct PendingSend: Codable, Hashable, Sendable, Identifiable {
         self.postType = postType
         self.hasPhoto = hasPhoto
         self.happenedAt = happenedAt
+        self.replyTo = replyTo
         self.attempts = attempts
         self.lastAttemptAt = lastAttemptAt
         self.lastError = lastError
@@ -102,6 +108,7 @@ public struct PendingSend: Codable, Hashable, Sendable, Identifiable {
         postType = try c.decodeIfPresent(PostType.self, forKey: .postType) ?? .event
         hasPhoto = try c.decodeIfPresent(Bool.self, forKey: .hasPhoto) ?? false
         happenedAt = try c.decodeIfPresent(Date.self, forKey: .happenedAt)
+        replyTo = try c.decodeIfPresent(String.self, forKey: .replyTo)
         attempts = try c.decodeIfPresent(Int.self, forKey: .attempts) ?? 0
         lastAttemptAt = try c.decodeIfPresent(Date.self, forKey: .lastAttemptAt)
         lastError = try c.decodeIfPresent(String.self, forKey: .lastError)
@@ -129,6 +136,7 @@ public struct PendingSend: Codable, Hashable, Sendable, Identifiable {
             "client_id": id,
         ]
         if postType == .event { fields["event_kind"] = kind.rawValue }
+        if let replyTo { fields["reply_to"] = replyTo }
         if let happenedAt {
             fields["happened_at"] = Rewind.wireString(happenedAt)
             fields["rewound"] = "true"
@@ -200,7 +208,43 @@ public struct PendingSend: Codable, Hashable, Sendable, Identifiable {
             note: note.isEmpty ? nil : note,
             created: queuedAt,
             happenedAt: happenedOrQueuedAt,
-            rewound: happenedAt.map { Rewind.isRewound($0, loggedAt: queuedAt) } ?? false
+            rewound: happenedAt.map { Rewind.isRewound($0, loggedAt: queuedAt) } ?? false,
+            replyTo: replyTo
+        )
+    }
+
+    /// An answer to a photo (issue #304): words typed under it, or — with a
+    /// photo — a picture sent back, captioned with the words if there are any.
+    ///
+    /// The same kind of send as a reply typed into a notification or a photo
+    /// shared on its own, with `reply_to` added, so it queues, survives a bad
+    /// network and is drawn while waiting exactly as those are. Never a moment:
+    /// answering a photo is not doing anything, and the server refuses a moment
+    /// that claims to.
+    ///
+    /// `nil` for words alone with nothing in them.
+    public static func reply(
+        to photo: Post,
+        authorID: String,
+        note: String,
+        withPhoto: Bool,
+        id: String = UUID().uuidString,
+        at date: Date = Date()
+    ) -> PendingSend? {
+        let note = PostNote.normalised(note)
+        guard withPhoto || !note.isEmpty else { return nil }
+        return PendingSend(
+            id: id,
+            pairID: photo.pair,
+            authorID: authorID,
+            kind: EventKind(rawValue: ""),
+            emoji: withPhoto ? "📸" : MomentCatalogue.replyEmoji,
+            label: withPhoto ? "Photo" : MomentCatalogue.replyLabel,
+            note: note,
+            queuedAt: date,
+            postType: withPhoto ? .photo : .note,
+            hasPhoto: withPhoto,
+            replyTo: photo.id
         )
     }
 }

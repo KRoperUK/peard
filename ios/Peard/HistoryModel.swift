@@ -299,6 +299,32 @@ final class HistoryModel {
         }
     }
 
+    // MARK: Replies
+
+    /// Photos answered by loaded posts that are not themselves loaded — a
+    /// comment today on a photo from last week — keyed by id.
+    private(set) var originalsByID: [String: Post] = [:]
+
+    /// The photo a post answers, when it is to hand.
+    func original(for post: Post) -> Post? {
+        guard let id = post.replyTo else { return nil }
+        return posts.first { $0.id == id } ?? originalsByID[id]
+    }
+
+    func replyTitle(for post: Post) -> String {
+        ReplyChip.title(for: original(for: post), signedInUserID: signedInUserID) { authorLabel(for: $0) }
+    }
+
+    /// Fetches the photos a page's replies answer, when they are not already
+    /// here. Quiet on failure like the reactions: the chip still reads
+    /// "replying to a photo" without one.
+    private func loadOriginals(for page: [Post]) async {
+        let known = Set(posts.map(\.id)).union(originalsByID.keys)
+        let missing = Set(page.compactMap(\.replyTo)).subtracting(known)
+        guard !missing.isEmpty, let fetched = try? await api.posts(ids: Array(missing)) else { return }
+        for post in fetched { originalsByID[post.id] = post }
+    }
+
     /// Chosen so the first screenful arrives quickly while a scroll rarely has to
     /// wait: three screens' worth at a typical text size.
     static let pageSize = 30
@@ -455,6 +481,7 @@ final class HistoryModel {
         // Reactions for the replacement set. Their own failure is already quiet
         // — see `loadReactions`.
         await loadReactions(for: page.posts.map(\.id))
+        await loadOriginals(for: page.posts)
     }
 
     /// Brings the top of the timeline up to date without losing what has been
@@ -485,12 +512,14 @@ final class HistoryModel {
             hasMore = page.hasMore
             nextPage = page.nextPage
             await loadReactions(for: page.posts.map(\.id))
+            await loadOriginals(for: page.posts)
             return
         }
         let fresh = Set(page.posts.map(\.id))
         posts = page.posts + posts[(cut + 1)...].filter { !fresh.contains($0.id) }
         totalItems = page.totalItems
         await loadReactions(for: page.posts.map(\.id))
+        await loadOriginals(for: page.posts)
     }
 
     /// `refreshNewest`, unless it has just run for the same reason.
@@ -578,7 +607,8 @@ final class HistoryModel {
                 // own stamp; this only has to agree about *whether* it moved.
                 updated: Date(),
                 happenedAt: newHappenedAt,
-                rewound: newRewound
+                rewound: newRewound,
+                replyTo: old.replyTo
             )
         }
         if timeChanged {
@@ -627,6 +657,7 @@ final class HistoryModel {
         // Only the posts this page added, so scrolling does not re-fetch
         // reactions for everything above.
         await loadReactions(for: fresh.map(\.id))
+        await loadOriginals(for: fresh)
     }
 
     /// Fetches one page, or returns nil having decided what the failure means.

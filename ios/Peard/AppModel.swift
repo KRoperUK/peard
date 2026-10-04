@@ -313,6 +313,33 @@ final class AppModel {
         await refreshPendingSends()
     }
 
+    /// Answers a photo from the photo viewer (issue #304): words, or a photo
+    /// of your own captioned with them. Here rather than on a screen's model
+    /// because the viewer opens from both Home and the timeline, and the queue
+    /// is the app's either way.
+    ///
+    /// Queued, then flushed, like any moment. Returns false only when nothing
+    /// was queued — no words and no photo, or a photo that could not be kept
+    /// to send; a reply that is merely waiting for signal has worked.
+    @discardableResult
+    func reply(to photo: Post, note: String, image: UIImage? = nil) async -> Bool {
+        let data = image?.jpegData(compressionQuality: PhotoSquare.jpegQuality)
+        if image != nil, data?.isEmpty ?? true { return false }
+        guard let send = PendingSend.reply(to: photo, authorID: signedInUserID, note: note, withPhoto: data != nil),
+              !send.authorID.isEmpty
+        else { return false }
+        if let data {
+            do {
+                try pendingPhotos.save(data, for: send.id)
+            } catch {
+                return false
+            }
+        }
+        await enqueue(send)
+        await flushSendQueueAndWait()
+        return true
+    }
+
     /// "Me too" or a reply from a moment's notification (issue #154): queued,
     /// then sent. Awaited rather than left to a background flush, because iOS
     /// may suspend the app again as soon as the action's handler returns.

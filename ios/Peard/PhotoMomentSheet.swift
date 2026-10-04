@@ -22,6 +22,10 @@ struct PhotoMomentSheet: View {
 
     let image: UIImage
     let moments: [Moment]
+    /// Whose photo this one answers ("Ada's"), when it is a photo sent back
+    /// from the viewer. Then there is no question to ask — an answer is never a moment
+    /// — so the grid goes and Skip becomes Cancel.
+    var replyingTo: String?
     /// The square as it was framed, the moment, and the caption. A nil moment
     /// means "share it as a photo", which is what Skip sends — the caption and
     /// the framing come either way, because Skip declines the *question*.
@@ -46,20 +50,22 @@ struct PhotoMomentSheet: View {
                     SquarePhotoEditor(image: image, edit: $edit)
                     framingControls
                     captionField
-                    MomentGrid(
-                        moments: moments,
-                        // The grid highlights what is being sent, so its
-                        // "pending" slot is reused for the current choice —
-                        // tapping the same one again clears it, because
-                        // changing your mind should not need the Skip button.
-                        pendingKind: chosen?.kind,
-                        isBusy: false,
-                        onTap: { moment in
-                            chosen = (chosen?.kind == moment.kind) ? nil : moment
-                        },
-                        onMore: nil,
-                        purpose: .pick
-                    )
+                    if replyingTo == nil {
+                        MomentGrid(
+                            moments: moments,
+                            // The grid highlights what is being sent, so its
+                            // "pending" slot is reused for the current choice —
+                            // tapping the same one again clears it, because
+                            // changing your mind should not need the Skip button.
+                            pendingKind: chosen?.kind,
+                            isBusy: false,
+                            onTap: { moment in
+                                chosen = (chosen?.kind == moment.kind) ? nil : moment
+                            },
+                            onMore: nil,
+                            purpose: .pick
+                        )
+                    }
                     explanation
                 }
                 .padding(20)
@@ -69,14 +75,19 @@ struct PhotoMomentSheet: View {
             // grid sits below it — a flick should get back to the grid without
             // having to find a Done key first.
             .scrollDismissesKeyboard(.interactively)
-            .navigationTitle("What is it?")
+            .navigationTitle(replyingTo == nil ? "What is it?" : "Reply with a photo")
             .navigationBarTitleDisplayMode(.inline)
             .toolbar {
                 ToolbarItem(placement: .cancellationAction) {
-                    Button("Skip") {
-                        send(nil)
+                    if replyingTo == nil {
+                        Button("Skip") {
+                            send(nil)
+                        }
+                        .disabled(isRendering)
+                    } else {
+                        Button("Cancel") { dismiss() }
+                            .disabled(isRendering)
                     }
-                    .disabled(isRendering)
                 }
                 ToolbarItem(placement: .confirmationAction) {
                     if isRendering {
@@ -204,7 +215,9 @@ struct PhotoMomentSheet: View {
 
     @ViewBuilder
     private var explanation: some View {
-        if let chosen {
+        if let replyingTo {
+            Text("Sends to everyone here as a reply to \(replyingTo) photo.")
+        } else if let chosen {
             Text("Sends as \(chosen.emoji) \(chosen.label), with the photo attached. It counts towards your tallies.")
         } else if !PostNote.isEmpty(caption) {
             // Skip sits where a cancel would, so with words on screen it has to

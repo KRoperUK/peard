@@ -181,11 +181,16 @@ public struct Post: Codable, Hashable, Sendable, Identifiable {
     /// Somebody picked this moment's time, rather than it arriving late from the
     /// offline queue. Drives the "Rewound" chip; see `Rewind`.
     public let rewound: Bool
+    /// The photo this post answers — a comment typed under it, or a photo sent
+    /// back. `nil` for everything else, including an answer whose photo has
+    /// since been deleted: the server empties the relation then.
+    public let replyTo: String?
 
     enum CodingKeys: String, CodingKey {
         case id, pair, author, type, note, media, created, updated, rewound
         case eventKind = "event_kind"
         case happenedAt = "happened_at"
+        case replyTo = "reply_to"
     }
 
     public init(
@@ -199,10 +204,12 @@ public struct Post: Codable, Hashable, Sendable, Identifiable {
         created: Date,
         updated: Date? = nil,
         happenedAt: Date? = nil,
-        rewound: Bool? = nil
+        rewound: Bool? = nil,
+        replyTo: String? = nil
     ) {
         self.id = id
         self.pair = pair
+        self.replyTo = replyTo
         self.author = author
         self.type = type
         self.eventKind = eventKind
@@ -243,6 +250,9 @@ public struct Post: Codable, Hashable, Sendable, Identifiable {
         // and back then every gap was a picked time.
         rewound = (try? container.decodeIfPresent(Bool.self, forKey: .rewound))
             ?? (created != .distantPast && Rewind.isRewound(happenedAt, loggedAt: created))
+        // PocketBase sends an unset relation as "", which is not a post.
+        let replyTo = try? container.decodeIfPresent(String.self, forKey: .replyTo)
+        self.replyTo = replyTo?.isEmpty == false ? replyTo : nil
     }
 
     /// True when this post carries a real server timestamp.

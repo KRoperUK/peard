@@ -271,7 +271,7 @@ final class HomeModel {
         case .event:
             return label(for: post.eventKind)
         case .photo:
-            return "shared a moment"
+            return post.replyTo == nil ? "shared a moment" : "replied with a photo"
         case .note:
             // The words themselves are drawn under it, as any note is.
             return "replied"
@@ -312,6 +312,7 @@ final class HomeModel {
             posts = try await api.recentPosts(pairID: pairID, limit: 5)
             await resolveFocusedPost()
             await loadReactions()
+            await loadReplyOriginal()
             banner = nil
         } catch {
             await report(error)
@@ -476,6 +477,29 @@ final class HomeModel {
         } catch {
             reactions = []
         }
+    }
+
+    // MARK: Replies
+
+    /// The photo the hero answers, when it answers one that is not among the
+    /// recent posts.
+    private var fetchedOriginal: Post?
+
+    /// The photo a post answers, when it is to hand.
+    func original(for post: Post) -> Post? {
+        guard let id = post.replyTo else { return nil }
+        if let loaded = posts.first(where: { $0.id == id }) { return loaded }
+        return fetchedOriginal?.id == id ? fetchedOriginal : nil
+    }
+
+    func replyTitle(for post: Post) -> String {
+        ReplyChip.title(for: original(for: post), signedInUserID: signedInUserID) { authorLabel(for: $0) }
+    }
+
+    /// Only the hero's: it is the one post on Home that draws the chip.
+    private func loadReplyOriginal() async {
+        guard let post = displayedPost, let id = post.replyTo, original(for: post) == nil else { return }
+        fetchedOriginal = try? await api.posts(ids: [id]).first
     }
 
     var displayedReactionKinds: [ReactionKind] {

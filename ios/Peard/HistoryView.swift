@@ -324,6 +324,15 @@ struct HistoryView: View {
                     }
                 }
 
+                if post.replyTo != nil {
+                    ReplyChip(
+                        original: model.original(for: post),
+                        title: model.replyTitle(for: post),
+                        serverURL: serverURL
+                    ) { viewing = $0 }
+                    .padding(.top, 1)
+                }
+
                 let kinds = model.reactionKinds(for: post)
                 if !kinds.isEmpty {
                     HStack(spacing: 3) {
@@ -359,6 +368,9 @@ struct HistoryView: View {
             if post.hasMedia {
                 Button("Open photo") { viewing = post }
             }
+            if let original = model.original(for: post), original.hasMedia {
+                Button("Open the photo it replies to") { viewing = original }
+            }
         }
         .modifier(MomentActions(
             post: post,
@@ -374,6 +386,7 @@ struct HistoryView: View {
     private func accessibilityLabel(for post: Post) -> String {
         var parts = [model.authorLabel(for: post), model.detail(for: post)]
         if post.hasMedia { parts.append("photo") }
+        if post.replyTo != nil { parts.append(model.replyTitle(for: post)) }
         if post.isEdited { parts.append("edited") }
         if model.strayNewPostIDs.contains(post.id) { parts.append("new") }
         if post.rewound { parts.append(RewoundChip.accessibilityLabel(loggedAt: post.created)) }
