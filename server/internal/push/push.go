@@ -253,6 +253,11 @@ func notifyPairMembers(app core.App, post *core.Record) {
 		}
 		badge := unseenCount(app, memberID)
 		media := mediaURLFor(app, post, memberID)
+		// Words on a photo arrive with the photo they are about, which is
+		// what makes "lovely!" mean something on a lock screen.
+		if media == "" && original != nil {
+			media = mediaURLFor(app, original, memberID)
+		}
 		// The devices still registered once APNs has had its say, which is what
 		// the Live Activity pushes below go to.
 		live := make([]*core.Record, 0, len(devices))

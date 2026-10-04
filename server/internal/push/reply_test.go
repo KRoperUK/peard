@@ -2,6 +2,7 @@ package push
 
 import (
 	"slices"
+	"strings"
 	"testing"
 )
 
@@ -41,6 +42,24 @@ func TestAnAnswerToAPhotoSaysWhosePhotoItWas(t *testing.T) {
 	want := []string{"💬 bo replied to ada's photo", "💬 bo replied to your photo"}
 	if !slices.Equal(titles, want) {
 		t.Errorf("titles = %q, want %q", titles, want)
+	}
+}
+
+// A comment has no photo of its own, so its alert carries the one it is about.
+func TestACommentArrivesWithThePhotoItIsAbout(t *testing.T) {
+	w := newPushWorld(t)
+	photo := newRecord(t, w.app, "posts", map[string]any{
+		"pair": w.pair.Id, "author": w.ada.Id, "type": "photo", "media": "p.jpg",
+	})
+	reply := newRecord(t, w.app, "posts", map[string]any{
+		"pair": w.pair.Id, "author": w.bo.Id, "type": "note", "note": "lovely", "reply_to": photo.Id,
+	})
+
+	notifyPairMembers(w.app, reply)
+
+	media, _ := w.onlyAlert(t)["media_url"].(string)
+	if !strings.Contains(media, "/"+photo.Id+"/p.jpg") {
+		t.Errorf("media_url = %q, want the answered photo", media)
 	}
 }
 

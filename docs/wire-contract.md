@@ -141,7 +141,8 @@ empties `reply_to` on its answers rather than deleting them.
 
 The alert for an answer is titled for its reader — "💬 Sam replied to your
 photo" to the photo's author, "…to Ada's photo" to everybody else (📸 for a
-photo sent back) — and carries `reply_to` beside `post_id`.
+photo sent back) — and carries `reply_to` beside `post_id`. A comment, having
+no photo of its own, carries the answered photo's `media_url`.
 
 `client_id` exists because the app queues moments on the device before sending
 them, so a moment logged with no signal is kept rather than discarded. That
