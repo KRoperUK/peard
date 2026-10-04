@@ -29,9 +29,24 @@ final class WatchModel {
     private(set) var logStates: [String: LogState] = [:]
     /// Moments tapped without a connection, still to be sent.
     private(set) var waitingCount = 0
+    /// The moment last logged from the watch to the selected connection, for
+    /// the log-again tile (issue #287).
+    ///
+    /// Read from the store on load and on a change of connection, not after
+    /// every tap: a tile that appeared, vanished or changed as each moment
+    /// landed would move the grid under a thumb that is still tapping it.
+    private(set) var lastLoggedKind: String?
+    /// The selected connection's widget feed, for the line of today's counts.
+    private(set) var today: WidgetFeed?
 
     var selectedID: String? {
-        didSet { store.selectedConnectionID = selectedID }
+        didSet {
+            store.selectedConnectionID = selectedID
+            guard selectedID != oldValue else { return }
+            lastLoggedKind = store.lastWatchMoment(forConnection: selectedID ?? "")
+            today = nil
+            Task { await refreshToday() }
+        }
     }
 
     private let store: SharedStore
@@ -42,6 +57,7 @@ final class WatchModel {
         self.inbox = inbox
         selectedID = store.selectedConnectionID
         waitingCount = inbox.load().count
+        lastLoggedKind = store.lastWatchMoment(forConnection: selectedID ?? "")
     }
 
     var selected: WidgetConnection? {
@@ -68,7 +84,11 @@ final class WatchModel {
             connections = try await APIClient(baseURL: credentials.baseURL)
                 .widgetConnections(token: credentials.token, withMoments: true)
             if selectedID == nil || !connections.contains(where: { $0.id == selectedID }) {
+                // Its didSet reads the tile and fetches the counts for the new one.
                 selectedID = connections.first?.id
+            } else {
+                lastLoggedKind = store.lastWatchMoment(forConnection: selectedID ?? "")
+                Task { await refreshToday() }
             }
             phase = .ready
         } catch let error as APIError {
@@ -107,6 +127,7 @@ final class WatchModel {
                 clientID: queued.id
             )
             logStates[key] = .logged
+            store.setLastWatchMoment(key, forConnection: queued.pairID ?? "")
             Haptics.play(.sent)
             WidgetCenter.shared.reloadAllTimelines()
             // It got through, so anything waiting probably can too.
@@ -116,6 +137,7 @@ final class WatchModel {
                 // Kept, so it counts as sent: the same promise the phone's toast
                 // makes for a moment saved offline.
                 logStates[key] = .queued
+                store.setLastWatchMoment(key, forConnection: queued.pairID ?? "")
                 waitingCount = inbox.load().count
                 Haptics.play(.sent)
             } else {
@@ -126,6 +148,19 @@ final class WatchModel {
         // Long enough to read, then back to the plain button.
         try? await Task.sleep(for: .seconds(2))
         if logStates[key] != .sending { logStates[key] = nil }
+    }
+
+    /// Today's counts for the selected connection, from the feed the
+    /// complications read. A failure keeps whatever was there: the line is a
+    /// glance, not something worth an error of its own.
+    private func refreshToday() async {
+        guard let credentials = WatchCredentials(store: store), let pairID = selected?.id else { return }
+        guard let feed = try? await APIClient(baseURL: credentials.baseURL).widgetFeed(
+            token: credentials.token,
+            pairID: pairID
+        ) else { return }
+        // The connection may have changed while this was in flight.
+        if selected?.id == pairID { today = feed }
     }
 
     /// Sends what was tapped while offline, oldest first, at the times it was

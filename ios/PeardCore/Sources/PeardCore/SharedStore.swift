@@ -18,6 +18,7 @@ public final class SharedStore: @unchecked Sendable {
         public static let privacyPolicyAcceptedAt = "privacyPolicyAcceptedAt"
         public static let appearance = "appearance"
         public static let pinnedMoments = "pinnedMoments"
+        public static let watchLastMoments = "watchLastMoments"
     }
 
     public static let appGroupIdentifier = "group.com.peard.app"
@@ -114,6 +115,24 @@ public final class SharedStore: @unchecked Sendable {
         var all = (defaults?.dictionary(forKey: Key.pinnedMoments) as? [String: [String]]) ?? [:]
         all[pairID] = slugs.isEmpty ? nil : slugs
         defaults?.set(all, forKey: Key.pinnedMoments)
+    }
+
+    // MARK: Watch
+
+    /// The slug of the moment last logged from the watch to a connection, for
+    /// its log-again tile (issue #287). Per connection, like pins: a group's
+    /// moments are not a pair's, and the last coffee logged to one says nothing
+    /// about what comes next in the other. The watch has its own App Group
+    /// container, so the phone never sees this.
+    public func lastWatchMoment(forConnection pairID: String) -> String? {
+        let all = defaults?.dictionary(forKey: Key.watchLastMoments) as? [String: String]
+        return all?[pairID]
+    }
+
+    public func setLastWatchMoment(_ slug: String, forConnection pairID: String) {
+        var all = (defaults?.dictionary(forKey: Key.watchLastMoments) as? [String: String]) ?? [:]
+        all[pairID] = slug
+        defaults?.set(all, forKey: Key.watchLastMoments)
     }
 
     // MARK: Widget optimistic feedback
