@@ -181,7 +181,7 @@ final class AppModel {
     /// free wake-up, and the device demonstrably has connectivity to have received
     /// it at all.
     private func performBackgroundRefresh() async {
-        await flushSendQueueAndWait()
+        await flushSendQueueAndWait(refreshingHome: false)
         await onHomeRefreshRequested?()
         await widgetSync.sync()
     }
@@ -328,14 +328,20 @@ final class AppModel {
     }
 
     /// Awaits a flush. Used where the caller wants the result before redrawing.
+    ///
+    /// `refreshingHome: false` is for a caller about to re-read the home
+    /// screen itself. A flush that delivers something asks for a full home
+    /// refresh, and a caller that then did its own fetched everything twice —
+    /// the pull-to-refresh, the poll and the silent push all did, every time a
+    /// queued moment went out with them (issue #302's audit).
     @discardableResult
-    func flushSendQueueAndWait() async -> FlushResult {
+    func flushSendQueueAndWait(refreshingHome: Bool = true) async -> FlushResult {
         guard sessionStore.hasSession else { return FlushResult() }
-        return await performFlush()
+        return await performFlush(refreshingHome: refreshingHome)
     }
 
     @discardableResult
-    private func performFlush() async -> FlushResult {
+    private func performFlush(refreshingHome: Bool = true) async -> FlushResult {
         await absorbMomentInbox()
         let api = self.api
         let photos = self.pendingPhotos
@@ -360,7 +366,7 @@ final class AppModel {
 
         if result.didChangeAnything {
             // A send that landed changes the timeline, the tallies and the widget.
-            await onHomeRefreshRequested?()
+            if refreshingHome { await onHomeRefreshRequested?() }
             widgetSync.reloadTimelines()
         }
         return result
@@ -1009,6 +1015,12 @@ final class AppModel {
     func applicationDidBecomeActive() async {
         guard hasAgreedToPrivacyPolicy else { return }
         await push.refreshAuthorizationStatus()
+        // A cold launch becomes active while `bootstrap` is still running, and
+        // `bootstrap` already fetches the connections and flushes the queue —
+        // doing it here as well fetched the connection list twice on every
+        // launch (issue #302's audit). Nothing below is lost by waiting: the
+        // home screen loads its own content when it first appears.
+        guard phase != .loading else { return }
         // Coming back to the app is the other reliable moment to drain the queue:
         // the reachability callback covers a network that returns while the app is
         // running, this covers everything that changed while it was not.

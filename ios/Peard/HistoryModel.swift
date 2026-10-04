@@ -45,6 +45,7 @@ final class HistoryModel {
     private(set) var error: String?
 
     private var nextPage = 1
+    private var newestGate = RefreshGate()
     /// Bumped whenever the pages in memory stop being the answer to the
     /// question being asked — see `apply(_:)`. A page request remembers the
     /// value it started under and is dropped if it has moved on by the time the
@@ -490,6 +491,18 @@ final class HistoryModel {
         posts = page.posts + posts[(cut + 1)...].filter { !fresh.contains($0.id) }
         totalItems = page.totalItems
         await loadReactions(for: page.posts.map(\.id))
+    }
+
+    /// `refreshNewest`, unless it has just run for the same reason.
+    ///
+    /// The tab's `.task` runs on every return to it, so flicking between Home
+    /// and Timeline re-read the first page and its reactions each time
+    /// (issue #302's audit). A changed `key` — Home's newest moments — always
+    /// fetches; an unchanged one waits out `RefreshGate`'s window.
+    func refreshNewestIfDue(key: String) async {
+        guard newestGate.isDue(key: key) else { return }
+        newestGate.record(key: key)
+        await refreshNewest()
     }
 
     /// Called as the last row appears. Guarded against re-entry so a fast scroll

@@ -597,10 +597,18 @@ public extension APIClient {
 
     // MARK: Absolute URLs
 
+    /// The one session every `data(from:)` shares.
+    ///
+    /// It used to make a session per call, which costs more than it looks:
+    /// each session has its own connection pool, so every avatar and every
+    /// photo paid for a fresh TCP and TLS handshake to a server it was already
+    /// talking to — and none of those sessions was ever invalidated.
+    static let fileSession = APIClient.makeSession()
+
     /// Fetches an absolute URL (the widget feed's `media_url` is already
     /// absolute, so it does not go through `baseURL`).
     static func data(from url: URL, session: URLSession? = nil) async throws -> Data {
-        let session = session ?? APIClient.makeSession()
+        let session = session ?? APIClient.fileSession
         do {
             let (data, response) = try await session.data(from: url)
             if let http = response as? HTTPURLResponse, !(200...299).contains(http.statusCode) {

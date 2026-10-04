@@ -41,11 +41,12 @@ struct HistoryView: View {
                     }
                 }
                 .refreshable { await model.reload() }
-                // Runs on first appearance, on every return to the tab, and
-                // whenever Home's newest moments change, which is how a moment
-                // logged on Home, by a widget or Siri, or by somebody else gets
-                // here without a pull to refresh (issue #113).
-                .task(id: refreshKey) { await model.refreshNewest() }
+                // Runs on first appearance, on a return to the tab that has
+                // been away a while, and whenever Home's newest moments change,
+                // which is how a moment logged on Home, by a widget or Siri, or
+                // by somebody else gets here without a pull to refresh
+                // (issue #113).
+                .task(id: refreshKey) { await model.refreshNewestIfDue(key: refreshKey) }
                 // Searched on the server, so it finds a note from last spring,
                 // not only what has been scrolled into memory.
                 .searchable(text: $searchText, prompt: "Notes, captions, moments")

@@ -62,6 +62,9 @@ final class HomeModel {
 
     private var toastTask: Task<Void, Never>?
     private var countdownTask: Task<Void, Never>?
+    /// When the content was last fetched, so returning to the Home tab does
+    /// not fetch it all again; see `RefreshGate`.
+    private var contentGate = RefreshGate()
 
     init(app: AppModel, pairID: String) {
         self.app = app
@@ -280,13 +283,21 @@ final class HomeModel {
     // MARK: Loading
 
     func load() async {
-        isLoading = true
         app.onHomeRefreshRequested = { [weak self] in
             await self?.refreshAll()
         }
         app.onHomeForegrounded = { [weak self] in
             await self?.refreshContent()
         }
+        // This runs every time the Home tab appears, not once. A tab switch is
+        // not news: the poll, the foreground hook and the silent push are what
+        // keep this screen current, so only fetch here when none of them has
+        // lately — or ever, which is the first appearance.
+        guard contentGate.isDue() else {
+            await app.markSelectedConnectionSeen()
+            return
+        }
+        isLoading = true
         await refreshContent()
         isLoading = false
         // After the posts are in, not before: the stamp means "you have seen up
@@ -407,7 +418,10 @@ final class HomeModel {
         // leaves the queue, and posts or tallies read before it landed would
         // then show neither the queued copy nor the delivered one until the
         // next refresh.
-        await app.flushSendQueueAndWait()
+        //
+        // Without the home refresh a delivery would ask for: that would be this
+        // function again, fetching everything twice over.
+        await app.flushSendQueueAndWait(refreshingHome: false)
         await refreshContent()
         await connections
     }
@@ -421,6 +435,7 @@ final class HomeModel {
     /// card. The one ordering that does matter — the "seen" stamp after the
     /// posts — lives in `load`, after this returns.
     func refreshContent() async {
+        contentGate.record()
         async let kinds: Void = refreshCustomKinds()
         async let timeline: Void = refresh()
         async let tallies: Void = refreshTallies()
@@ -638,18 +653,16 @@ final class HomeModel {
         playHaptic(.sent)
         showToast(isOffline ? "\(moment.emoji) saved — will send" : "\(moment.emoji) logged!")
 
-        let result = await app.flushSendQueueAndWait()
-        if result.sent > 0 {
-            await refresh()
-            await refreshTallies()
-        }
+        // A delivery refreshes the whole screen from inside the flush; fetching
+        // the posts and tallies again here afterwards was the same requests a
+        // second time (issue #302's audit).
+        await app.flushSendQueueAndWait()
     }
 
-    /// Retries sends that have given up, after the user asks.
+    /// Retries sends that have given up, after the user asks. Anything that
+    /// lands refreshes the screen from inside the flush, as above.
     func retryPendingSends() async {
         await app.retryStalledSends()
-        await refresh()
-        await refreshTallies()
     }
 
     /// Discards the queue after the user decides the moments are no longer worth
@@ -967,11 +980,8 @@ final class HomeModel {
         playHaptic(.sent)
         showToast(isOffline ? "📸 saved — will send" : "📸 sending…")
 
-        let result = await app.flushSendQueueAndWait()
-        if result.sent > 0 {
-            await refresh()
-            await refreshTallies()
-        }
+        // A delivery refreshes the screen from inside the flush, as for a moment.
+        await app.flushSendQueueAndWait()
         app.widgetSync.reloadTimelines()
     }
 
