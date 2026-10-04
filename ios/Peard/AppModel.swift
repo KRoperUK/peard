@@ -55,6 +55,13 @@ final class AppModel {
     var appearance: AppearancePreference {
         didSet { sharedStore.appearance = appearance }
     }
+
+    /// Automatic, on or off — see `LowDataPreference`. Mirrored for the same
+    /// reason as `appearance`: views key on it, and a defaults read is not
+    /// observable.
+    var lowData: LowDataPreference {
+        didSet { sharedStore.lowData = lowData }
+    }
     let widgetSync: WidgetSync
     let push: PushCoordinator
     let liveActivities: LiveActivityCoordinator
@@ -101,6 +108,12 @@ final class AppModel {
     private(set) var pendingSends: [PendingSend] = []
     /// False while there is no usable network path.
     private(set) var isOnline = true
+    /// True while iOS Low Data Mode is on for the network in use.
+    private(set) var isNetworkConstrained = false
+    /// Hidden for the rest of the session once dismissed. Not remembered past
+    /// that: the notice is the only sign of why photos look soft, and somebody
+    /// who forgot they turned it on deserves to be told again next launch.
+    var lowDataNoticeDismissed = false
     /// The caller's own record, loaded lazily by the settings screen.
     private(set) var profile: UserProfile?
 
@@ -133,6 +146,7 @@ final class AppModel {
         self.sessionStore = sessionStore
         self.sharedStore = sharedStore
         self.appearance = sharedStore.appearance
+        self.lowData = sharedStore.lowData
         let api = APIClient(baseURL: config.serverURL, tokenProvider: sessionStore, session: session)
         self.api = api
         self.fileTokens = FileTokenStore(api: api)
@@ -181,7 +195,7 @@ final class AppModel {
     /// free wake-up, and the device demonstrably has connectivity to have received
     /// it at all.
     private func performBackgroundRefresh() async {
-        await flushSendQueueAndWait()
+        await flushSendQueueAndWait(refreshingHome: false)
         await onHomeRefreshRequested?()
         await widgetSync.sync()
     }
@@ -267,6 +281,10 @@ final class AppModel {
     func attachSendQueue() async {
         await refreshPendingSends()
         isOnline = reachability.isOnline
+        isNetworkConstrained = reachability.isConstrained
+        reachability.onConstrainedChange { [weak self] constrained in
+            Task { @MainActor in self?.isNetworkConstrained = constrained }
+        }
         reachability.onChange { [weak self] online in
             Task { @MainActor in
                 guard let self else { return }
@@ -293,6 +311,33 @@ final class AppModel {
     func enqueue(_ send: PendingSend) async {
         await sendQueue.enqueue(send)
         await refreshPendingSends()
+    }
+
+    /// Answers a photo from the photo viewer (issue #304): words, or a photo
+    /// of your own captioned with them. Here rather than on a screen's model
+    /// because the viewer opens from both Home and the timeline, and the queue
+    /// is the app's either way.
+    ///
+    /// Queued, then flushed, like any moment. Returns false only when nothing
+    /// was queued — no words and no photo, or a photo that could not be kept
+    /// to send; a reply that is merely waiting for signal has worked.
+    @discardableResult
+    func reply(to photo: Post, note: String, image: UIImage? = nil) async -> Bool {
+        let data = image?.jpegData(compressionQuality: PhotoSquare.jpegQuality)
+        if image != nil, data?.isEmpty ?? true { return false }
+        guard let send = PendingSend.reply(to: photo, authorID: signedInUserID, note: note, withPhoto: data != nil),
+              !send.authorID.isEmpty
+        else { return false }
+        if let data {
+            do {
+                try pendingPhotos.save(data, for: send.id)
+            } catch {
+                return false
+            }
+        }
+        await enqueue(send)
+        await flushSendQueueAndWait()
+        return true
     }
 
     /// "Me too" or a reply from a moment's notification (issue #154): queued,
@@ -328,14 +373,20 @@ final class AppModel {
     }
 
     /// Awaits a flush. Used where the caller wants the result before redrawing.
+    ///
+    /// `refreshingHome: false` is for a caller about to re-read the home
+    /// screen itself. A flush that delivers something asks for a full home
+    /// refresh, and a caller that then did its own fetched everything twice —
+    /// the pull-to-refresh, the poll and the silent push all did, every time a
+    /// queued moment went out with them (issue #302's audit).
     @discardableResult
-    func flushSendQueueAndWait() async -> FlushResult {
+    func flushSendQueueAndWait(refreshingHome: Bool = true) async -> FlushResult {
         guard sessionStore.hasSession else { return FlushResult() }
-        return await performFlush()
+        return await performFlush(refreshingHome: refreshingHome)
     }
 
     @discardableResult
-    private func performFlush() async -> FlushResult {
+    private func performFlush(refreshingHome: Bool = true) async -> FlushResult {
         await absorbMomentInbox()
         let api = self.api
         let photos = self.pendingPhotos
@@ -360,7 +411,7 @@ final class AppModel {
 
         if result.didChangeAnything {
             // A send that landed changes the timeline, the tallies and the widget.
-            await onHomeRefreshRequested?()
+            if refreshingHome { await onHomeRefreshRequested?() }
             widgetSync.reloadTimelines()
         }
         return result
@@ -1009,6 +1060,12 @@ final class AppModel {
     func applicationDidBecomeActive() async {
         guard hasAgreedToPrivacyPolicy else { return }
         await push.refreshAuthorizationStatus()
+        // A cold launch becomes active while `bootstrap` is still running, and
+        // `bootstrap` already fetches the connections and flushes the queue —
+        // doing it here as well fetched the connection list twice on every
+        // launch (issue #302's audit). Nothing below is lost by waiting: the
+        // home screen loads its own content when it first appears.
+        guard phase != .loading else { return }
         // Coming back to the app is the other reliable moment to drain the queue:
         // the reachability callback covers a network that returns while the app is
         // running, this covers everything that changed while it was not.
@@ -1029,6 +1086,17 @@ final class AppModel {
         // so content read here before a queued moment lands is corrected then.
         await onHomeForegrounded?()
     }
+}
+
+extension AppModel {
+    /// Whether to behave as low-data now: the preference, applied to what the
+    /// network is reporting.
+    var isLowDataActive: Bool {
+        lowData.isActive(systemConstrained: isNetworkConstrained)
+    }
+
+    /// The size every list thumbnail is asked for at.
+    var listPhotoThumb: PhotoThumb { PhotoThumb.list(lowData: isLowDataActive) }
 }
 
 extension AppModel {

@@ -1,7 +1,9 @@
 import PeardCore
 import SwiftUI
 
-/// The moment grid and nothing else: a tap logs to the connection shown.
+/// The moment grid: a tap logs to the connection shown. Above it, only what
+/// earns its space on a small screen (issue #287) — the last moment again, and
+/// one line of today's counts.
 struct MomentGridView: View {
     @Bindable var model: WatchModel
 
@@ -40,6 +42,19 @@ struct MomentGridView: View {
             }
         case .ready:
             ScrollView {
+                if let again = WatchGlance.logAgain(lastKind: model.lastLoggedKind, in: model.moments, firstRow: columns.count) {
+                    logAgainTile(for: again)
+                }
+                if let today = model.today, let line = WatchGlance.todayLine(today) {
+                    Text(line)
+                        .font(.footnote)
+                        .foregroundStyle(.secondary)
+                        .lineLimit(1)
+                        .minimumScaleFactor(0.8)
+                        .frame(maxWidth: .infinity, alignment: .leading)
+                        .padding(.horizontal, 4)
+                        .accessibilityLabel(WatchGlance.todayAccessibilityLabel(today) ?? line)
+                }
                 LazyVGrid(columns: columns, spacing: 8) {
                     ForEach(model.moments) { moment in
                         button(for: moment)
@@ -80,6 +95,33 @@ struct MomentGridView: View {
         }
         .buttonStyle(.bordered)
         .accessibilityLabel(Self.accessibilityLabel(moment, state))
+    }
+
+    /// The last moment logged from the watch, full width above the grid: the
+    /// likeliest next tap, without scrolling for it on a small screen. Shares
+    /// the grid button's state, since it logs the same moment.
+    private func logAgainTile(for moment: WidgetFeed.AvailableMoment) -> some View {
+        let state = model.logStates[moment.kind.rawValue]
+        return Button {
+            Task { await model.log(moment) }
+        } label: {
+            HStack(spacing: 6) {
+                Text(moment.emoji).font(.title3)
+                Text(moment.label).lineLimit(1)
+                Spacer(minLength: 0)
+                switch state {
+                case .sending: ProgressView().frame(width: 20, height: 20)
+                case .logged: Image(systemName: "checkmark.circle.fill").foregroundStyle(PearColor.accent)
+                case .queued: Image(systemName: "clock.fill").foregroundStyle(PearColor.accent)
+                case .failed: Image(systemName: "exclamationmark.circle.fill").foregroundStyle(PearColor.error)
+                case nil: Image(systemName: "arrow.counterclockwise").foregroundStyle(.secondary)
+                }
+            }
+            .frame(maxWidth: .infinity, minHeight: 44)
+        }
+        .buttonStyle(.bordered)
+        .padding(.horizontal, 4)
+        .accessibilityLabel(state == nil ? "Log \(moment.label) again" : Self.accessibilityLabel(moment, state))
     }
 
     static func accessibilityLabel(_ moment: WidgetFeed.AvailableMoment, _ state: WatchModel.LogState?) -> String {

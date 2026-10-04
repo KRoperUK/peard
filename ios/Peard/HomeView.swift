@@ -173,6 +173,10 @@ struct HomeView: View {
                 pendingBanner(summary)
             }
 
+            if app.isLowDataActive, !app.lowDataNoticeDismissed {
+                LowDataNotice()
+            }
+
             MomentGrid(
                 moments: model.gridMoments,
                 pendingKind: model.quickSend?.moment.kind,
@@ -265,6 +269,14 @@ struct HomeView: View {
                             .lineLimit(2)
                     }
 
+                    if post.replyTo != nil {
+                        ReplyChip(
+                            original: model.original(for: post),
+                            title: model.replyTitle(for: post),
+                            serverURL: model.serverURL
+                        ) { viewingPhoto = $0 }
+                    }
+
                     reactionRow
                 }
                 Spacer(minLength: 0)
@@ -285,7 +297,7 @@ struct HomeView: View {
     private func heroThumbnail(for post: Post) -> some View {
         // `hasMedia` rather than `type == .photo`: a moment can carry a photo
         // now, and keying on the type would draw its emoji and hide the picture.
-        if post.hasMedia, let path = post.mediaThumbnailPath() {
+        if post.hasMedia, let path = post.mediaThumbnailPath(app.listPhotoThumb) {
             ProtectedImage(serverURL: model.serverURL, path: path) {
                 ProgressView()
             } failure: {
@@ -627,10 +639,15 @@ struct HomeView: View {
     /// Requirement 11.12 — refresh on a timer while in the foreground, less
     /// often when pushes are doing the same job (see `HomePoll`). Returning to
     /// the foreground is handled once, by `AppModel.applicationDidBecomeActive`.
+    ///
+    /// Not at all under low data (issue #302): the poll is the one fetch
+    /// nobody asked for. Opening the app, a push and a pull to refresh still
+    /// update the screen. Checked each time round rather than once, so turning
+    /// it off resumes the poll without leaving the screen.
     private func pollWhileVisible() async {
         while !Task.isCancelled {
             try? await Task.sleep(for: HomePoll.interval(pushAuthorised: app.push.notificationsAvailable))
-            guard !Task.isCancelled, scenePhase == .active else { continue }
+            guard !Task.isCancelled, scenePhase == .active, !app.isLowDataActive else { continue }
             await model.refreshAll()
         }
     }

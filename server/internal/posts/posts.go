@@ -10,7 +10,9 @@
 // hours back — by a person picking a time, or by the offline queue sending a
 // moment late with the time it was tapped. `rewound` tells those apart: it is
 // what the client says (true only for a picked time), and only stands when
-// there is a time more than a minute back for it to describe.
+// there is a time more than a minute back for it to describe. And it checks
+// that an answer to a photo points at a photo in the same connection — see
+// CheckReplyTo.
 //
 // Deletion is deliberately *not* here. `posts.DeleteRule` is already
 // `author = @request.auth.id`, so the ordinary collection endpoint does it, and
@@ -67,6 +69,9 @@ func Register(app core.App) {
 		}
 		if e.Record.GetString("type") == noteType && strings.TrimSpace(e.Record.GetString("note")) == "" {
 			return e.BadRequestError(emptyReply, nil)
+		}
+		if msg := CheckReplyTo(e.App, e.Record); msg != "" {
+			return e.BadRequestError(msg, nil)
 		}
 		return e.Next()
 	})
@@ -197,6 +202,35 @@ func CheckHappenedAt(at types.DateTime, logged time.Time) string {
 		return "a moment cannot happen in the future"
 	case t.Before(logged.Add(-maxRewind - clockSkew)):
 		return "a moment can only be rewound up to 24 hours"
+	}
+	return ""
+}
+
+// CheckReplyTo returns why a post's `reply_to` is refused, or "" when it is
+// fine or unset.
+//
+// An answer is to a photo — that is all anybody asked to answer — and it is in
+// the photo's own connection. The CreateRule keeps a post inside a connection
+// its author is in, but says nothing about what it points at, and a reply
+// pointing across connections would put one group's photo, thumbnail and all,
+// in front of another. Words or a photo, never a moment: a moment counts in
+// the tallies, and answering a photo is not doing anything.
+func CheckReplyTo(app core.App, post *core.Record) string {
+	targetID := post.GetString("reply_to")
+	if targetID == "" {
+		return ""
+	}
+	if kind := post.GetString("type"); kind != noteType && kind != "photo" {
+		return "only words or a photo can answer a photo"
+	}
+	// The same answer for a photo that has gone and one in a connection the
+	// caller is not in, so a post id cannot be confirmed by guessing at it.
+	target, err := app.FindRecordById("posts", targetID)
+	if err != nil || target == nil || target.GetString("pair") != post.GetString("pair") {
+		return "that photo no longer exists"
+	}
+	if target.GetString("type") != "photo" && target.GetString("media") == "" {
+		return "only a photo can be answered"
 	}
 	return ""
 }

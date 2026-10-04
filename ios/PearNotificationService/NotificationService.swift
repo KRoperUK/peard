@@ -13,6 +13,13 @@ import UserNotifications
 /// drop Live Activity to show: that activity is started by its own push and has
 /// no network, so this is the only way the picture reaches it.
 ///
+/// Under low data (issue #302) the picture is the part to give up: it is a
+/// download nobody asked for yet, made for a notification that may never be
+/// looked at. "On" skips it outright. "Automatic" asks iOS to refuse it on a
+/// Low Data Mode network — `allowsConstrainedNetworkAccess`, which fails the
+/// request at once rather than spending anything — so the alert arrives as
+/// text, exactly as it does when a download fails.
+///
 /// Deliberately small, and without PeardCore: a service extension gets about
 /// 24 MB and 30 seconds. Anything that goes wrong — no URL, a failed or slow
 /// download, an expired token — delivers the notification exactly as it arrived.
@@ -21,6 +28,9 @@ final class NotificationService: UNNotificationServiceExtension {
     private var contentHandler: ((UNNotificationContent) -> Void)?
     private var bestAttempt: UNMutableNotificationContent?
     private var download: URLSessionDownloadTask?
+    /// Where the low-data preference is read from. Replaceable so a test is
+    /// not at the mercy of whatever the simulator's app last saved.
+    var preferences: UserDefaults? = UserDefaults(suiteName: NotificationService.appGroup)
 
     override func didReceive(
         _ request: UNNotificationRequest,
@@ -35,12 +45,20 @@ final class NotificationService: UNNotificationServiceExtension {
             return
         }
 
+        let lowData = Self.lowDataPreference(defaults: preferences)
+        guard lowData != "on" else {
+            contentHandler(request.content)
+            return
+        }
+
         lock.lock()
         self.contentHandler = contentHandler
         bestAttempt = content
         lock.unlock()
 
-        let task = URLSession.shared.downloadTask(with: url) { [weak self] location, response, _ in
+        var photoRequest = URLRequest(url: url)
+        photoRequest.allowsConstrainedNetworkAccess = lowData == "off"
+        let task = URLSession.shared.downloadTask(with: photoRequest) { [weak self] location, response, _ in
             if let location, (response as? HTTPURLResponse)?.statusCode == 200 {
                 if let postID = request.content.userInfo["post_id"] as? String {
                     Self.cacheForLiveActivity(location, postID: postID)
@@ -80,6 +98,19 @@ final class NotificationService: UNNotificationServiceExtension {
 
     // Kept in step with PeardCore's PhotoDropCache by PhotoDropCacheTests.
     static let appGroup = "group.com.peard.app"
+    /// `SharedStore.Key.lowData`; its values are `LowDataPreference`'s raw
+    /// values. NotificationServiceTests keeps both in step.
+    static let lowDataKey = "lowData"
+
+    /// "automatic", "on" or "off". Anything else — nothing stored yet, or a
+    /// value from a later build — reads as automatic, as it does in the app.
+    static func lowDataPreference(defaults: UserDefaults?) -> String {
+        switch defaults?.string(forKey: lowDataKey) {
+        case "on": return "on"
+        case "off": return "off"
+        default: return "automatic"
+        }
+    }
     static let cacheDirectoryName = "PhotoDrops"
     /// Long enough to outlive any activity (which goes stale in thirty
     /// minutes), short enough that the folder never becomes a photo library.

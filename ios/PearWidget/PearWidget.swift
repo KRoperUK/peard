@@ -137,11 +137,20 @@ struct PearTimelineProvider: AppIntentTimelineProvider {
             return .placeholder
         }
 
+        // The large family's sharper photo is a nicety; under low data it gets
+        // the 512 every other family draws (issue #302). Only probed when it
+        // could matter, since the probe waits on a path update.
+        var largePhoto = family == .systemLarge
+        if largePhoto {
+            let constrained = store.lowData == .automatic ? await Reachability.probeIsConstrained() : false
+            largePhoto = !store.lowData.isActive(systemConstrained: constrained)
+        }
+
         do {
             let feed = try await APIClient(baseURL: baseURL).widgetFeed(
                 token: token,
                 pairID: pairID,
-                largePhoto: family == .systemLarge
+                largePhoto: largePhoto
             )
             // The configured pair when there is one, else whichever the server
             // chose — so a button logs into the connection on screen.

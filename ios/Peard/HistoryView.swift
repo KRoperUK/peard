@@ -4,6 +4,7 @@ import SwiftUI
 /// The timeline screen. A tab rather than a sheet, so reading back through the
 /// shared timeline does not have to be dismissed to log anything.
 struct HistoryView: View {
+    @Environment(AppModel.self) private var app
     @State private var model: HistoryModel
     @State private var editing: Post?
     @State private var deleting: Post?
@@ -41,11 +42,12 @@ struct HistoryView: View {
                     }
                 }
                 .refreshable { await model.reload() }
-                // Runs on first appearance, on every return to the tab, and
-                // whenever Home's newest moments change, which is how a moment
-                // logged on Home, by a widget or Siri, or by somebody else gets
-                // here without a pull to refresh (issue #113).
-                .task(id: refreshKey) { await model.refreshNewest() }
+                // Runs on first appearance, on a return to the tab that has
+                // been away a while, and whenever Home's newest moments change,
+                // which is how a moment logged on Home, by a widget or Siri, or
+                // by somebody else gets here without a pull to refresh
+                // (issue #113).
+                .task(id: refreshKey) { await model.refreshNewestIfDue(key: refreshKey) }
                 // Searched on the server, so it finds a note from last spring,
                 // not only what has been scrolled into memory.
                 .searchable(text: $searchText, prompt: "Notes, captions, moments")
@@ -322,6 +324,15 @@ struct HistoryView: View {
                     }
                 }
 
+                if post.replyTo != nil {
+                    ReplyChip(
+                        original: model.original(for: post),
+                        title: model.replyTitle(for: post),
+                        serverURL: serverURL
+                    ) { viewing = $0 }
+                    .padding(.top, 1)
+                }
+
                 let kinds = model.reactionKinds(for: post)
                 if !kinds.isEmpty {
                     HStack(spacing: 3) {
@@ -357,6 +368,9 @@ struct HistoryView: View {
             if post.hasMedia {
                 Button("Open photo") { viewing = post }
             }
+            if let original = model.original(for: post), original.hasMedia {
+                Button("Open the photo it replies to") { viewing = original }
+            }
         }
         .modifier(MomentActions(
             post: post,
@@ -372,6 +386,7 @@ struct HistoryView: View {
     private func accessibilityLabel(for post: Post) -> String {
         var parts = [model.authorLabel(for: post), model.detail(for: post)]
         if post.hasMedia { parts.append("photo") }
+        if post.replyTo != nil { parts.append(model.replyTitle(for: post)) }
         if post.isEdited { parts.append("edited") }
         if model.strayNewPostIDs.contains(post.id) { parts.append("new") }
         if post.rewound { parts.append(RewoundChip.accessibilityLabel(loggedAt: post.created)) }
@@ -385,7 +400,7 @@ struct HistoryView: View {
     private func thumbnail(for post: Post) -> some View {
         // `hasMedia` rather than `type == .photo`: a moment can carry a photo
         // now, and keying on the type would draw its emoji and hide the picture.
-        if post.hasMedia, let path = post.mediaThumbnailPath() {
+        if post.hasMedia, let path = post.mediaThumbnailPath(app.listPhotoThumb) {
             ProtectedImage(serverURL: serverURL, path: path) {
                 ProgressView()
             } failure: {

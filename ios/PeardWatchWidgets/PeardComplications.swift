@@ -9,6 +9,14 @@ struct ComplicationEntry: TimelineEntry {
     let date: Date
     let summary: LockScreenSummary
 
+    /// The rectangular family is also the watchOS Smart Stack widget (issue
+    /// #287), and this is what lets the stack rotate it up while a moment is
+    /// still new. Faces ignore it.
+    var relevance: TimelineEntryRelevance? {
+        let relevance = WatchGlance.smartStackRelevance(summary, now: date)
+        return TimelineEntryRelevance(score: relevance.score, duration: relevance.duration)
+    }
+
     static let placeholder = ComplicationEntry(
         date: Date(),
         summary: LockScreenSummary(state: .empty, partnerName: PartnerLabel.fallback, emoji: MomentCatalogue.fallbackEmoji)
@@ -64,7 +72,13 @@ struct ComplicationView: View {
     private var summary: LockScreenSummary { entry.summary }
 
     var body: some View {
-        content.containerBackground(.clear, for: .widget)
+        if family == .accessoryRectangular {
+            // Drawn only in the Smart Stack — a face removes it — so the widget
+            // reads as Pear'd's among the others rather than as default material.
+            content.containerBackground(PearColor.accent.opacity(0.3).gradient, for: .widget)
+        } else {
+            content.containerBackground(.clear, for: .widget)
+        }
     }
 
     @ViewBuilder
@@ -126,7 +140,7 @@ struct PeardComplications: Widget {
             ComplicationView(entry: entry)
         }
         .configurationDisplayName("Pear'd")
-        .description("The latest moment and today's count.")
+        .description("The latest moment and today's count, on a face or in the Smart Stack.")
         .supportedFamilies([.accessoryCircular, .accessoryRectangular, .accessoryInline, .accessoryCorner])
     }
 }

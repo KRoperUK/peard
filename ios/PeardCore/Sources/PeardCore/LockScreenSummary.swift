@@ -50,13 +50,7 @@ public struct LockScreenSummary: Equatable, Sendable {
         let total = tallies.reduce(0) { $0 + $1.count }
         self.todayTotal = total
 
-        // Three tallies, matching the home-screen widget's own cap. Rectangular
-        // is narrower than the small family, so this is the ceiling rather than
-        // the target.
-        let shown = tallies.prefix(3)
-        self.talliesText = shown.isEmpty
-            ? nil
-            : shown.map { "\($0.emoji) \($0.count)" }.joined(separator: "  ")
+        self.talliesText = Self.talliesText(tallies)
 
         switch state {
         case .unpaired:
@@ -92,5 +86,14 @@ public struct LockScreenSummary: Equatable, Sendable {
             let tail = [trimmedNote, label].first { !$0.isEmpty }
             self.inlineText = tail.map { "\(resolvedEmoji) \(name) · \($0)" } ?? "\(resolvedEmoji) \(name)"
         }
+    }
+
+    /// Three tallies, matching the home-screen widget's own cap. Rectangular is
+    /// narrower than the small family, so this is the ceiling rather than the
+    /// target. Shared with the watch app's line of today's counts, which has the
+    /// same width to fit into.
+    public static func talliesText(_ tallies: [WidgetFeed.Tally]) -> String? {
+        let shown = tallies.prefix(3)
+        return shown.isEmpty ? nil : shown.map { "\($0.emoji) \($0.count)" }.joined(separator: "  ")
     }
 }
