@@ -65,6 +65,9 @@ final class AppModel {
     let momentInbox: MomentInbox
     /// The JPEGs behind queued photo moments; see `PendingPhotoStore`.
     let pendingPhotos: PendingPhotoStore
+    /// The last-known connection list, so an offline launch is not a dead end
+    /// that claims the user has no connections (#300).
+    let connectionCache: ConnectionCaching
     let reachability: Reachability
 
     // MARK: State
@@ -83,6 +86,12 @@ final class AppModel {
     /// Drives the retry control shown when membership resolution failed
     /// (Requirement 9.6).
     private(set) var membershipFailed = false
+    /// When `connections` was last fetched from the server, so a list restored
+    /// from the cache can say how old it is (#300).
+    private(set) var connectionsUpdatedAt: Date?
+    /// True while the list on screen came from the cache rather than the server,
+    /// which is what makes it worth saying so.
+    private(set) var connectionsFromCache = false
     /// Post to scroll to after a notification tap (Requirement 18.7).
     var focusedPostID: String?
     /// Non-blocking message shown under the current screen.
@@ -116,13 +125,15 @@ final class AppModel {
         sharedStore: SharedStore = .shared,
         sendQueue: SendQueue? = nil,
         momentInbox: MomentInbox = .appGroup(),
-        reachability: Reachability = Reachability()
+        connectionCache: ConnectionCaching = FileConnectionCache.appGroup(),
+        reachability: Reachability = Reachability(),
+        session: URLSession? = nil
     ) {
         self.config = config
         self.sessionStore = sessionStore
         self.sharedStore = sharedStore
         self.appearance = sharedStore.appearance
-        let api = APIClient(baseURL: config.serverURL, tokenProvider: sessionStore)
+        let api = APIClient(baseURL: config.serverURL, tokenProvider: sessionStore, session: session)
         self.api = api
         self.fileTokens = FileTokenStore(api: api)
         self.widgetSync = WidgetSync(api: api, store: sharedStore, baseURL: config.serverURL)
@@ -131,6 +142,7 @@ final class AppModel {
         self.sendQueue = sendQueue ?? SendQueue(store: FilePendingSendStore.appGroup())
         self.momentInbox = momentInbox
         self.pendingPhotos = PendingPhotoStore.appGroup()
+        self.connectionCache = connectionCache
         self.reachability = reachability
 
         appIcon = AppIconChoice(alternateName: UIApplication.shared.alternateIconName)
@@ -424,6 +436,7 @@ final class AppModel {
         membershipFailed = false
         do {
             connections = try await api.connections()
+            rememberConnections()
             guard let selected = resolvedSelection() else {
                 phase = .connections
                 return
@@ -438,14 +451,62 @@ final class AppModel {
             }
             // Transport or server failure: land on the connections screen with
             // a retry control (Requirement 9.6).
-            membershipFailed = true
-            phase = .connections
-            banner = error.localizedDescription
+            landAfterFailedMembership(error)
         } catch {
-            membershipFailed = true
-            phase = .connections
-            banner = error.localizedDescription
+            landAfterFailedMembership(error)
         }
+    }
+
+    /// Where a launch goes when the connection list could not be fetched.
+    ///
+    /// The offline case is the one that matters: the tester in #300 was in
+    /// airplane mode, and the app told them they had no connections. It has not
+    /// asked anybody; it has failed to ask the server. So fall back to the list
+    /// we last knew, land on the connection that was last on screen, and let
+    /// `connectionsFromCache` and `connectionsUpdatedAt` say how old it is.
+    /// With no remembered connection it stays on the list rather than guessing.
+    private func landAfterFailedMembership(_ error: Error) {
+        membershipFailed = true
+        banner = error.localizedDescription
+        if restoreCachedConnections(),
+           let remembered = sharedStore.selectedConnectionID,
+           connections.contains(where: { $0.id == remembered }) {
+            phase = .home(pairID: remembered)
+            return
+        }
+        phase = .connections
+    }
+
+    /// Records a freshly fetched list as the one to fall back on, and marks it
+    /// as current rather than cached.
+    private func rememberConnections() {
+        let now = Date()
+        connectionsUpdatedAt = now
+        connectionsFromCache = false
+        connectionCache.saveConnections(connections, at: now)
+    }
+
+    /// Fills an empty list from the cache. Returns whether anything was restored,
+    /// and leaves the list alone when it already has something: an in-memory list
+    /// fetched a minute ago beats a file written yesterday.
+    @discardableResult
+    private func restoreCachedConnections() -> Bool {
+        guard connections.isEmpty,
+              let cached = connectionCache.loadConnections(),
+              !cached.connections.isEmpty else { return false }
+        connections = cached.connections
+        connectionsUpdatedAt = cached.savedAt
+        connectionsFromCache = true
+        return true
+    }
+
+    /// Forgets the cached list, on sign-out and account deletion. Leaving it
+    /// behind would show the next person to use the device the last person's
+    /// connections.
+    private func forgetCachedConnections() {
+        connectionCache.clear()
+        connectionsUpdatedAt = nil
+        connectionsFromCache = false
     }
 
     /// The connection the home screen should show: the remembered one while it
@@ -509,8 +570,12 @@ final class AppModel {
         guard let userID = sessionStore.userID, !userID.isEmpty else { return }
         do {
             connections = try await api.connections()
+            rememberConnections()
         } catch {
-            await handleIfUnauthorized(error)
+            if await handleIfUnauthorized(error) { return }
+            // Offline, or the server is down: keep what we have, and fall back to
+            // the cache if a cold start left us with nothing.
+            restoreCachedConnections()
             return
         }
         if case .home(let pairID) = phase, connections.contains(where: { $0.id == pairID }) {
@@ -821,6 +886,7 @@ final class AppModel {
         prunePendingPhotos()
         sessionStore.clear()
         widgetSync.clear()
+        forgetCachedConnections()
         connections = []
         profile = nil
         sharedStore.selectedConnectionID = nil
@@ -835,6 +901,7 @@ final class AppModel {
     func clearSessionAndReturnToAuth() async {
         sessionStore.clear()
         widgetSync.clear()
+        forgetCachedConnections()
         connections = []
         sharedStore.selectedConnectionID = nil
         focusedPostID = nil
@@ -868,6 +935,7 @@ final class AppModel {
         prunePendingPhotos()
         sessionStore.clear()
         widgetSync.clear()
+        forgetCachedConnections()
         connections = []
         profile = nil
         sharedStore.selectedConnectionID = nil
