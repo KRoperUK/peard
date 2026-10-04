@@ -84,12 +84,17 @@ struct ConnectionsView: View {
     private var list: some View {
         List {
             if app.connections.isEmpty {
-                emptyStateSection
+                // Only when the load actually succeeded. Offline with nothing
+                // cached is not "no connections" — the app has not been told
+                // anything, it has failed to ask. See `refreshFailedSection`.
+                if !app.membershipFailed {
+                    emptyStateSection
+                }
             } else {
                 connectionsSection
             }
             if app.membershipFailed {
-                retrySection
+                refreshFailedSection
             }
             contactsSection
             codeSection
@@ -181,15 +186,32 @@ struct ConnectionsView: View {
         }
     }
 
-    private var retrySection: some View {
+    /// Shown when the list could not be fetched.
+    ///
+    /// With a cached list above it this is a line about how old that list is and
+    /// a way to retry; with nothing cached it is the whole screen, so it has to
+    /// explain itself rather than fall through to "No connections yet" — which is
+    /// what a tester in airplane mode was being told about connections they
+    /// plainly had (#300).
+    private var refreshFailedSection: some View {
         Section {
             Button("Try again") {
                 Task { await app.resolveMembership() }
             }
             .foregroundStyle(PearColor.accent)
         } footer: {
-            Text("Your connections couldn't be loaded.")
+            if let updated = app.connectionsUpdatedAt, app.connectionsFromCache {
+                Text("\(offlineLead)Last updated \(updated, format: .relative(presentation: .named)).")
+            } else {
+                Text("Your connections couldn't be loaded.")
+            }
         }
+    }
+
+    /// Names the reason before the age of the data, when the device knows there
+    /// is no network at all.
+    private var offlineLead: String {
+        app.isOnline ? "" : "You're offline. "
     }
 
     @ViewBuilder
