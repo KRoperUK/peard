@@ -238,6 +238,7 @@ func notifyPairMembers(app core.App, post *core.Record) {
 	// Which moment it was, so the app can act on the alert without asking the
 	// server first. Only an event has one; a photo on its own is not a moment.
 	kind := momentKindOf(post)
+	original := repliedTo(app, post)
 
 	for _, m := range members {
 		memberID := m.GetString("user")
@@ -245,6 +246,10 @@ func notifyPairMembers(app core.App, post *core.Record) {
 			"user = {:user}", "", 20, 0, dbx.Params{"user": memberID})
 		if err != nil {
 			continue
+		}
+		alertTitle := title
+		if original != nil {
+			alertTitle = replyTitle(app, name, post, original, memberID)
 		}
 		badge := unseenCount(app, memberID)
 		media := mediaURLFor(app, post, memberID)
@@ -258,7 +263,7 @@ func notifyPairMembers(app core.App, post *core.Record) {
 				continue
 			}
 			visible := payload.NewPayload().
-				AlertTitle(title).AlertBody(body).
+				AlertTitle(alertTitle).AlertBody(body).
 				Sound("default").MutableContent().
 				ThreadID(threadID).
 				Badge(badge).
@@ -270,6 +275,9 @@ func notifyPairMembers(app core.App, post *core.Record) {
 			}
 			if kind != "" {
 				visible.Custom("event_kind", kind)
+			}
+			if original != nil {
+				visible.Custom("reply_to", original.Id)
 			}
 			if n.send(t, visible, apns2.PushTypeAlert, apns2.PriorityHigh, collapseID) {
 				forgetDevice(app, d)
@@ -288,7 +296,7 @@ func notifyPairMembers(app core.App, post *core.Record) {
 			}
 			live = append(live, d)
 		}
-		notifyPhotoDrop(app, post, memberID, live, name, title, body)
+		notifyPhotoDrop(app, post, memberID, live, name, alertTitle, body)
 	}
 }
 
@@ -533,6 +541,42 @@ func copyFor(app core.App, name string, post *core.Record) (title, body string) 
 		body = "Tap to see the moment"
 	}
 	return "🍐 Fresh pear from " + name + suffix, body
+}
+
+// repliedTo is the photo a post answers, or nil for a post that answers
+// nothing — or answers a photo that has since been taken back.
+func repliedTo(app core.App, post *core.Record) *core.Record {
+	id := post.GetString("reply_to")
+	if id == "" {
+		return nil
+	}
+	original, err := app.FindRecordById("posts", id)
+	if err != nil {
+		return nil
+	}
+	return original
+}
+
+// replyTitle is an answer's alert title, which depends on who is reading it:
+// the person whose photo it was is told it was theirs, and everybody else
+// whose it was, so a group can tell which of the day's photos is being talked
+// about. The body is copyFor's — the words, or the photo's caption.
+func replyTitle(app core.App, name string, reply, original *core.Record, recipientID string) string {
+	emoji := "💬 "
+	if reply.GetString("type") == "photo" {
+		emoji = "📸 "
+	}
+	var whose string
+	switch owner := original.GetString("author"); owner {
+	case recipientID:
+		whose = "your"
+	case reply.GetString("author"):
+		whose = "their"
+	default:
+		ownerRecord, _ := app.FindRecordById("users", owner)
+		whose = displayName(ownerRecord) + "'s"
+	}
+	return emoji + name + " replied to " + whose + " photo" + groupSuffix(app, reply.GetString("pair"))
 }
 
 // groupSuffix names the connection when it holds more than two people, so a

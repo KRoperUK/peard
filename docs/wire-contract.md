@@ -88,6 +88,7 @@ names and avatars while never getting an email address.
 | `updated` | date | |
 | `happened_at` | date | when it happened. The timeline sorts by this, and tallies, recap, streaks and "last happened" count by it. Defaults to now; a create may set it up to 24 hours back — see [Rewinding a moment](#rewinding-a-moment) |
 | `rewound` | bool | somebody picked `happened_at`, as opposed to the moment arriving late from the offline queue. Drives the "⏪ Rewound" chip |
+| `reply_to` | string | relation → `posts`, `""` when unset. The photo this post answers — see [Answering a photo](#answering-a-photo) |
 
 Thumbnail URL: `GET /api/files/posts/{id}/{media}?thumb=512x512`. `256x256` and
 `1024x1024` are also declared; the large widget uses the 1024 one.
@@ -127,6 +128,20 @@ picking it. Rows from before the field existed were backfilled from the gap,
 because until then every gap was a picked time.
 
 The widget and Shortcuts log live only.
+
+### Answering a photo
+
+A comment on a photo is a `note` post with `reply_to` set to the photo's id; a
+photo sent back is a `photo` post with it set. Both are created through the
+collection endpoint like any other post, and both are ordinary posts to
+everything else — timeline, unread, push. The server refuses (`400`) a
+`reply_to` on any other type, one naming a post in another connection or one
+that does not exist, and one naming a post without a photo. Deleting the photo
+empties `reply_to` on its answers rather than deleting them.
+
+The alert for an answer is titled for its reader — "💬 Sam replied to your
+photo" to the photo's author, "…to Ada's photo" to everybody else (📸 for a
+photo sent back) — and carries `reply_to` beside `post_id`.
 
 `client_id` exists because the app queues moments on the device before sending
 them, so a moment logged with no signal is kept rather than discarded. That
