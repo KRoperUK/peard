@@ -4,6 +4,7 @@ import SwiftUI
 /// The timeline screen. A tab rather than a sheet, so reading back through the
 /// shared timeline does not have to be dismissed to log anything.
 struct HistoryView: View {
+    @Environment(AppModel.self) private var app
     @State private var model: HistoryModel
     @State private var editing: Post?
     @State private var deleting: Post?
@@ -386,7 +387,7 @@ struct HistoryView: View {
     private func thumbnail(for post: Post) -> some View {
         // `hasMedia` rather than `type == .photo`: a moment can carry a photo
         // now, and keying on the type would draw its emoji and hide the picture.
-        if post.hasMedia, let path = post.mediaThumbnailPath() {
+        if post.hasMedia, let path = post.mediaThumbnailPath(app.listPhotoThumb) {
             ProtectedImage(serverURL: serverURL, path: path) {
                 ProgressView()
             } failure: {

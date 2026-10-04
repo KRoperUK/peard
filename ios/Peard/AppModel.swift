@@ -55,6 +55,13 @@ final class AppModel {
     var appearance: AppearancePreference {
         didSet { sharedStore.appearance = appearance }
     }
+
+    /// Automatic, on or off — see `LowDataPreference`. Mirrored for the same
+    /// reason as `appearance`: views key on it, and a defaults read is not
+    /// observable.
+    var lowData: LowDataPreference {
+        didSet { sharedStore.lowData = lowData }
+    }
     let widgetSync: WidgetSync
     let push: PushCoordinator
     let liveActivities: LiveActivityCoordinator
@@ -101,6 +108,12 @@ final class AppModel {
     private(set) var pendingSends: [PendingSend] = []
     /// False while there is no usable network path.
     private(set) var isOnline = true
+    /// True while iOS Low Data Mode is on for the network in use.
+    private(set) var isNetworkConstrained = false
+    /// Hidden for the rest of the session once dismissed. Not remembered past
+    /// that: the notice is the only sign of why photos look soft, and somebody
+    /// who forgot they turned it on deserves to be told again next launch.
+    var lowDataNoticeDismissed = false
     /// The caller's own record, loaded lazily by the settings screen.
     private(set) var profile: UserProfile?
 
@@ -133,6 +146,7 @@ final class AppModel {
         self.sessionStore = sessionStore
         self.sharedStore = sharedStore
         self.appearance = sharedStore.appearance
+        self.lowData = sharedStore.lowData
         let api = APIClient(baseURL: config.serverURL, tokenProvider: sessionStore, session: session)
         self.api = api
         self.fileTokens = FileTokenStore(api: api)
@@ -267,6 +281,10 @@ final class AppModel {
     func attachSendQueue() async {
         await refreshPendingSends()
         isOnline = reachability.isOnline
+        isNetworkConstrained = reachability.isConstrained
+        reachability.onConstrainedChange { [weak self] constrained in
+            Task { @MainActor in self?.isNetworkConstrained = constrained }
+        }
         reachability.onChange { [weak self] online in
             Task { @MainActor in
                 guard let self else { return }
@@ -1041,6 +1059,17 @@ final class AppModel {
         // so content read here before a queued moment lands is corrected then.
         await onHomeForegrounded?()
     }
+}
+
+extension AppModel {
+    /// Whether to behave as low-data now: the preference, applied to what the
+    /// network is reporting.
+    var isLowDataActive: Bool {
+        lowData.isActive(systemConstrained: isNetworkConstrained)
+    }
+
+    /// The size every list thumbnail is asked for at.
+    var listPhotoThumb: PhotoThumb { PhotoThumb.list(lowData: isLowDataActive) }
 }
 
 extension AppModel {

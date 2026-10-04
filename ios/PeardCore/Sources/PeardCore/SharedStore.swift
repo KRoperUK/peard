@@ -19,6 +19,10 @@ public final class SharedStore: @unchecked Sendable {
         public static let appearance = "appearance"
         public static let pinnedMoments = "pinnedMoments"
         public static let watchLastMoments = "watchLastMoments"
+        /// Read by the notification service extension too, which has no
+        /// PeardCore and so spells it out itself; NotificationServiceTests
+        /// keeps the two in step.
+        public static let lowData = "lowData"
     }
 
     public static let appGroupIdentifier = "group.com.peard.app"
@@ -100,6 +104,18 @@ public final class SharedStore: @unchecked Sendable {
     public var appearance: AppearancePreference {
         get { AppearancePreference(storedValue: defaults?.string(forKey: Key.appearance)) }
         set { set(newValue.rawValue, forKey: Key.appearance) }
+    }
+
+    // MARK: Low data
+
+    /// Whether to hold back on data; see `LowDataPreference`.
+    ///
+    /// In the App Group because, unlike appearance, the extensions do act on
+    /// this one: the notification service skips the photo download, and the
+    /// widget asks for its smaller photo.
+    public var lowData: LowDataPreference {
+        get { LowDataPreference(storedValue: defaults?.string(forKey: Key.lowData)) }
+        set { set(newValue.rawValue, forKey: Key.lowData) }
     }
 
     // MARK: Pinned moments

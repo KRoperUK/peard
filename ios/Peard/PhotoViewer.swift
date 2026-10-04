@@ -34,11 +34,15 @@ struct PhotoViewer: View {
     @State private var fullSize: UIImage?
     @State private var failed = false
     @State private var saveOutcome: String?
+    /// Whether what is on screen is the photo as uploaded. Under low data it
+    /// starts as the 1024 thumbnail, and becomes the original only on request.
+    @State private var isOriginal = false
+    @State private var isLoadingOriginal = false
 
     /// Built at load time rather than up front, because the token has to be
     /// fetched: `posts.media` is protected, and the path alone is a 404.
-    private func url(token: String) -> URL? {
-        guard let path = post.mediaPath() else { return nil }
+    private func url(token: String, thumb: PhotoThumb?) -> URL? {
+        guard let path = thumb.map({ post.mediaThumbnailPath($0) }) ?? post.mediaPath() else { return nil }
         return URL(string: serverURL.absoluteString + FileTokenStore.decorate(path, token: token))
     }
 
@@ -91,7 +95,7 @@ struct PhotoViewer: View {
         } else {
             ProgressView()
                 .tint(.white)
-                .task { await load() }
+                .task { await load(thumb: PhotoThumb.viewer(lowData: app.isLowDataActive)) }
         }
     }
 
@@ -102,23 +106,35 @@ struct PhotoViewer: View {
     /// A non-2xx is treated as a failure rather than decoded: PocketBase answers
     /// a missing file with a JSON error body, and `UIImage(data:)` would simply
     /// return nil on it, which reads the same as a corrupt photo.
-    private func load() async {
-        guard let token = await app.fileTokens.current(), let url = url(token: token) else {
-            failed = true
+    ///
+    /// `thumb` is nil for the original. A failure to fetch the original over a
+    /// thumbnail already on screen leaves the thumbnail there: a worse photo
+    /// beats no photo.
+    private func load(thumb: PhotoThumb?) async {
+        let replacing = loaded != nil
+        guard let token = await app.fileTokens.current(), let url = url(token: token, thumb: thumb) else {
+            if !replacing { failed = true }
             return
         }
         do {
             let (data, response) = try await URLSession.shared.data(from: url)
             guard (response as? HTTPURLResponse)?.statusCode ?? 200 < 400,
                   let image = UIImage(data: data) else {
-                failed = true
+                if !replacing { failed = true }
                 return
             }
             fullSize = image
             loaded = Image(uiImage: image)
+            isOriginal = thumb == nil
         } catch {
-            failed = true
+            if !replacing { failed = true }
         }
+    }
+
+    private func loadOriginal() async {
+        isLoadingOriginal = true
+        defer { isLoadingOriginal = false }
+        await load(thumb: nil)
     }
 
     // MARK: Gestures
@@ -202,7 +218,29 @@ struct PhotoViewer: View {
 
             Spacer()
 
-            if let fullSize {
+            if loaded != nil, !isOriginal {
+                // Under low data the viewer opens on a 1024 thumbnail. The
+                // original is one tap away, and sharing and saving wait for it:
+                // handing somebody a reduced copy without saying so would be a
+                // surprise they find out about later.
+                Button {
+                    Task { await loadOriginal() }
+                } label: {
+                    if isLoadingOriginal {
+                        ProgressView().tint(.white)
+                    } else {
+                        Text("Load full photo")
+                            .font(.footnote.weight(.semibold))
+                            .foregroundStyle(.white)
+                    }
+                }
+                .padding(.horizontal, 12)
+                .padding(.vertical, 8)
+                .background(.black.opacity(0.4), in: Capsule())
+                .disabled(isLoadingOriginal)
+            }
+
+            if let fullSize, isOriginal {
                 ShareLink(item: Image(uiImage: fullSize), preview: SharePreview(authorLabel, image: Image(uiImage: fullSize))) {
                     Image(systemName: "square.and.arrow.up")
                         .font(.body.weight(.semibold))

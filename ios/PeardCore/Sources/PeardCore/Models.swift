@@ -272,10 +272,11 @@ public struct Post: Codable, Hashable, Sendable, Identifiable {
         return !media.isEmpty
     }
 
-    /// Path of the 512-point thumbnail for this post's attachment.
-    public func mediaThumbnailPath() -> String? {
+    /// Path of a thumbnail of this post's attachment — 512 unless asked
+    /// otherwise; see `PhotoThumb`.
+    public func mediaThumbnailPath(_ thumb: PhotoThumb = .medium) -> String? {
         guard let escaped = escapedMediaFilename else { return nil }
-        return "/api/files/posts/\(id)/\(escaped)?thumb=512x512"
+        return "/api/files/posts/\(id)/\(escaped)?thumb=\(thumb.rawValue)"
     }
 
     /// Path of the attachment at the size it was uploaded.

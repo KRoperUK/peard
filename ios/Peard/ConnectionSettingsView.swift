@@ -49,6 +49,7 @@ struct ConnectionSettingsView: View {
                 yourNameSection
                 discoverabilitySection
                 appearanceSection
+                LowDataSection()
                 appIconSection
                 MomentsExportSection(model: model)
                 accountSection
