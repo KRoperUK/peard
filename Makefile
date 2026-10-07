@@ -15,13 +15,20 @@ PROJECT = ios/Peard.xcodeproj
 ifdef KIRO_SANDBOX_OFF
 XCODE_SANDBOX_FLAGS = -skipMacroValidation 'OTHER_SWIFT_FLAGS=$$(inherited) -disable-sandbox'
 SWIFT_SANDBOX_FLAGS = --disable-sandbox
+# The sandbox denies the default temp dir, so PocketBase's test SQLite dies with
+# "unable to open database file" (error 14) — even in packages this repo never
+# touches. Point Go's TMPDIR at a writable scratch dir instead; the directory is
+# created lazily by the recipe. Unset without the toggle, so CI is untouched.
+GO_TEST_ENV = TMPDIR=$(CURDIR)/.gotmp
 endif
+
+GO_TEST = $(GO_TEST_ENV) go test
 
 XCODEBUILD = xcodebuild -project $(PROJECT) -scheme Peard $(XCODE_SANDBOX_FLAGS)
 BUILT_APP = ios/build/Build/Products/Debug-iphonesimulator/Peard.app
 
 .PHONY: server migrate app app-release run project test test-app test-ui test-integration \
-        test-all icons lint fmt hooks clean \
+        test-all test-server icons lint fmt hooks clean \
         docker-build docker-up docker-up-tls docker-up-cloudflared docker-down docker-logs
 
 # --- git hooks ---
@@ -145,8 +152,13 @@ test-ui: $(PROJECT)
 	$(XCODEBUILD) -configuration Debug -destination '$(DESTINATION)' \
 		-derivedDataPath ios/build -only-testing:PeardUITests test
 
-test-all: test test-app
-	cd server && go test ./...
+test-all: test test-app test-server
+
+# Server (Go) tests. The pre-push go-test hook delegates here so it, too, honors
+# the KIRO_SANDBOX_OFF TMPDIR override and passes under the sandbox.
+test-server:
+	@[ -n "$(GO_TEST_ENV)" ] && mkdir -p $(CURDIR)/.gotmp || true
+	cd server && $(GO_TEST) ./...
 
 # Requires a running server (make server) and its superuser credentials.
 test-integration:

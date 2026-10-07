@@ -2,6 +2,9 @@
 .DS_Store
 ._*
 
+# Go test scratch dir (KIRO_SANDBOX_OFF TMPDIR override; see Makefile)
+.gotmp/
+
 # Env / secrets
 .env
 .env.*

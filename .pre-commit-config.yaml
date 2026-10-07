@@ -95,7 +95,7 @@ repos:
     hooks:
       - id: go-test
         name: go test
-        entry: bash -c 'cd server && go test ./...'
+        entry: bash -c 'make test-server'
         language: system
         files: ^(server/|Makefile$)
         pass_filenames: false
