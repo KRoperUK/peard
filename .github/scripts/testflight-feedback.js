@@ -10,10 +10,14 @@
 // re-triages it in place (see retriageIssues). See testflight-shared.js for the
 // triage request itself.
 //
-// The repo is public, so nothing identifying a tester goes into an issue, and
-// screenshots (which show testers' connections) are only published when
-// PUBLISH_SCREENSHOTS is set. Otherwise they stay in App Store Connect, and the
-// submission is kept there until its issue is closed.
+// The repo is public, so nothing identifying a tester goes into an issue. Each
+// screenshot is run through a PII scan (shared.scanScreenshotForPII, which
+// reuses the triage vision model) and attached to the issue only when it scans
+// clean; one that shows a tester's connection — a name, avatar, message — is
+// withheld and kept in App Store Connect until the issue closes. The scan fails
+// closed: an error, timeout or inconclusive reply withholds the image. Setting
+// PUBLISH_SCREENSHOTS force-publishes without scanning; SCAN_SCREENSHOTS=0 turns
+// the scan off, falling back to withholding everything but the override.
 //
 // Run from a workflow via actions/github-script:
 //   await require('./.github/scripts/testflight-feedback.js')({ github, context, core })
@@ -80,17 +84,21 @@ module.exports = async ({ github, context, core }) => {
 
       const detail = describeSubmission(sub, submissions.included);
       const shots = await downloadScreenshots(detail.screenshots, core);
+      const { publish, withheld, verdicts } = await decideScreenshots(cfg, shots, core);
+      logVerdicts(id, verdicts, core);
       let hosted = [];
-      if (cfg.publishScreenshots) {
+      if (publish.length) {
         hosted = cfg.dryRun
-          ? shots.map((s, i) => ({ name: s.name, url: `(dry-run, not uploaded ${i})` }))
-          : await commitScreenshots({ github, owner, repo }, id, shots, core);
+          ? publish.map((s, i) => ({ name: s.name, url: `(dry-run, not uploaded ${i})` }))
+          : await commitScreenshots({ github, owner, repo }, id, publish, core);
       }
 
       const triage = await triageFeedback(cfg, detail, shots, core);
 
       if (cfg.dryRun) {
-        core.info(`#${id}: DRY_RUN — would create "${triage.titlePrefix}${triage.title}" (${triage.type})${triage.ok ? '' : ' [UNTRIAGED]'} with ${hosted.length} screenshot(s).`);
+        const wouldAttach = publish.length;
+        const wouldWithhold = withheld.length;
+        core.info(`#${id}: DRY_RUN — would create "${triage.titlePrefix}${triage.title}" (${triage.type})${triage.ok ? '' : ' [UNTRIAGED]'}; ${wouldAttach} screenshot(s) attached, ${wouldWithhold} withheld.`);
         if (!triage.ok) summary.untriaged++;
         summary.created++;
         continue;
@@ -98,7 +106,7 @@ module.exports = async ({ github, context, core }) => {
 
       const issue = await createIssue(
         { github, owner, repo },
-        { id, detail, triage, hosted, keptShots: hosted.length ? 0 : shots.length, core }
+        { id, detail, triage, hosted, withheld, keptShots: withheld.length, core }
       );
       summary.created++;
       if (triage.ok) {
@@ -111,8 +119,10 @@ module.exports = async ({ github, context, core }) => {
       // Only a triaged issue is safe to remove from App Store Connect. An
       // untriaged one is kept so a later run can re-triage it against the same
       // submission, and the issue is still open; deleting it would destroy the
-      // only copy of the feedback before anyone has read it.
-      if (triage.ok && (hosted.length || shots.length === 0)) {
+      // only copy of the feedback before anyone has read it. A withheld
+      // screenshot (PII, or unscannable) is ALSO kept there — the issue links
+      // nothing for it, so App Store Connect is the only copy.
+      if (triage.ok && withheld.length === 0) {
         if (await deleteSubmission(token, id, cfg, core)) summary.deleted++;
       }
     } catch (err) {
@@ -146,6 +156,7 @@ function loadConfig(core) {
     ...shared.loadOpenRouterConfig(),
     limit: Number.parseInt(process.env.FEEDBACK_LIMIT || '50', 10),
     publishScreenshots: shared.publishScreenshots(),
+    scanScreenshots: shared.scanScreenshots(),
     dryRun: shared.isDryRun(),
   };
 }
@@ -251,6 +262,48 @@ async function downloadScreenshots(screenshots, core) {
 function sanitiseName(name, index) {
   const safe = (name || `screenshot-${index}.png`).replace(/[^a-zA-Z0-9._-]/g, '_');
   return /\.[a-z0-9]+$/i.test(safe) ? safe : `${safe}.png`;
+}
+
+// Decide, per screenshot, whether it may be published. Returns
+// { publish: [shots], withheld: [{ name, reason }], verdicts: [{ name, publish, reason, scanned }] }.
+//
+// A screenshot is published only when it scans clean of PII (see
+// shared.scanScreenshotForPII — fails closed). PUBLISH_SCREENSHOTS is kept as a
+// manual force-override that publishes everything without scanning, for the rare
+// case a maintainer has already vetted a batch. With scanning turned off and no
+// override, nothing is published — the old conservative default.
+async function decideScreenshots(cfg, shots, core) {
+  const publish = [];
+  const withheld = [];
+  const verdicts = [];
+
+  for (const shot of shots) {
+    if (cfg.publishScreenshots) {
+      publish.push(shot);
+      verdicts.push({ name: shot.name, publish: true, reason: 'force-published (PUBLISH_SCREENSHOTS)', scanned: false });
+      continue;
+    }
+    if (!cfg.scanScreenshots) {
+      withheld.push({ name: shot.name, reason: 'scanning disabled' });
+      verdicts.push({ name: shot.name, publish: false, reason: 'scanning disabled', scanned: false });
+      continue;
+    }
+    const v = await shared.scanScreenshotForPII(cfg, shot, core);
+    if (v.pii) {
+      withheld.push({ name: shot.name, reason: v.scanned ? (v.reason || 'contains PII') : (v.reason || 'could not scan') });
+      verdicts.push({ name: shot.name, publish: false, reason: v.reason || (v.scanned ? 'contains PII' : 'could not scan'), scanned: v.scanned });
+    } else {
+      publish.push(shot);
+      verdicts.push({ name: shot.name, publish: true, reason: v.reason || 'clean', scanned: true });
+    }
+  }
+  return { publish, withheld, verdicts };
+}
+
+function logVerdicts(id, verdicts, core) {
+  for (const v of verdicts) {
+    core.info(`#${id}: screenshot ${v.name} — ${v.publish ? 'ATTACH' : 'WITHHOLD'} (${v.reason}${v.publish || v.scanned ? '' : ', fail-closed'}).`);
+  }
 }
 
 // ---- screenshot hosting (commit to a dedicated orphan assets branch) -----
@@ -381,10 +434,10 @@ async function ensureLabels(github, owner, repo) {
   ]);
 }
 
-async function createIssue({ github, owner, repo }, { id, detail, triage, hosted, keptShots, core }) {
+async function createIssue({ github, owner, repo }, { id, detail, triage, hosted, withheld = [], keptShots, core }) {
   await ensureLabels(github, owner, repo);
 
-  const body = buildIssueBody({ id, detail, triage, hosted, keptShots });
+  const body = buildIssueBody({ id, detail, triage, hosted, withheld, keptShots });
   const labels = [FEEDBACK_LABEL];
   if (triage.ok) {
     labels.push(shared.REFINED_LABEL);
@@ -453,16 +506,18 @@ async function retriageIssues({ github, owner, repo }, { existing, submissions, 
         continue;
       }
 
-      const hosted = cfg.publishScreenshots
-        ? await commitScreenshots({ github, owner, repo }, id, shots, core)
+      const { publish, withheld, verdicts } = await decideScreenshots(cfg, shots, core);
+      logVerdicts(id, verdicts, core);
+      const hosted = publish.length
+        ? await commitScreenshots({ github, owner, repo }, id, publish, core)
         : [];
-      await refreshIssue({ github, owner, repo }, { issue, id, detail, triage, hosted, shots });
+      await refreshIssue({ github, owner, repo }, { issue, id, detail, triage, hosted, withheld });
       summary.retriaged++;
       core.info(`#${id}: re-triaged issue #${issue.number} as "${triage.titlePrefix}${triage.title}".`);
 
       // Same rule as a first-time triage: purge it now that it is triaged, unless
-      // the screenshots only live in App Store Connect.
-      if (hosted.length || shots.length === 0) {
+      // a screenshot is withheld (its only copy is still in App Store Connect).
+      if (withheld.length === 0) {
         if (await deleteSubmission(token, id, cfg, core)) summary.deleted++;
       }
     } catch (err) {
@@ -475,7 +530,7 @@ async function retriageIssues({ github, owner, repo }, { existing, submissions, 
 // Rewrite a needs-triage issue as a triaged one: new title and body, the
 // `needs-triage` label dropped, `refined` added, and the marker comment that
 // tells the refinement bot to leave it alone.
-async function refreshIssue({ github, owner, repo }, { issue, id, detail, triage, hosted, shots }) {
+async function refreshIssue({ github, owner, repo }, { issue, id, detail, triage, hosted, withheld }) {
   const labels = [FEEDBACK_LABEL, shared.REFINED_LABEL];
   if (triage.typeLabel) labels.push(triage.typeLabel);
 
@@ -484,7 +539,7 @@ async function refreshIssue({ github, owner, repo }, { issue, id, detail, triage
     repo,
     issue_number: issue.number,
     title: `${triage.titlePrefix}${triage.title}`,
-    body: buildIssueBody({ id, detail, triage, hosted, keptShots: hosted.length ? 0 : shots.length }),
+    body: buildIssueBody({ id, detail, triage, hosted, withheld, keptShots: withheld.length }),
     labels,
   });
 
@@ -496,7 +551,7 @@ async function refreshIssue({ github, owner, repo }, { issue, id, detail, triage
   });
 }
 
-function buildIssueBody({ id, detail, triage, hosted, keptShots = 0 }) {
+function buildIssueBody({ id, detail, triage, hosted, withheld = [], keptShots = 0 }) {
   const lines = [
     ID_MARKER(id),
     '> 🛫 Imported automatically from TestFlight beta feedback.',
@@ -528,7 +583,16 @@ function buildIssueBody({ id, detail, triage, hosted, keptShots = 0 }) {
   if (hosted.length) {
     lines.push('', '### Screenshots');
     for (const s of hosted) lines.push('', `![${s.name}](${s.url})`);
-  } else if (keptShots) {
+  }
+  if (withheld.length) {
+    lines.push(
+      '', hosted.length ? '### Screenshots withheld' : '### Screenshots', '',
+      `_${withheld.length} screenshot(s) were **not** published — a PII scan flagged them, so they are kept ` +
+      "in App Store Connect (TestFlight → Feedback) until this issue is closed, because they can show testers' connections:_",
+      '',
+    );
+    for (const s of withheld) lines.push(`- \`${s.name}\` — ${s.reason}`);
+  } else if (keptShots && !hosted.length) {
     lines.push(
       '', '### Screenshots', '',
       `_${keptShots} screenshot(s) kept in App Store Connect (TestFlight → Feedback) until this issue is closed. ` +
