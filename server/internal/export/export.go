@@ -189,6 +189,9 @@ func exportHandler(app core.App) func(e *core.RequestEvent) error {
 				"happened_at": post.GetString("happened_at"),
 				"rewound":     post.GetBool("rewound"),
 			}
+			if amount := post.GetInt("amount"); amount > 0 {
+				moment["amount"] = amount
+			}
 			if media := post.GetString("media"); media != "" {
 				attach(post, media, "photos", "media_path", "media_url", moment)
 			}

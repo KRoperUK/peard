@@ -89,6 +89,7 @@ names and avatars while never getting an email address.
 | `happened_at` | date | when it happened. The timeline sorts by this, and tallies, recap, streaks and "last happened" count by it. Defaults to now; a create may set it up to 24 hours back — see [Rewinding a moment](#rewinding-a-moment) |
 | `rewound` | bool | somebody picked `happened_at`, as opposed to the moment arriving late from the offline queue. Drives the "⏪ Rewound" chip |
 | `reply_to` | string | relation → `posts`, `""` when unset. The photo this post answers — see [Answering a photo](#answering-a-photo) |
+| `amount` | number | whole millilitres, `0` when unset (how PocketBase stores a number nobody gave). A water moment's size; see [A moment with an amount](#a-moment-with-an-amount) |
 
 Thumbnail URL: `GET /api/files/posts/{id}/{media}?thumb=512x512`. `256x256` and
 `1024x1024` are also declared; the large widget uses the 1024 one.
@@ -128,6 +129,19 @@ picking it. Rows from before the field existed were backfilled from the gap,
 because until then every gap was a picked time.
 
 The widget and Shortcuts log live only.
+
+### A moment with an amount
+
+Water is an ordinary `event` post (`event_kind: "water"`) that also carries
+`amount`, in whole millilitres. It is created through the collection endpoint,
+queues offline and tallies like any other moment; the number is one more field on
+it. A moment with nothing to measure leaves `amount` at `0`, and a client that has
+never heard of the field draws the moment as it always did.
+
+The server refuses (`400`) a negative amount, one above 5000 ml, a fractional one,
+and one on anything that is not an `event` (a photo or a note counts in no total).
+A client may send it as a string (`"330"`) — the app's form fields are strings —
+and PocketBase stores the number.
 
 ### Answering a photo
 
@@ -519,6 +533,10 @@ that shows it.
 }
 ```
 
+Every window object also carries `day_amount`: the millilitres logged inside the
+`day` window by that side (omitted from the example). Zero for a kind with no
+amounts, so only water has anything to show.
+
 `mine` is the caller's own moments, `others` is everybody else's — the two rows
 the home screen draws. Each window is counted independently, so a week straddling
 a month boundary cannot inflate the month.
@@ -597,7 +615,7 @@ same rate limit applies as to the JSON export.
 | `profile` | `id`, `email`, `display_name`, `name`, `phone`, `contact_email`, `discoverable`, `created`, `updated`, and `avatar` / `avatar_url` when there is a profile photo |
 | `connections` | Each membership: connection `id`, `name`, `role`, `joined`, `muted`, `last_seen_at` |
 | `invites` | Invites sent or received: `direction`, `pair`, `status`, `created`, `expires` (never the code) |
-| `moments` | Moments the caller authored: `id`, `pair`, `type`, `event_kind`, `note`, `created`, `happened_at`, `rewound`, and `media_url` for a photo |
+| `moments` | Moments the caller authored: `id`, `pair`, `type`, `event_kind`, `note`, `created`, `happened_at`, `rewound`, `amount` when it has one, and `media_url` for a photo |
 | `reactions` | Reactions the caller left: `id`, `moment`, `kind`, `created` |
 | `moment_kinds` | Custom moment kinds the caller added: `id`, `pair`, `slug`, `emoji`, `label`, `created` |
 | `devices` | `id`, `platform`, `created`, and `push_token` / `activity_start_token` **masked** to their last six characters |

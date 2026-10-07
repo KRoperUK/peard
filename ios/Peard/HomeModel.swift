@@ -647,6 +647,18 @@ final class HomeModel {
         countdownTask = nil
     }
 
+    /// Sets how much water the pending moment is, or `nil` for no amount. The send
+    /// stays held until it is tapped: somebody choosing a size is not done yet.
+    func setQuickSendAmount(_ ml: Int?) {
+        guard var send = quickSend, send.takesAmount else { return }
+        send.setAmount(ml)
+        quickSend = send
+        quickSendCaption = send.caption()
+        quickSendProgress = 1
+        countdownTask?.cancel()
+        countdownTask = nil
+    }
+
     /// Requirement 12.6 — dismissing discards the text and creates nothing.
     func cancelQuickSend() {
         if quickSend != nil { playHaptic(.cancelled) }
@@ -697,7 +709,8 @@ final class HomeModel {
             emoji: moment.emoji,
             label: moment.label,
             note: note,
-            happenedAt: send.happenedAt
+            happenedAt: send.happenedAt,
+            amount: send.amount
         ))
 
         // The moment is recorded on the device now, so the confirmation is honest

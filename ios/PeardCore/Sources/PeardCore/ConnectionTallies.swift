@@ -35,6 +35,9 @@ public struct ConnectionTallies: Codable, Hashable, Sendable {
             mine.count(in: window) + others.count(in: window)
         }
 
+        /// Everybody's millilitres today, whoever logged them.
+        public var dayAmount: Int { mine.dayAmount + others.dayAmount }
+
         /// This side's count in one window, picked by authorship.
         public func count(in window: TallyWindow, mine isMine: Bool) -> Int {
             (isMine ? mine : others).count(in: window)
@@ -132,6 +135,12 @@ public struct ConnectionTallies: Codable, Hashable, Sendable {
         kinds.reduce(0) { $0 + $1.total(in: window) }
     }
 
+    /// Everybody's millilitres of water today: the connection's daily total.
+    /// Zero until somebody has logged a water moment with an amount.
+    public var waterToday: Int {
+        kinds.first { $0.kind == .water }?.dayAmount ?? 0
+    }
+
     /// True when the breakdown has something to show. False against a server with
     /// no tallies endpoint, where the fallback path can only produce side totals.
     public var hasKindBreakdown: Bool { !kinds.isEmpty }
@@ -153,10 +162,13 @@ public struct ConnectionTallies: Codable, Hashable, Sendable {
         let weekStart = calendar.dateInterval(of: .weekOfYear, for: now)?.start ?? dayStart
         let monthStart = calendar.date(from: calendar.dateComponents([.year, .month], from: now)) ?? dayStart
 
-        func bump(_ periods: TallyPeriods, at date: Date) -> TallyPeriods {
+        func bump(_ periods: TallyPeriods, at date: Date, amount: Int? = nil) -> TallyPeriods {
             var next = periods
             next.all += 1
-            if date >= dayStart { next.day += 1 }
+            if date >= dayStart {
+                next.day += 1
+                next.dayAmount += amount ?? 0
+            }
             if date >= weekStart { next.week += 1 }
             if date >= monthStart { next.month += 1 }
             return next
@@ -166,14 +178,14 @@ public struct ConnectionTallies: Codable, Hashable, Sendable {
         var byKind = Dictionary(uniqueKeysWithValues: kinds.map { ($0.kind.rawValue, $0) })
 
         for send in relevant {
-            totals = bump(totals, at: send.happenedOrQueuedAt)
+            totals = bump(totals, at: send.happenedOrQueuedAt, amount: send.amount)
             let key = send.kind.rawValue
             if let existing = byKind[key] {
                 byKind[key] = Kind(
                     kind: existing.kind,
                     emoji: existing.emoji,
                     label: existing.label,
-                    mine: bump(existing.mine, at: send.happenedOrQueuedAt),
+                    mine: bump(existing.mine, at: send.happenedOrQueuedAt, amount: send.amount),
                     others: existing.others
                 )
             } else {
@@ -181,7 +193,7 @@ public struct ConnectionTallies: Codable, Hashable, Sendable {
                     kind: send.kind,
                     emoji: send.emoji,
                     label: send.label,
-                    mine: bump(.zero, at: send.happenedOrQueuedAt),
+                    mine: bump(.zero, at: send.happenedOrQueuedAt, amount: send.amount),
                     others: .zero
                 )
             }

@@ -62,6 +62,10 @@ SELECT
     SUM(CASE WHEN happened_at >= {:week}  THEN 1 ELSE 0 END)    AS week_count,
     SUM(CASE WHEN happened_at >= {:month} THEN 1 ELSE 0 END)    AS month_count,
     COUNT(*)                                                    AS all_count,
+    -- Millilitres logged today. Only the day: the daily water total is what
+    -- the amount is for, and a window nobody reads is a column nobody checks.
+    -- A moment with no amount stores 0, so it adds nothing.
+    SUM(CASE WHEN happened_at >= {:day} THEN COALESCE(amount, 0) ELSE 0 END) AS day_amount,
     -- When this kind last happened, whoever logged it. Grouped alongside the
     -- counts rather than fetched per kind: "when did we last..." is the
     -- question the counts are usually a proxy for, and a second query per
@@ -86,6 +90,8 @@ type counts struct {
 	Week  int `json:"week"`
 	Month int `json:"month"`
 	All   int `json:"all"`
+	// Millilitres logged inside the day window; see tallyQuery.
+	DayAmount int `json:"day_amount"`
 }
 
 // row is one output of the aggregate query: a kind, whose it is, and the four
@@ -97,6 +103,7 @@ type row struct {
 	Week      int    `db:"week_count"`
 	Month     int    `db:"month_count"`
 	All       int    `db:"all_count"`
+	DayAmount int    `db:"day_amount"`
 	// Stored form, e.g. "2026-08-02 01:23:45.678Z". Passed through as-is: the
 	// client decodes the same format everywhere else.
 	LastAt string `db:"last_at"`
@@ -251,6 +258,7 @@ func addTo(target *counts, r row) {
 	target.Week += r.Week
 	target.Month += r.Month
 	target.All += r.All
+	target.DayAmount += r.DayAmount
 }
 
 func added(base counts, r row) counts {

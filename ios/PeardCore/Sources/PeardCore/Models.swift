@@ -156,6 +156,8 @@ public struct EventKind: OpenEnum, ExpressibleByStringLiteral {
     public static let beer = EventKind(rawValue: "beer")
     public static let loo = EventKind(rawValue: "loo")
     public static let coffee = EventKind(rawValue: "coffee")
+    /// The one moment that carries an amount; see `WaterAmount`.
+    public static let water = EventKind(rawValue: "water")
 }
 
 // MARK: - Records
@@ -185,9 +187,12 @@ public struct Post: Codable, Hashable, Sendable, Identifiable {
     /// back. `nil` for everything else, including an answer whose photo has
     /// since been deleted: the server empties the relation then.
     public let replyTo: String?
+    /// Whole millilitres, for a water moment. `nil` for every moment that has
+    /// no amount to give: the server stores those as 0, which is not an amount.
+    public let amount: Int?
 
     enum CodingKeys: String, CodingKey {
-        case id, pair, author, type, note, media, created, updated, rewound
+        case id, pair, author, type, note, media, created, updated, rewound, amount
         case eventKind = "event_kind"
         case happenedAt = "happened_at"
         case replyTo = "reply_to"
@@ -205,11 +210,13 @@ public struct Post: Codable, Hashable, Sendable, Identifiable {
         updated: Date? = nil,
         happenedAt: Date? = nil,
         rewound: Bool? = nil,
-        replyTo: String? = nil
+        replyTo: String? = nil,
+        amount: Int? = nil
     ) {
         self.id = id
         self.pair = pair
         self.replyTo = replyTo
+        self.amount = WaterAmount.normalised(amount)
         self.author = author
         self.type = type
         self.eventKind = eventKind
@@ -253,6 +260,9 @@ public struct Post: Codable, Hashable, Sendable, Identifiable {
         // PocketBase sends an unset relation as "", which is not a post.
         let replyTo = try? container.decodeIfPresent(String.self, forKey: .replyTo)
         self.replyTo = replyTo?.isEmpty == false ? replyTo : nil
+        // Absent on a server predating amounts, and 0 on every moment without
+        // one; neither is an amount.
+        amount = WaterAmount.normalised(try? container.decodeIfPresent(Int.self, forKey: .amount))
     }
 
     /// True when this post carries a real server timestamp.

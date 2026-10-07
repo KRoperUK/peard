@@ -165,6 +165,64 @@ enum MomentBreakdownCopy {
     }
 }
 
+extension MomentBreakdownCopy {
+    /// Who drank what today, naming only the sides that logged something, the
+    /// way a row's split does.
+    static func waterSplit(mine: Int, others: Int, mineLabel: String, othersLabel: String) -> String {
+        switch (mine, others) {
+        case (0, 0): return ""
+        case (let m, 0): return "\(mineLabel) \(WaterAmount.label(m))"
+        case (0, let o): return "\(othersLabel) \(WaterAmount.label(o))"
+        case (let m, let o): return "\(mineLabel) \(WaterAmount.label(m)) · \(othersLabel) \(WaterAmount.label(o))"
+        }
+    }
+}
+
+/// Today's water in millilitres, for the whole connection (#320).
+///
+/// Always today, whichever window the breakdown below is showing: the total is
+/// a daily one. Absent until somebody has logged water with an amount, rather
+/// than a row reading "0 ml" in every connection that never drinks any. There is
+/// no target to measure it against yet.
+struct WaterTodaySection: View {
+    let tallies: ConnectionTallies
+    let mineLabel: String
+    let othersLabel: String
+
+    private var water: ConnectionTallies.Kind? { tallies.kinds.first { $0.kind == .water } }
+    private var total: Int { tallies.waterToday }
+
+    var body: some View {
+        if total > 0, let water {
+            Section {
+                HStack(alignment: .top, spacing: 12) {
+                    Text(water.emoji)
+                        .font(.title3)
+                        .frame(width: 28)
+                        .accessibilityHidden(true)
+                    VStack(alignment: .leading, spacing: 3) {
+                        Text(WaterAmount.todayLabel(total))
+                            .font(.headline)
+                            .foregroundStyle(PearColor.textPrimary)
+                            .monospacedDigit()
+                        Text(MomentBreakdownCopy.waterSplit(
+                            mine: water.mine.dayAmount,
+                            others: water.others.dayAmount,
+                            mineLabel: mineLabel,
+                            othersLabel: othersLabel
+                        ))
+                        .font(.caption2)
+                        .foregroundStyle(PearColor.textTertiary)
+                    }
+                }
+                .accessibilityElement(children: .combine)
+            } header: {
+                Text("Water")
+            }
+        }
+    }
+}
+
 /// The breakdown as a `Form` section, for the connection's settings screen.
 struct MomentBreakdownSection: View {
     let tallies: ConnectionTallies

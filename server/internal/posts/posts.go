@@ -12,7 +12,8 @@
 // what the client says (true only for a picked time), and only stands when
 // there is a time more than a minute back for it to describe. And it checks
 // that an answer to a photo points at a photo in the same connection — see
-// CheckReplyTo.
+// CheckReplyTo. And that an `amount` — the millilitres in a glass of water —
+// only rides on a moment, within reason; see CheckAmount.
 //
 // Deletion is deliberately *not* here. `posts.DeleteRule` is already
 // `author = @request.auth.id`, so the ordinary collection endpoint does it, and
@@ -48,6 +49,11 @@ const noteType = "note"
 
 const emptyReply = "a reply needs something in it"
 
+// The most one moment may carry, in millilitres. Matches the `amount` field's
+// Max. Five litres in one go is a typo or a joke, and either would sit in the
+// day's total all day.
+const maxAmount = 5000
+
 // Matches the `event_kind` field's Max.
 const maxKindLength = 40
 
@@ -71,6 +77,9 @@ func Register(app core.App) {
 			return e.BadRequestError(emptyReply, nil)
 		}
 		if msg := CheckReplyTo(e.App, e.Record); msg != "" {
+			return e.BadRequestError(msg, nil)
+		}
+		if msg := CheckAmount(e.Record); msg != "" {
 			return e.BadRequestError(msg, nil)
 		}
 		return e.Next()
@@ -231,6 +240,28 @@ func CheckReplyTo(app core.App, post *core.Record) string {
 	}
 	if target.GetString("type") != "photo" && target.GetString("media") == "" {
 		return "only a photo can be answered"
+	}
+	return ""
+}
+
+// CheckAmount returns why a post's `amount` is refused, or "" when it is fine
+// or unset. Zero is unset: it is what PocketBase stores for a number nobody gave.
+//
+// An amount is a fact about something that was done, so it rides on a moment
+// and nothing else — a photo or a reply with one would count in no total and
+// mean nothing. It is a whole number of millilitres, because that is what the
+// day's total adds up.
+func CheckAmount(post *core.Record) string {
+	amount := post.GetInt("amount")
+	switch {
+	case amount == 0:
+		return ""
+	case amount < 0:
+		return "an amount cannot be negative"
+	case amount > maxAmount:
+		return "an amount can be at most 5000 ml"
+	case post.GetString("type") != "event":
+		return "only a moment can carry an amount"
 	}
 	return ""
 }

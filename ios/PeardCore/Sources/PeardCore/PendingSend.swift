@@ -37,6 +37,9 @@ public struct PendingSend: Codable, Hashable, Sendable, Identifiable {
     /// The photo this send answers, when it is a comment on one or a photo sent
     /// back; see `reply(to:authorID:note:withPhoto:)`.
     public let replyTo: String?
+    /// Whole millilitres, for a water moment; `nil` for any other. Carried on the
+    /// send so it survives the queue and counts in the day's total while waiting.
+    public let amount: Int?
     /// How many times a flush has tried and failed. Drives the retry backoff.
     public var attempts: Int
     /// When the last attempt failed, for the backoff calculation.
@@ -53,6 +56,7 @@ public struct PendingSend: Codable, Hashable, Sendable, Identifiable {
         case hasPhoto = "has_photo"
         case happenedAt = "happened_at"
         case replyTo = "reply_to"
+        case amount
         case lastAttemptAt = "last_attempt_at"
         case lastError = "last_error"
     }
@@ -70,6 +74,7 @@ public struct PendingSend: Codable, Hashable, Sendable, Identifiable {
         hasPhoto: Bool = false,
         happenedAt: Date? = nil,
         replyTo: String? = nil,
+        amount: Int? = nil,
         attempts: Int = 0,
         lastAttemptAt: Date? = nil,
         lastError: String? = nil
@@ -86,6 +91,7 @@ public struct PendingSend: Codable, Hashable, Sendable, Identifiable {
         self.hasPhoto = hasPhoto
         self.happenedAt = happenedAt
         self.replyTo = replyTo
+        self.amount = WaterAmount.normalised(amount)
         self.attempts = attempts
         self.lastAttemptAt = lastAttemptAt
         self.lastError = lastError
@@ -109,6 +115,8 @@ public struct PendingSend: Codable, Hashable, Sendable, Identifiable {
         hasPhoto = try c.decodeIfPresent(Bool.self, forKey: .hasPhoto) ?? false
         happenedAt = try c.decodeIfPresent(Date.self, forKey: .happenedAt)
         replyTo = try c.decodeIfPresent(String.self, forKey: .replyTo)
+        // Written by a build that knew of amounts; a queue from before has none.
+        amount = WaterAmount.normalised(try? c.decodeIfPresent(Int.self, forKey: .amount))
         attempts = try c.decodeIfPresent(Int.self, forKey: .attempts) ?? 0
         lastAttemptAt = try c.decodeIfPresent(Date.self, forKey: .lastAttemptAt)
         lastError = try c.decodeIfPresent(String.self, forKey: .lastError)
@@ -137,6 +145,7 @@ public struct PendingSend: Codable, Hashable, Sendable, Identifiable {
         ]
         if postType == .event { fields["event_kind"] = kind.rawValue }
         if let replyTo { fields["reply_to"] = replyTo }
+        if postType == .event, let amount { fields["amount"] = String(amount) }
         if let happenedAt {
             fields["happened_at"] = Rewind.wireString(happenedAt)
             fields["rewound"] = "true"
@@ -197,7 +206,9 @@ public struct PendingSend: Codable, Hashable, Sendable, Identifiable {
     /// A copy saying something different, for an edit made before it was sent
     /// (#313). Only the words and the moment change: the id, the photo, the time
     /// and the reply it answers stay, because those are what the photo file, the
-    /// timeline row and the idempotency key are tied to.
+    /// timeline row and the idempotency key are tied to. The amount stays only
+    /// while it is still the same moment: millilitres of water on a beer would be
+    /// nonsense.
     public func edited(note: String, kind: EventKind, emoji: String, label: String) -> PendingSend {
         PendingSend(
             id: id,
@@ -212,6 +223,7 @@ public struct PendingSend: Codable, Hashable, Sendable, Identifiable {
             hasPhoto: hasPhoto,
             happenedAt: happenedAt,
             replyTo: replyTo,
+            amount: kind == self.kind ? amount : nil,
             attempts: attempts,
             lastAttemptAt: lastAttemptAt,
             lastError: lastError
@@ -233,7 +245,8 @@ public struct PendingSend: Codable, Hashable, Sendable, Identifiable {
             created: queuedAt,
             happenedAt: happenedOrQueuedAt,
             rewound: happenedAt.map { Rewind.isRewound($0, loggedAt: queuedAt) } ?? false,
-            replyTo: replyTo
+            replyTo: replyTo,
+            amount: amount
         )
     }
 
