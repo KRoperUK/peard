@@ -102,6 +102,13 @@ function publishScreenshots() {
   return /^(1|true|yes)$/i.test(process.env.PUBLISH_SCREENSHOTS || '');
 }
 
+// Whether the PII scan gate runs. On by default — it is the whole point of the
+// screenshot-publish path — and only turned off explicitly, which falls back to
+// the old withhold-everything-unless-PUBLISH_SCREENSHOTS behaviour.
+function scanScreenshots() {
+  return !/^(0|false|no)$/i.test(process.env.SCAN_SCREENSHOTS || '');
+}
+
 // Accept the .p8 as a real PEM, an escaped-newline PEM, a base64-encoded PEM
 // (how the fastlane ASC_KEY_CONTENT secret is commonly stored), or bare base64
 // DER.
@@ -320,6 +327,66 @@ async function triageJson(cfg, { systemPrompt, userPrompt, images = [], maxAttem
   return null;
 }
 
+// ---- screenshot PII scan -------------------------------------------------
+
+// The repo is public, so a tester's screenshot is only ever attached to an
+// issue when it is provably clean: it can show the other person in the
+// connection — their name, avatar, messages — which must not be published.
+//
+// The scan reuses the same OpenRouter vision model that already reads these
+// screenshots for triage (buildChatRequest / triageJson), so it adds no new
+// dependency, no OCR binary the runner may not have, and no new data-sharing
+// surface: the image already leaves to OpenRouter for the triage call. A local
+// OCR+regex pass was considered and rejected — it would miss faces/avatars and,
+// worse, fail closed on every run where the OCR binary is absent, which defeats
+// the feature.
+const PII_SCAN_PROMPT = [
+  'You are a privacy reviewer for a public GitHub repository.',
+  'You are shown ONE screenshot a beta tester submitted with their feedback.',
+  'Decide whether attaching it to a PUBLIC issue would expose any personal or',
+  'identifying information about ANY real person — their own, or anyone else shown.',
+  'Treat as PII: real names or usernames/handles, email addresses, phone numbers,',
+  'postal addresses, faces or recognisable avatars/profile photos, message text',
+  'that names or is attributed to a person, contact lists, or any other personal detail.',
+  'Do NOT treat generic app UI, placeholder/sample data, emoji, or anonymous',
+  'counters/charts as PII.',
+  'Return ONLY a JSON object: {"pii": true|false, "reason": "<=12 words"}.',
+  'If you are unsure, answer {"pii": true}.',
+].join(' ');
+
+// Scan one screenshot. Returns { pii, reason, scanned }.
+//
+// Fails CLOSED: any error, timeout, empty or unparseable reply, or a model that
+// does not give a clear boolean is treated as "contains PII" (pii: true,
+// scanned: false) so a tester image is NEVER published on a guess.
+async function scanScreenshotForPII(cfg, shot, core) {
+  let parsed;
+  try {
+    parsed = await triageJson(
+      cfg,
+      {
+        systemPrompt: PII_SCAN_PROMPT,
+        userPrompt: 'Does this screenshot contain any PII? Answer with the JSON object only.',
+        images: [shot],
+        maxAttempts: 2,
+      },
+      core,
+    );
+  } catch (err) {
+    core?.warning(`PII scan errored for ${shot.name} (${err.message}) — withholding.`);
+    return { pii: true, reason: 'scan error', scanned: false };
+  }
+
+  // triageJson retries text-only when the image call fails; a verdict reached
+  // without the image cannot have seen it, so withhold. We detect that by the
+  // reply not carrying a usable boolean either.
+  if (!parsed || typeof parsed.pii !== 'boolean') {
+    core?.warning(`PII scan inconclusive for ${shot.name} — withholding.`);
+    return { pii: true, reason: 'scan unavailable', scanned: false };
+  }
+  return { pii: parsed.pii, reason: hasText(parsed.reason) ? parsed.reason.trim() : '', scanned: true };
+}
+
 // ---- GitHub --------------------------------------------------------------
 
 // Pin the REST API version on every request (silences Octokit's Sunset
@@ -402,6 +469,8 @@ module.exports = {
   publishScreenshots,
   quote,
   resolveAppId,
+  scanScreenshots,
+  scanScreenshotForPII,
   shortenTitle,
   sleep,
   stripFences,

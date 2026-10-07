@@ -105,6 +105,92 @@ test('a triage that never succeeds returns null rather than throwing', async () 
   }
 });
 
+// ---- screenshot PII scan --------------------------------------------------
+
+function piiFetch(reply) {
+  // One OpenRouter response carrying `reply` as the message content.
+  return async () => ({
+    ok: true,
+    status: 200,
+    json: async () => ({ choices: [{ message: { content: reply } }] }),
+  });
+}
+
+const aShot = { name: 'IMG_0001.PNG', data: Buffer.from('png-bytes') };
+
+test('a clean screenshot is cleared for publishing', async () => {
+  const originalFetch = global.fetch;
+  global.fetch = piiFetch('{"pii": false, "reason": "generic app UI"}');
+  try {
+    const v = await shared.scanScreenshotForPII({ model: 'm', openRouterKey: 'k' }, aShot, null);
+    assert.strictEqual(v.pii, false);
+    assert.strictEqual(v.scanned, true);
+  } finally {
+    global.fetch = originalFetch;
+  }
+});
+
+test('a screenshot the model flags as PII is withheld', async () => {
+  const originalFetch = global.fetch;
+  global.fetch = piiFetch('{"pii": true, "reason": "shows a contact name"}');
+  try {
+    const v = await shared.scanScreenshotForPII({ model: 'm', openRouterKey: 'k' }, aShot, null);
+    assert.strictEqual(v.pii, true);
+    assert.strictEqual(v.scanned, true);
+    assert.match(v.reason, /contact name/);
+  } finally {
+    global.fetch = originalFetch;
+  }
+});
+
+test('the scan fails closed when the model never answers', async () => {
+  const originalFetch = global.fetch;
+  // Every call 500s: triageJson exhausts its retries and both the image and
+  // text-only variants, then returns null. A missing verdict must withhold.
+  global.fetch = async () => ({ ok: false, status: 500, text: async () => 'boom' });
+  try {
+    const v = await shared.scanScreenshotForPII(
+      { model: 'm', openRouterKey: 'k' },
+      aShot,
+      null,
+    );
+    assert.strictEqual(v.pii, true, 'an unanswered scan must withhold');
+    assert.strictEqual(v.scanned, false);
+  } finally {
+    global.fetch = originalFetch;
+  }
+});
+
+test('the scan fails closed on a reply with no usable boolean', async () => {
+  const originalFetch = global.fetch;
+  // Model returns JSON but not a boolean pii field — treated as inconclusive.
+  global.fetch = piiFetch('{"verdict": "maybe"}');
+  try {
+    const v = await shared.scanScreenshotForPII({ model: 'm', openRouterKey: 'k' }, aShot, null);
+    assert.strictEqual(v.pii, true);
+    assert.strictEqual(v.scanned, false);
+  } finally {
+    global.fetch = originalFetch;
+  }
+});
+
+test('scanScreenshots is on by default and only an explicit off disables it', () => {
+  const orig = process.env.SCAN_SCREENSHOTS;
+  try {
+    delete process.env.SCAN_SCREENSHOTS;
+    assert.strictEqual(shared.scanScreenshots(), true);
+    process.env.SCAN_SCREENSHOTS = 'false';
+    assert.strictEqual(shared.scanScreenshots(), false);
+    process.env.SCAN_SCREENSHOTS = '0';
+    assert.strictEqual(shared.scanScreenshots(), false);
+    process.env.SCAN_SCREENSHOTS = 'yes';
+    assert.strictEqual(shared.scanScreenshots(), true);
+  } finally {
+    if (orig === undefined) delete process.env.SCAN_SCREENSHOTS;
+    else process.env.SCAN_SCREENSHOTS = orig;
+  }
+});
+
 // ---- triage usability -----------------------------------------------------
 
 test('a triage needs both a title and a brief to count', () => {
