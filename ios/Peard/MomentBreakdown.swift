@@ -178,12 +178,34 @@ extension MomentBreakdownCopy {
     }
 }
 
-/// Today's water in millilitres, for the whole connection (#320).
+extension MomentBreakdownCopy {
+    /// How far today's water is from the targets, one line. The wording changes
+    /// at each stage so the state reads without seeing the bar.
+    static func waterProgress(_ progress: WaterProgress, locale: Locale = .current) -> String {
+        let minimum = WaterAmount.label(progress.minimum, locale: locale)
+        let recommended = WaterAmount.label(progress.recommended, locale: locale)
+        switch progress.stage {
+        case .none:
+            return ""
+        case .underMinimum:
+            let toMinimum = WaterAmount.label(progress.minimum - progress.ml, locale: locale)
+            return "\(toMinimum) to the \(minimum) minimum"
+        case .minimumMet:
+            let toGoal = WaterAmount.label(progress.remaining, locale: locale)
+            return "Minimum met · \(toGoal) to the \(recommended) goal"
+        case .recommendedMet:
+            return "Goal met · \(recommended)"
+        }
+    }
+}
+
+/// Today's water in millilitres, for the whole connection (#320), against the
+/// built-in daily targets (#321).
 ///
 /// Always today, whichever window the breakdown below is showing: the total is
 /// a daily one. Absent until somebody has logged water with an amount, rather
-/// than a row reading "0 ml" in every connection that never drinks any. There is
-/// no target to measure it against yet.
+/// than a row reading "0 ml" in every connection that never drinks any — and so
+/// no target is shown either.
 struct WaterTodaySection: View {
     let tallies: ConnectionTallies
     let mineLabel: String
@@ -191,6 +213,7 @@ struct WaterTodaySection: View {
 
     private var water: ConnectionTallies.Kind? { tallies.kinds.first { $0.kind == .water } }
     private var total: Int { tallies.waterToday }
+    private var progress: WaterProgress { WaterProgress(ml: total) }
 
     var body: some View {
         if total > 0, let water {
@@ -200,11 +223,12 @@ struct WaterTodaySection: View {
                         .font(.title3)
                         .frame(width: 28)
                         .accessibilityHidden(true)
-                    VStack(alignment: .leading, spacing: 3) {
+                    VStack(alignment: .leading, spacing: 6) {
                         Text(WaterAmount.todayLabel(total))
                             .font(.headline)
                             .foregroundStyle(PearColor.textPrimary)
                             .monospacedDigit()
+                        WaterProgressBar(progress: progress)
                         Text(MomentBreakdownCopy.waterSplit(
                             mine: water.mine.dayAmount,
                             others: water.others.dayAmount,
@@ -218,6 +242,55 @@ struct WaterTodaySection: View {
                 .accessibilityElement(children: .combine)
             } header: {
                 Text("Water")
+            }
+        }
+    }
+}
+
+/// A bar toward the recommended amount, a tick where the minimum sits, and a
+/// line saying where that leaves today.
+///
+/// The three states are told apart by more than colour: the fill darkens from
+/// muted to the accent, and meeting the goal adds a filled "Goal met" badge and
+/// a tick mark, so it is not a matter of reading a shade.
+struct WaterProgressBar: View {
+    let progress: WaterProgress
+
+    private var fill: Color {
+        switch progress.stage {
+        case .none, .underMinimum: return PearColor.textTertiary
+        case .minimumMet: return PearColor.accent.opacity(0.55)
+        case .recommendedMet: return PearColor.accent
+        }
+    }
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 4) {
+            GeometryReader { geometry in
+                let width = geometry.size.width
+                ZStack(alignment: .leading) {
+                    Capsule().fill(PearColor.divider.opacity(0.4))
+                    Capsule().fill(fill).frame(width: progress.fraction * width)
+                    Rectangle()
+                        .fill(PearColor.textSecondary)
+                        .frame(width: 2, height: 9)
+                        .offset(x: progress.minimumFraction * width - 1)
+                }
+            }
+            .frame(height: 9)
+            .accessibilityHidden(true)
+
+            if progress.isRecommendedMet {
+                Label("Goal met", systemImage: "checkmark.circle.fill")
+                    .font(.caption2.bold())
+                    .foregroundStyle(PearColor.onAccent)
+                    .padding(.horizontal, 6)
+                    .padding(.vertical, 2)
+                    .background(PearColor.accent, in: Capsule())
+            } else {
+                Text(MomentBreakdownCopy.waterProgress(progress))
+                    .font(.caption2)
+                    .foregroundStyle(PearColor.textSecondary)
             }
         }
     }

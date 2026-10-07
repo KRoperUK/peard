@@ -25,6 +25,12 @@ public enum WaterAmount {
     /// Matches the server's ceiling on `amount`. Five litres in one go is a typo.
     public static let maximum = 5000
 
+    /// Built-in daily targets in millilitres, used until a connection can set its
+    /// own (#322). The minimum is the least worth reaching in a day; the
+    /// recommended amount is the figure to aim for.
+    public static let defaultMinimum = 1500
+    public static let defaultRecommended = 2000
+
     /// An amount worth keeping: positive, and no more than `maximum`. Anything
     /// else is `nil`, which is also what the server's 0 for "none" becomes.
     public static func normalised(_ ml: Int?) -> Int? {
