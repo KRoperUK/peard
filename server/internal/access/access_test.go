@@ -905,3 +905,94 @@ func TestLeavingAConnectionRevokesVisibility(t *testing.T) {
 		t.Errorf("tallies for a former member = %d, want 403; body %s", status, body)
 	}
 }
+
+// --- per-person water targets (#335) ---------------------------------------
+
+// A target is a fact about one person, readable by the people they share a
+// connection with and by nobody else, and writable by that person alone.
+func TestMembersSeeEachOthersWaterTargetsAndOutsidersDoNot(t *testing.T) {
+	w := newWorld(t)
+	aliceMembership, err := w.app.FindFirstRecordByFilter("pair_members", "pair = {:p} && user = {:u}",
+		dbx.Params{"p": w.flatmates.Id, "u": w.alice.Id})
+	if err != nil {
+		t.Fatalf("find alice's membership: %v", err)
+	}
+	aliceMembership.Set("water_minimum", 1234)
+	aliceMembership.Set("water_recommended", 4321)
+	if err := w.app.Save(aliceMembership); err != nil {
+		t.Fatalf("store target: %v", err)
+	}
+
+	// bob reads alice's goal through the recap payload...
+	status, body := w.do(t, http.MethodGet, "/api/peard/recap?pair="+w.flatmates.Id+"&tz=0", w.bobTok)
+	if status != http.StatusOK || !strings.Contains(body, `"recommended":4321`) {
+		t.Errorf("bob's recap = %d, want 200 carrying alice's 4321; body %s", status, body)
+	}
+	// ...and through the membership collection, as he always could.
+	status, body = w.do(t, http.MethodGet, "/api/collections/pair_members/records/"+aliceMembership.Id, w.bobTok)
+	if status != http.StatusOK || !strings.Contains(body, "4321") {
+		t.Errorf("bob reading alice's membership = %d, want 200 carrying 4321; body %s", status, body)
+	}
+
+	// mallory gets neither.
+	status, body = w.do(t, http.MethodGet, "/api/peard/recap?pair="+w.flatmates.Id+"&tz=0", w.malTok)
+	if status != http.StatusForbidden || strings.Contains(body, "4321") {
+		t.Errorf("mallory's recap = %d, want 403 without the target; body %s", status, body)
+	}
+	status, body = w.do(t, http.MethodGet, "/api/collections/pair_members/records/"+aliceMembership.Id, w.malTok)
+	if status == http.StatusOK || strings.Contains(body, "4321") {
+		t.Errorf("mallory reading alice's membership = %d; body %s", status, body)
+	}
+	status, body = w.do(t, http.MethodGet, listPath("pair_members", ""), w.malTok)
+	if status == http.StatusOK && strings.Contains(body, "4321") {
+		t.Errorf("mallory's membership list disclosed alice's target; body %s", body)
+	}
+}
+
+func TestOnlyTheOwnerCanWriteAWaterTarget(t *testing.T) {
+	w := newWorld(t)
+	target := func(pair string) []byte {
+		return []byte(fmt.Sprintf(`{"pair":%q,"minimum":900,"recommended":2800}`, pair))
+	}
+	read := func(user *core.Record, pair *core.Record) (int, int) {
+		rec, err := w.app.FindFirstRecordByFilter("pair_members", "pair = {:p} && user = {:u}",
+			dbx.Params{"p": pair.Id, "u": user.Id})
+		if err != nil {
+			t.Fatalf("find membership: %v", err)
+		}
+		return rec.GetInt("water_minimum"), rec.GetInt("water_recommended")
+	}
+
+	// mallory cannot write into Flatmates, by the route or by the collection.
+	status, body := w.doBody(t, http.MethodPost, "/api/peard/water/target", w.malTok, "application/json", target(w.flatmates.Id))
+	if status != http.StatusForbidden {
+		t.Errorf("mallory's route write = %d, want 403; body %s", status, body)
+	}
+	patch := []byte(`{"water_minimum":900,"water_recommended":2800}`)
+	status, body = w.doBody(t, http.MethodPatch, "/api/collections/pair_members/records/"+w.bobMembership.Id, w.malTok, "application/json", patch)
+	if status == http.StatusOK {
+		t.Errorf("mallory patched bob's membership: %s", body)
+	}
+
+	// Nor can bob patch the row directly — pair_members has no UpdateRule, since
+	// the rule that allowed it would also let him rewrite his own role.
+	status, body = w.doBody(t, http.MethodPatch, "/api/collections/pair_members/records/"+w.bobMembership.Id, w.bobTok, "application/json", patch)
+	if status == http.StatusOK {
+		t.Errorf("bob patched his membership through the collection: %s", body)
+	}
+
+	// The route writes bob's own row and only that.
+	status, body = w.doBody(t, http.MethodPost, "/api/peard/water/target", w.bobTok, "application/json", target(w.flatmates.Id))
+	if status != http.StatusOK {
+		t.Fatalf("bob's route write = %d, want 200; body %s", status, body)
+	}
+	if min, rec := read(w.bob, w.flatmates); min != 900 || rec != 2800 {
+		t.Errorf("bob stored %d/%d, want 900/2800", min, rec)
+	}
+	if min, rec := read(w.alice, w.flatmates); min != 0 || rec != 0 {
+		t.Errorf("alice stored %d/%d after bob's write, want untouched", min, rec)
+	}
+	if min, rec := read(w.mallory, w.strangers); min != 0 || rec != 0 {
+		t.Errorf("mallory stored %d/%d, want untouched", min, rec)
+	}
+}
