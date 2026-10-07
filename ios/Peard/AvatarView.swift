@@ -111,10 +111,28 @@ struct AvatarView: View {
             let fetchURL = URL(string: FileTokenStore.decorate(url.absoluteString, token: token)),
             let data = try? await APIClient.data(from: fetchURL),
             let decoded = UIImage(data: data)
-        else { return }
+        else {
+            // No signal, or no token: fall back to the bytes last stored for this
+            // face, so the rail still draws offline (#313). A relaunch empties the
+            // in-memory cache, so this is the only copy a cold offline launch has.
+            if let persisted = app.sharedStore.cachedAvatar(forKey: avatarCacheKey),
+               let restored = UIImage(data: persisted) {
+                AvatarImageCache.shared.store(restored, for: url)
+                guard !Task.isCancelled else { return }
+                image = restored
+            }
+            return
+        }
         AvatarImageCache.shared.store(decoded, for: url)
+        app.sharedStore.setCachedAvatar(data, forKey: avatarCacheKey)
         guard !Task.isCancelled else { return }
         image = decoded
+    }
+
+    /// Keyed by owner, record and thumb — not the filename, so a replaced photo
+    /// overwrites rather than piling up. See `SharedStore.cachedAvatar`.
+    private var avatarCacheKey: String {
+        "\(avatar.owner.rawValue)/\(avatar.recordID)?thumb=\(thumb.rawValue)"
     }
 }
 
