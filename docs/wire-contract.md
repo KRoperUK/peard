@@ -193,6 +193,13 @@ Creation is closed to clients — a `pairs` row only ever appears via
 | `user` | string | relation → `users` |
 | `role` | `"owner"` \| `"member"` | open |
 | `muted` | bool | the caller has silenced this connection's pushes |
+| `water_minimum` | int (ml) | this member's own daily minimum; `0` = none stored |
+| `water_recommended` | int (ml) | this member's own daily goal; `0` = none stored |
+
+`water_minimum` / `water_recommended` are each person's own water targets, shared
+with the connection: the list rule already lets a member read every row of a
+connection they are in, and the recap carries them too. They are written only by
+`POST /api/peard/water/target` (see [Recap and streaks](#recap-and-streaks)).
 
 `muted` is not writable through the collection API, and `pair_members` has no
 update rule at all. That is deliberate: PocketBase rules cannot restrict *which*
@@ -754,6 +761,32 @@ remarkable streak rather than making the route slow for the oldest connections.
 
 Membership is checked directly, because this route reads through the database
 and the `posts` list rule never sees it: `403` for a connection you are not in.
+
+### Water targets (per person)
+
+The recap also carries `water_streak` (`{ current, best }`, days the connection's
+combined water reached the target) and `water_targets`, one entry per member:
+
+```json
+"water_targets": [
+  { "user": "u1", "minimum": 1200, "recommended": 2500 },
+  { "user": "u2", "minimum": 0, "recommended": 0 }
+]
+```
+
+`0` means that member stored no target. Everyone in the connection sees everyone's.
+The streak's target is the **sum of the members' recommended amounts**; a member
+with none stored counts at the `water_target` query parameter (what an older app
+sends), else 2000 ml. When nobody has stored a target the parameter alone decides,
+as before. An older server omits `water_targets`; clients treat that as "targets
+stay on the device".
+
+`POST /api/peard/water/target` with `{ "pair": "X", "minimum": 1200, "recommended": 2500 }`
+→ `{ "ok": true, "minimum": 1200, "recommended": 2500 }` sets the **caller's own**
+targets and nothing else (the user comes from the session). Both are whole ml in
+`0…5000`, the minimum no higher than the goal; `0, 0` clears. `400` for nonsense,
+`403` for a connection you are not in. It is a route rather than a collection
+update rule for the same reason as muting.
 
 ## Editing a moment
 
