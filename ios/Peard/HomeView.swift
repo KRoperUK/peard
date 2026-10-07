@@ -25,6 +25,9 @@ struct HomeView: View {
     @State private var showCamera = false
     /// The picture just taken, held while its moment is chosen.
     @State private var capturedPhoto: CapturedPhoto?
+    /// The moment the user had tapped before starting the photo flow, carried
+    /// into the sheet as its pre-selected choice (issue #312).
+    @State private var photoMoment: Moment?
     @State private var showMomentSheet = false
     @State private var viewingPhoto: Post?
     @State private var showRewind = false
@@ -105,7 +108,12 @@ struct HomeView: View {
             // and the sheet's Skip is one tap away.
             let picked: (UIImage?) -> Void = { image in
                 showCamera = false
-                guard let image else { return }
+                guard let image else {
+                    // Backed out of the picker: put the moment they had going
+                    // back where it was, rather than dropping it (issue #312).
+                    restorePhotoMomentIfAbandoned()
+                    return
+                }
                 capturedPhoto = CapturedPhoto(image: image)
             }
             if CameraPicker.canUseCamera {
@@ -116,9 +124,17 @@ struct HomeView: View {
             }
         }
         .sheet(item: $capturedPhoto) { photo in
-            PhotoMomentSheet(image: photo.image, moments: model.gridMoments) { square, moment, caption in
-                Task { await model.upload(image: square, moment: moment, caption: caption) }
-            }
+            PhotoMomentSheet(
+                image: photo.image,
+                moments: model.gridMoments,
+                onSend: { square, moment, caption in
+                    Task { await model.upload(image: square, moment: moment, caption: caption) }
+                },
+                preselected: photoMoment
+            )
+            // The carried moment belongs to this one photo; once the sheet is
+            // gone it must not seed the next, unrelated capture.
+            .onDisappear { photoMoment = nil }
         }
     }
 
@@ -625,15 +641,34 @@ struct HomeView: View {
 
     /// Requirement 13.1, 13.2.
     private func requestCamera() async {
+        // A moment counting down must not fire while the user is off taking a
+        // photo for it (issue #312). Lift it out of the send flow now — before
+        // the picker appears — so the countdown is stopped, and carry it into
+        // the photo sheet as the pre-selected choice.
+        photoMoment = model.takePendingMomentForPhoto()
         switch await CameraAuthorization.request() {
         case .granted:
             showCamera = true
         case .denied:
+            // The moment was lifted out ready for the photo flow that is not
+            // going to happen; re-arm it so it is not silently lost.
+            restorePhotoMomentIfAbandoned()
             model.alert = HomeModel.AlertContent(
                 title: "Camera access needed",
                 message: "Enable camera access in Settings to share a moment."
             )
         }
+    }
+
+    /// Re-arms a moment that was carried toward the photo flow when that flow is
+    /// abandoned before a picture is taken (picker cancelled, or camera access
+    /// denied). Starting it afresh gives it a new countdown — the same as having
+    /// just tapped it — which is the sensible resume: the user is back on Home
+    /// with the moment still selected, free to send, annotate or cancel it.
+    private func restorePhotoMomentIfAbandoned() {
+        guard let moment = photoMoment else { return }
+        photoMoment = nil
+        model.tap(moment: moment)
     }
 
     /// Requirement 11.12 — refresh on a timer while in the foreground, less

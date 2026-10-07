@@ -594,6 +594,24 @@ final class HomeModel {
         countdownTask = nil
     }
 
+    /// Hands the pending moment to the photo flow: returns the moment counting
+    /// down, if any, and clears the quick-send so the countdown cannot fire
+    /// behind the photo sheet. The moment is not lost — it rides into the sheet
+    /// as the pre-selected choice, so "coffee, and here's a photo" stays one
+    /// send rather than firing the coffee on its own mid-pick (issue #312).
+    ///
+    /// The note is deliberately dropped: the photo sheet has its own caption,
+    /// and carrying a half-typed note into a field the user cannot see would
+    /// surprise them more than starting the caption fresh.
+    func takePendingMomentForPhoto() -> Moment? {
+        guard let moment = quickSend?.moment else { return nil }
+        countdownTask?.cancel()
+        countdownTask = nil
+        quickSend = nil
+        noteText = ""
+        return moment
+    }
+
     /// Stops the countdown without choosing anything yet, so the send cannot go
     /// out from under somebody who has opened the rewind picker.
     func holdQuickSend() {
