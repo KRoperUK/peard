@@ -9,6 +9,11 @@ struct HistoryView: View {
     @State private var editing: Post?
     @State private var deleting: Post?
     @State private var viewing: Post?
+    /// A moment still waiting to send that is being edited or deleted. Kept apart
+    /// from `editing` and `deleting`: those act on a server record through the
+    /// API, and a queued send has none (#313).
+    @State private var editingQueued: PendingSend?
+    @State private var deletingQueued: PendingSend?
     /// What is typed in the search field; applied to the filter after a pause
     /// in typing rather than on every keystroke (issue #9).
     @State private var searchText = ""
@@ -60,6 +65,9 @@ struct HistoryView: View {
         .sheet(item: $editing) { post in
             MomentEditSheet(post: post, moments: model.moments, model: model)
         }
+        .sheet(item: $editingQueued) { send in
+            QueuedSendEditSheet(send: send, moments: model.moments)
+        }
         // Full screen rather than a sheet: a sheet leaves the timeline showing
         // above it, and the whole point is the photo.
         .fullScreenCover(item: $viewing) { post in
@@ -91,6 +99,23 @@ struct HistoryView: View {
             Button("Cancel", role: .cancel) { deleting = nil }
         } message: {
             Text("It goes from the shared timeline and stops counting towards the tallies.")
+        }
+        // The same alert for a moment that has not been sent: centred, and
+        // worded for what is true of it — nobody else has seen it, so nothing
+        // leaves a shared timeline or a tally.
+        .alert(
+            "Delete this moment?",
+            isPresented: Binding(get: { deletingQueued != nil }, set: { if !$0 { deletingQueued = nil } })
+        ) {
+            Button("Delete", role: .destructive) {
+                if let send = deletingQueued {
+                    deletingQueued = nil
+                    Task { await app.deletePendingSend(id: send.id) }
+                }
+            }
+            Button("Cancel", role: .cancel) { deletingQueued = nil }
+        } message: {
+            Text("It hasn't been sent yet, so it is removed from this phone and will not be sent. This cannot be undone.")
         }
     }
 
@@ -352,17 +377,7 @@ struct HistoryView: View {
 
             Spacer(minLength: 4)
 
-            HStack(spacing: 4) {
-                if model.strayNewPostIDs.contains(post.id) {
-                    Circle()
-                        .fill(PearColor.accent)
-                        .frame(width: 6, height: 6)
-                }
-                Text(model.time(for: post))
-                    .font(.caption2)
-                    .foregroundStyle(PearColor.textTertiary)
-                    .monospacedDigit()
-            }
+            timeLabel(for: post)
         }
         .padding(.vertical, 4)
         .listRowBackground(PearColor.background)
@@ -387,6 +402,25 @@ struct HistoryView: View {
             onDelete: { deleting = post },
             onReact: { kind in Task { await model.toggleReaction(to: post, kind: kind) } }
         ))
+        .modifier(QueuedSendActions(
+            send: model.pendingSend(for: post),
+            onEdit: { editingQueued = $0 },
+            onDelete: { deletingQueued = $0 }
+        ))
+    }
+
+    private func timeLabel(for post: Post) -> some View {
+        HStack(spacing: 4) {
+            if model.strayNewPostIDs.contains(post.id) {
+                Circle()
+                    .fill(PearColor.accent)
+                    .frame(width: 6, height: 6)
+            }
+            Text(model.time(for: post))
+                .font(.caption2)
+                .foregroundStyle(PearColor.textTertiary)
+                .monospacedDigit()
+        }
     }
 
     private func accessibilityLabel(for post: Post) -> String {
@@ -495,6 +529,41 @@ private struct MomentActions: ViewModifier {
                                 Text("\(kind.emoji)  \(kind.accessibilityLabel)")
                             }
                         }
+                    }
+                }
+        } else {
+            content
+        }
+    }
+}
+
+/// What you can do with a moment still waiting to send: edit or delete it, by
+/// swipe and by long press, as for a sent one — but against the queue, not the
+/// server (#313). Separate from `MomentActions`, which is for server records and
+/// offers nothing for a pending row (`HistoryModel.canEdit` is false for it).
+private struct QueuedSendActions: ViewModifier {
+    let send: PendingSend?
+    let onEdit: (PendingSend) -> Void
+    let onDelete: (PendingSend) -> Void
+
+    func body(content: Content) -> some View {
+        if let send {
+            content
+                .swipeActions(edge: .trailing, allowsFullSwipe: false) {
+                    Button(role: .destructive) { onDelete(send) } label: {
+                        Label("Delete", systemImage: "trash")
+                    }
+                    Button { onEdit(send) } label: {
+                        Label("Edit", systemImage: "pencil")
+                    }
+                    .tint(PearColor.accent)
+                }
+                .contextMenu {
+                    Button { onEdit(send) } label: {
+                        Label("Edit moment", systemImage: "pencil")
+                    }
+                    Button(role: .destructive) { onDelete(send) } label: {
+                        Label("Delete moment", systemImage: "trash")
                     }
                 }
         } else {

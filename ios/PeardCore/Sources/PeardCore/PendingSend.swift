@@ -194,6 +194,30 @@ public struct PendingSend: Codable, Hashable, Sendable, Identifiable {
         return copy
     }
 
+    /// A copy saying something different, for an edit made before it was sent
+    /// (#313). Only the words and the moment change: the id, the photo, the time
+    /// and the reply it answers stay, because those are what the photo file, the
+    /// timeline row and the idempotency key are tied to.
+    public func edited(note: String, kind: EventKind, emoji: String, label: String) -> PendingSend {
+        PendingSend(
+            id: id,
+            pairID: pairID,
+            authorID: authorID,
+            kind: kind,
+            emoji: emoji,
+            label: label,
+            note: note,
+            queuedAt: queuedAt,
+            postType: postType,
+            hasPhoto: hasPhoto,
+            happenedAt: happenedAt,
+            replyTo: replyTo,
+            attempts: attempts,
+            lastAttemptAt: lastAttemptAt,
+            lastError: lastError
+        )
+    }
+
     /// The optimistic post shown in the timeline while the send is queued.
     ///
     /// `id` is the client id, which no server record uses, so a pending row and

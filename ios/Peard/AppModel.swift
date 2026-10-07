@@ -454,6 +454,45 @@ final class AppModel {
         prunePendingPhotos()
     }
 
+    /// Changes what a queued send says before it goes: its note and, for a
+    /// moment, which one it is (#313).
+    ///
+    /// Done against the queue, not the server — a queued send has no server
+    /// record yet, so `HistoryModel.edit` would be asking the API to change a
+    /// `pending:` id that does not exist. The emoji and label follow the kind
+    /// so the pending row, which draws from them without consulting the
+    /// catalogue, stays truthful; a send whose kind did not change keeps its
+    /// own, which for a photo or a reply is deliberately blank.
+    ///
+    /// A send that had given up is revived: somebody who edits it is plainly
+    /// not done with it, and leaving it stalled would make the fix pointless.
+    /// One still retrying keeps its place and its backoff history is cleared
+    /// too, since the thing that failed is no longer the thing being sent.
+    func editPendingSend(id: String, note: String, kind: EventKind) async {
+        guard let send = pendingSends.first(where: { $0.id == id }) else { return }
+        let note = PostNote.normalised(note)
+        var emoji = send.emoji
+        var label = send.label
+        if kind != send.kind {
+            let customKinds = sharedStore.cachedMomentKinds(forConnection: send.pairID)
+            emoji = MomentCatalogue.emoji(for: kind, customKinds: customKinds)
+            label = MomentCatalogue.label(for: kind, customKinds: customKinds)
+        }
+        await sendQueue.update(id: id) {
+            $0.edited(note: note, kind: kind, emoji: emoji, label: label).revived
+        }
+        await refreshPendingSends()
+        await flushSendQueueAndWait()
+    }
+
+    /// Removes one queued send, and its photo if it has one. The send never
+    /// reached the server, so there is nothing to delete there (#313).
+    func deletePendingSend(id: String) async {
+        await sendQueue.remove(id: id)
+        await refreshPendingSends()
+        prunePendingPhotos()
+    }
+
     /// Deletes the photo files of sends that are no longer queued — sent,
     /// dropped as undeliverable, aged out, or discarded.
     private func prunePendingPhotos() {
