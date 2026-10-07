@@ -186,6 +186,28 @@ extension MomentBreakdownCopy {
     }
 }
 
+/// One other member's daily goal, labelled for a line of copy (#335).
+struct WaterGoal: Equatable {
+    let label: String
+    let ml: Int
+}
+
+extension MomentBreakdownCopy {
+    /// Everybody's goals on one line — "Your goal 2.5 L · Ari 2 L" — yours first.
+    /// Members who have set no goal are not in `others`, so nobody is shown at a
+    /// number they did not choose.
+    static func waterGoals(
+        yours: Int,
+        others: [WaterGoal],
+        unit: WaterUnit = .millilitres,
+        locale: Locale = .current
+    ) -> String {
+        func amount(_ ml: Int) -> String { WaterAmount.label(ml, unit: unit, locale: locale) }
+        let parts = ["Your goal \(amount(yours))"] + others.map { "\($0.label) \(amount($0.ml))" }
+        return parts.joined(separator: " · ")
+    }
+}
+
 extension MomentBreakdownCopy {
     /// How far today's water is from the targets, one line. The wording changes
     /// at each stage so the state reads without seeing the bar.
@@ -224,12 +246,23 @@ struct WaterTodaySection: View {
     let tallies: ConnectionTallies
     let config: WaterConfig
     var unit: WaterUnit = .millilitres
+    /// The other members' stored goals (#335), for the "Your goal … · Ari …" line.
+    var otherGoals: [WaterGoal] = []
     let mineLabel: String
     let othersLabel: String
 
     private var water: ConnectionTallies.Kind? { tallies.kinds.first { $0.kind == .water } }
     private var total: Int { tallies.waterToday }
-    private var progress: WaterProgress { config.progress(ml: total) }
+    /// The signed-in user's own day against their own targets (#335). The headline
+    /// above is everybody's, but a goal is a person's: measuring the connection's
+    /// total against one member's goal would have them "meet" it on somebody
+    /// else's glass.
+    private var progress: WaterProgress { config.progress(ml: tallies.waterTodayMine) }
+
+    /// "Your goal 2.5 L · Ari 2 L".
+    func goalsLine(locale: Locale = .current) -> String {
+        MomentBreakdownCopy.waterGoals(yours: config.recommended, others: otherGoals, unit: unit, locale: locale)
+    }
 
     /// "45 fl oz today" or "1,330 ml today": the connection's total in the user's
     /// unit. The total itself is millilitres, whichever is showing.
@@ -254,6 +287,9 @@ struct WaterTodaySection: View {
                             .foregroundStyle(PearColor.textPrimary)
                             .monospacedDigit()
                         WaterProgressBar(progress: progress, unit: unit)
+                        Text(goalsLine())
+                            .font(.caption2)
+                            .foregroundStyle(PearColor.textSecondary)
                         Text(MomentBreakdownCopy.waterSplit(
                             mine: water.mine.dayAmount,
                             others: water.others.dayAmount,

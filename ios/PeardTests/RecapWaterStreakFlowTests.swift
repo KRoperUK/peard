@@ -163,13 +163,25 @@ final class RecapWaterStreakFlowTests: XCTestCase {
 final class RecapStubProtocol: URLProtocol {
     private static let lock = NSLock()
     nonisolated(unsafe) private static var recapURLs: [URL] = []
+    nonisolated(unsafe) private static var targetBodies: [[String: Any]] = []
     nonisolated(unsafe) static var body = "{}"
+    /// What the per-person target route answers with (#335).
+    nonisolated(unsafe) static var targetStatus = 200
 
     static func reset() {
         lock.lock()
         recapURLs = []
+        targetBodies = []
         body = "{}"
+        targetStatus = 200
         lock.unlock()
+    }
+
+    /// The bodies POSTed to `/api/peard/water/target`, oldest first.
+    static var targetPosts: [[String: Any]] {
+        lock.lock()
+        defer { lock.unlock() }
+        return targetBodies
     }
 
     static var recapRequests: Int {
@@ -197,19 +209,44 @@ final class RecapStubProtocol: URLProtocol {
 
     override func startLoading() {
         var payload = "{}"
+        var status = 200
         if let url = request.url, url.path == "/api/peard/recap" {
             Self.lock.lock()
             Self.recapURLs.append(url)
             payload = Self.body
             Self.lock.unlock()
+        } else if let url = request.url, url.path == "/api/peard/water/target" {
+            let sent = Self.readBody(of: request)
+            Self.lock.lock()
+            if let json = (try? JSONSerialization.jsonObject(with: sent)) as? [String: Any] {
+                Self.targetBodies.append(json)
+            }
+            status = Self.targetStatus
+            Self.lock.unlock()
         }
         let response = HTTPURLResponse(
-            url: request.url!, statusCode: 200, httpVersion: "HTTP/1.1",
+            url: request.url!, statusCode: status, httpVersion: "HTTP/1.1",
             headerFields: ["Content-Type": "application/json"]
         )!
         client?.urlProtocol(self, didReceive: response, cacheStoragePolicy: .notAllowed)
         client?.urlProtocol(self, didLoad: Data(payload.utf8))
         client?.urlProtocolDidFinishLoading(self)
+    }
+
+    /// A request's body, which URLSession hands a protocol as a stream.
+    private static func readBody(of request: URLRequest) -> Data {
+        if let body = request.httpBody { return body }
+        guard let stream = request.httpBodyStream else { return Data() }
+        stream.open()
+        defer { stream.close() }
+        var data = Data()
+        var buffer = [UInt8](repeating: 0, count: 1024)
+        while stream.hasBytesAvailable {
+            let count = stream.read(&buffer, maxLength: buffer.count)
+            if count <= 0 { break }
+            data.append(buffer, count: count)
+        }
+        return data
     }
 
     override func stopLoading() {}

@@ -6,8 +6,11 @@ import SwiftUI
 ///
 /// Its own view rather than more of `ConnectionSettingsView`, which is long
 /// enough already. Every change goes through `HomeModel.updateWaterConfig`, so
-/// the quick-send window and the Tallies tab pick it up as it is made. The
-/// settings are this device's, per connection — see `WaterConfig`.
+/// the quick-send window and the Tallies tab pick it up as it is made. The sizes
+/// and the switch are this device's, per connection — see `WaterConfig`. The
+/// targets are the user's own and shared (#335): moving a stepper echoes locally
+/// at once, and `updateWaterConfig` sends it to the server, where the rest of the
+/// connection reads it.
 ///
 /// Sizes and targets are shown, and a new size typed, in the user's unit (#324,
 /// `WaterUnitSection`); the config itself is always millilitres.
@@ -67,7 +70,12 @@ struct WaterSettingsSection: View {
         } header: {
             Text("Daily targets")
         } footer: {
-            Text("The minimum cannot be more than the goal.")
+            VStack(alignment: .leading, spacing: 4) {
+                Text(MomentBreakdownCopy.waterGoals(
+                    yours: config.recommended, others: model.otherWaterGoals, unit: unit
+                ))
+                Text("Your targets are shared with the people in this connection. The minimum cannot be more than the goal.")
+            }
         }
     }
 
