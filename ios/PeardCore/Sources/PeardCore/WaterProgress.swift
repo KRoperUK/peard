@@ -3,8 +3,8 @@ import Foundation
 /// Today's water measured against a daily minimum and a recommended amount (#321).
 ///
 /// Pure, so the thresholds can be asserted without rendering a ring. The targets
-/// are the built-in `WaterAmount.defaultMinimum` / `defaultRecommended` for now;
-/// per-connection overrides are #322 and will pass their own values in.
+/// default to the built-in `WaterAmount.defaultMinimum` / `defaultRecommended`; a
+/// connection's own come from `WaterConfig.progress(ml:)` (#322).
 public struct WaterProgress: Equatable, Sendable {
     /// Where today's total stands. Ordered, so "at least this far" is `>=`.
     public enum Stage: Int, Comparable, Sendable {

@@ -200,23 +200,28 @@ extension MomentBreakdownCopy {
 }
 
 /// Today's water in millilitres, for the whole connection (#320), against the
-/// built-in daily targets (#321).
+/// connection's own daily targets (#321, #322).
 ///
 /// Always today, whichever window the breakdown below is showing: the total is
 /// a daily one. Absent until somebody has logged water with an amount, rather
 /// than a row reading "0 ml" in every connection that never drinks any — and so
-/// no target is shown either.
+/// no target is shown either. Absent too when the connection has turned water
+/// off, which hides it without forgetting anything that was logged.
 struct WaterTodaySection: View {
     let tallies: ConnectionTallies
+    let config: WaterConfig
     let mineLabel: String
     let othersLabel: String
 
     private var water: ConnectionTallies.Kind? { tallies.kinds.first { $0.kind == .water } }
     private var total: Int { tallies.waterToday }
-    private var progress: WaterProgress { WaterProgress(ml: total) }
+    private var progress: WaterProgress { config.progress(ml: total) }
+
+    /// Whether the section draws at all.
+    var isShown: Bool { config.isEnabled && total > 0 && water != nil }
 
     var body: some View {
-        if total > 0, let water {
+        if isShown, let water {
             Section {
                 HStack(alignment: .top, spacing: 12) {
                     Text(water.emoji)

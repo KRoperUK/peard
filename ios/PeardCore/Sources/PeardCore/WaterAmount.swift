@@ -14,8 +14,14 @@ public enum WaterAmount {
 
         public var id: Int { ml }
 
-        /// "330 ml (glass)".
-        public var label: String { "\(WaterAmount.label(ml)) (\(name))" }
+        /// "330 ml (glass)", or just "250 ml" for a size with no name.
+        public var label: String { name.isEmpty ? WaterAmount.label(ml) : "\(WaterAmount.label(ml)) (\(name))" }
+    }
+
+    /// The chip for a size: the built-in glass and bottle keep their names, anything
+    /// else a connection adds (#322) is just its size.
+    public static func preset(ml: Int) -> Preset {
+        presets.first { $0.ml == ml } ?? Preset(ml: ml, name: "")
     }
 
     public static let glass = Preset(ml: 330, name: "glass")
@@ -26,7 +32,7 @@ public enum WaterAmount {
     public static let maximum = 5000
 
     /// Built-in daily targets in millilitres, used until a connection can set its
-    /// own (#322). The minimum is the least worth reaching in a day; the
+    /// own (#322) in `WaterConfig`. The minimum is the least worth reaching in a day; the
     /// recommended amount is the figure to aim for.
     public static let defaultMinimum = 1500
     public static let defaultRecommended = 2000

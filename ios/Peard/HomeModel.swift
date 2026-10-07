@@ -76,6 +76,7 @@ final class HomeModel {
         // which is precisely the offline first-launch case.
         self.serverTallies = ConnectionTallies(pair: pairID, mine: .zero, others: .zero, kinds: [])
         self.pinnedSlugs = app.sharedStore.pinnedMoments(forConnection: pairID)
+        self.waterConfig = app.sharedStore.waterConfig(forConnection: pairID)
         // Seeded from the cache so the grid offers the connection's custom
         // moments on the first paint, before — or without — a fetch (#313).
         self.customKinds = app.sharedStore.cachedMomentKinds(forConnection: pairID)
@@ -171,6 +172,33 @@ final class HomeModel {
     func togglePin(_ moment: Moment) {
         pinnedSlugs = MomentPins.toggled(moment.kind.rawValue, in: pinnedSlugs)
         app.sharedStore.setPinnedMoments(pinnedSlugs, forConnection: pairID)
+    }
+
+    // MARK: Water settings
+
+    /// This connection's water targets, chips and on/off switch (#322). Read once
+    /// and written through, like the pins, so every screen redraws on a change.
+    private(set) var waterConfig = WaterConfig.standard
+
+    /// Changes the settings and keeps them. Turning water off hides its UI and
+    /// nothing else: the moments already logged are not touched.
+    func updateWaterConfig(_ change: (inout WaterConfig) -> Void) {
+        var updated = waterConfig
+        change(&updated)
+        guard updated != waterConfig else { return }
+        waterConfig = updated
+        app.sharedStore.setWaterConfig(updated, forConnection: pairID)
+    }
+
+    /// Today's water against this connection's own targets.
+    var waterProgress: WaterProgress { waterConfig.progress(ml: tallies.waterToday) }
+
+    /// The chips the quick-send window offers: this connection's sizes while the
+    /// pending moment is water, or `nil` — no picker at all — for any other
+    /// moment, and for water when the connection has turned it off.
+    var quickSendWaterPresets: [WaterAmount.Preset]? {
+        guard waterConfig.isEnabled, quickSend?.takesAmount == true else { return nil }
+        return waterConfig.presets
     }
 
     /// When each moment last happened here, keyed by kind.
