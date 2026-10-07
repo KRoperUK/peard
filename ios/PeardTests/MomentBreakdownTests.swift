@@ -1,6 +1,7 @@
 import XCTest
 @testable import Peard
 import PeardCore
+import SwiftUI
 
 /// The moment breakdown as `HomeModel` presents it.
 ///
@@ -210,6 +211,68 @@ final class MomentBreakdownTests: XCTestCase {
         await log(moment("beer", "🍺", "Beer"), times: 2)
 
         XCTAssertEqual(model.momentTallies.waterToday, 250)
+    }
+
+    // MARK: Water targets (#321)
+
+    private let gb = Locale(identifier: "en_GB")
+
+    private func todaysProgress() -> WaterProgress {
+        WaterProgress(ml: model.momentTallies.waterToday)
+    }
+
+    func testNoTargetProgressUntilSomeoneLogsWater() async {
+        XCTAssertEqual(todaysProgress().stage, .none)
+        XCTAssertEqual(MomentBreakdownCopy.waterProgress(todaysProgress(), locale: gb), "")
+
+        await log(moment("beer", "🍺", "Beer"))
+        XCTAssertEqual(todaysProgress().stage, .none, "other moments are not water")
+    }
+
+    func testQueuedWaterShowsProgressUnderTheMinimum() async {
+        await drink(330)
+        await drink(500)
+
+        let progress = todaysProgress()
+        XCTAssertEqual(progress.stage, .underMinimum)
+        XCTAssertEqual(progress.fraction, 0.415, accuracy: 0.0001)
+        XCTAssertEqual(MomentBreakdownCopy.waterProgress(progress, locale: gb), "670 ml to the 1,500 ml minimum")
+    }
+
+    func testQueuedWaterReachesTheMinimumBeforeTheGoal() async {
+        await drink(500)
+        await drink(500)
+        await drink(500)
+
+        let progress = todaysProgress()
+        XCTAssertEqual(progress.stage, .minimumMet)
+        XCTAssertEqual(MomentBreakdownCopy.waterProgress(progress, locale: gb), "Minimum met · 500 ml to the 2,000 ml goal")
+    }
+
+    func testMeetingTheGoalReadsDifferentlyFromBeingUnderIt() async {
+        await drink(500)
+        let under = todaysProgress()
+        await drink(500)
+        await drink(500)
+        await drink(500)
+        let met = todaysProgress()
+
+        XCTAssertFalse(under.isRecommendedMet)
+        XCTAssertTrue(met.isRecommendedMet)
+        XCTAssertEqual(met.stage, .recommendedMet)
+        XCTAssertEqual(MomentBreakdownCopy.waterProgress(met, locale: gb), "Goal met · 2,000 ml")
+        XCTAssertNotEqual(
+            MomentBreakdownCopy.waterProgress(under, locale: gb),
+            MomentBreakdownCopy.waterProgress(met, locale: gb)
+        )
+    }
+
+    func testTheWaterSectionRendersWithProgress() async throws {
+        await drink(500)
+        let section = WaterTodaySection(tallies: model.momentTallies, mineLabel: "You", othersLabel: "Ari")
+
+        let image = ImageRenderer(content: Form { section }.frame(width: 360, height: 240))
+        XCTAssertNotNil(image.uiImage, "the section should lay out with its progress bar")
     }
 
     func testTheSplitNamesOnlyTheSidesThatDrank() {
