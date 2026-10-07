@@ -19,6 +19,8 @@ public final class SharedStore: @unchecked Sendable {
         public static let appearance = "appearance"
         public static let pinnedMoments = "pinnedMoments"
         public static let watchLastMoments = "watchLastMoments"
+        public static let cachedMoments = "cachedMoments"
+        public static let cachedAvatars = "cachedAvatars"
         /// Read by the notification service extension too, which has no
         /// PeardCore and so spells it out itself; NotificationServiceTests
         /// keeps the two in step.
@@ -131,6 +133,49 @@ public final class SharedStore: @unchecked Sendable {
         var all = (defaults?.dictionary(forKey: Key.pinnedMoments) as? [String: [String]]) ?? [:]
         all[pairID] = slugs.isEmpty ? nil : slugs
         defaults?.set(all, forKey: Key.pinnedMoments)
+    }
+
+    // MARK: Cached moment definitions
+
+    /// The connection's custom moments as last fetched, kept so the Home grid
+    /// still offers them with no signal (#313). Per connection, like pins: a
+    /// group's moments are not a pair's.
+    public func cachedMomentKinds(forConnection pairID: String) -> [MomentKind] {
+        guard
+            let all = defaults?.dictionary(forKey: Key.cachedMoments) as? [String: Data],
+            let data = all[pairID],
+            let kinds = try? JSONDecoder.peard.decode([MomentKind].self, from: data)
+        else { return [] }
+        return kinds
+    }
+
+    public func setCachedMomentKinds(_ kinds: [MomentKind], forConnection pairID: String) {
+        var all = (defaults?.dictionary(forKey: Key.cachedMoments) as? [String: Data]) ?? [:]
+        // An empty list forgets rather than remembers: a connection whose custom
+        // moments were all removed should not keep offering them offline.
+        if kinds.isEmpty {
+            all[pairID] = nil
+        } else {
+            all[pairID] = try? JSONEncoder.peard.encode(kinds)
+        }
+        defaults?.set(all, forKey: Key.cachedMoments)
+    }
+
+    // MARK: Cached avatars
+
+    /// The bytes of an avatar as last downloaded, kept so a face still draws
+    /// with no signal (#313). Keyed by owner and record id rather than filename
+    /// (see `AvatarView`), so a replaced photo overwrites the old one instead of
+    /// accumulating; the thumb size is part of the key because the rail and the
+    /// settings circle ask for different ones.
+    public func cachedAvatar(forKey key: String) -> Data? {
+        (defaults?.dictionary(forKey: Key.cachedAvatars) as? [String: Data])?[key]
+    }
+
+    public func setCachedAvatar(_ data: Data?, forKey key: String) {
+        var all = (defaults?.dictionary(forKey: Key.cachedAvatars) as? [String: Data]) ?? [:]
+        all[key] = data
+        defaults?.set(all, forKey: Key.cachedAvatars)
     }
 
     // MARK: Watch

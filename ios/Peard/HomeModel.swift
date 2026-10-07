@@ -76,6 +76,9 @@ final class HomeModel {
         // which is precisely the offline first-launch case.
         self.serverTallies = ConnectionTallies(pair: pairID, mine: .zero, others: .zero, kinds: [])
         self.pinnedSlugs = app.sharedStore.pinnedMoments(forConnection: pairID)
+        // Seeded from the cache so the grid offers the connection's custom
+        // moments on the first paint, before — or without — a fetch (#313).
+        self.customKinds = app.sharedStore.cachedMomentKinds(forConnection: pairID)
     }
 
     var signedInUserID: String { app.signedInUserID }
@@ -397,7 +400,14 @@ final class HomeModel {
     func refreshCustomKinds() async {
         do {
             customKinds = try await api.momentKinds(pairID: pairID)
+            app.sharedStore.setCachedMomentKinds(customKinds, forConnection: pairID)
         } catch {
+            // Fall back to the last-known moments rather than dropping to the
+            // built-ins only (#313). Left alone when something is already shown:
+            // an in-memory list beats re-reading the one it came from.
+            if customKinds.isEmpty {
+                customKinds = app.sharedStore.cachedMomentKinds(forConnection: pairID)
+            }
             await app.handleIfUnauthorized(error)
         }
     }
