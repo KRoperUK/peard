@@ -31,6 +31,12 @@ struct PhotoMomentSheet: View {
     /// the framing come either way, because Skip declines the *question*.
     let onSend: (UIImage, Moment?, String) -> Void
 
+    /// A moment carried in from the home send flow: the user had tapped a
+    /// moment type (its countdown running) and then chose to attach a photo, so
+    /// the sheet opens with that moment already picked, matching the
+    /// photo-first order (issue #312). Nil for a plain "Share a photo".
+    var preselected: Moment?
+
     @State private var chosen: Moment?
     @State private var caption = ""
     @State private var edit = PhotoEdit.identity
@@ -71,6 +77,14 @@ struct PhotoMomentSheet: View {
                 .padding(20)
             }
             .background(PearColor.background)
+            // The moment carried in from the home send flow becomes the
+            // pre-selected choice (issue #312). Done here rather than in an
+            // initialiser because `chosen` is `@State`, which cannot be seeded
+            // from a stored property; the sheet is created fresh per photo, so
+            // this runs once.
+            .onAppear {
+                if chosen == nil, let preselected { chosen = preselected }
+            }
             // Typing a caption fills the screen with keyboard, and the moment
             // grid sits below it — a flick should get back to the grid without
             // having to find a Done key first.
