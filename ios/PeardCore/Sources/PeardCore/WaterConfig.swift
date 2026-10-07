@@ -3,10 +3,15 @@ import Foundation
 /// One connection's water settings (#322): whether water is tracked there, the
 /// two daily targets, and the sizes offered as chips.
 ///
-/// Kept on the device, per connection, in `SharedStore` — the way pins are — not on
-/// the server. Nothing here is a fact about a moment: it only decides what this
-/// phone offers and how it measures a day. (Gamification, #323, may want targets
-/// both people see and so a server-shared copy; that is a decision for then.)
+/// Kept on the device, per connection, in `SharedStore` — the way pins are. The
+/// sizes and the on/off switch live only here: they decide what this phone offers.
+///
+/// The two targets are different (#335). Each person's own targets are stored on
+/// the server too, where everybody in the connection reads them
+/// (`MomentRecap.waterTargets`), and the copy here is the local echo of the
+/// user's own — what they see the instant they move a stepper, what an offline
+/// phone measures against, and what an older server that stores none leaves
+/// standing.
 ///
 /// The invariants — both targets in `step...WaterAmount.maximum`, the minimum no
 /// higher than the recommended amount, presets in range, unique and capped — hold
@@ -70,6 +75,20 @@ public struct WaterConfig: Codable, Equatable, Sendable {
     /// amount a moment can carry.
     public mutating func setRecommended(_ ml: Int) {
         recommended = min(max(ml, minimum), WaterAmount.maximum)
+    }
+
+    /// Sets both targets at once, in either order of size, held to the same
+    /// invariants as everything else. For taking the server's copy (#335), where
+    /// two single setters would each be held up by the other's old value.
+    public mutating func setTargets(minimum: Int, recommended: Int) {
+        let goal = Self.clampedTarget(recommended, upTo: WaterAmount.maximum)
+        self.recommended = goal
+        self.minimum = Self.clampedTarget(minimum, upTo: goal)
+    }
+
+    /// True while both targets are still the built-in ones.
+    public var hasStandardTargets: Bool {
+        minimum == WaterAmount.defaultMinimum && recommended == WaterAmount.defaultRecommended
     }
 
     /// Today's `ml` measured against these targets.
