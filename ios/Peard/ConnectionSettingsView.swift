@@ -26,6 +26,8 @@ struct ConnectionSettingsView: View {
     @State private var showDeleteAccountConfirmation = false
     @State private var isDeletingAccount = false
     @State private var showInviteSheet = false
+    @State private var editingQueued: PendingSend?
+    @State private var deletingQueued: PendingSend?
     @State private var isExporting = false
     @State private var exportFileURL: URL?
     @State private var exportError: String?
@@ -375,20 +377,18 @@ struct ConnectionSettingsView: View {
         if !model.pendingSends.isEmpty {
             Section {
                 ForEach(model.pendingSends) { send in
-                    HStack {
-                        Text(send.emoji)
-                        VStack(alignment: .leading, spacing: 2) {
-                            Text(send.label)
-                                .foregroundStyle(PearColor.textPrimary)
-                            Text(statusText(for: send))
-                                .font(.caption)
-                                .foregroundStyle(send.hasGivenUp ? PearColor.error : PearColor.textTertiary)
+                    pendingRow(for: send)
+                        // Against the queue, not the API: nothing here has a
+                        // server record yet (#313).
+                        .swipeActions(edge: .trailing, allowsFullSwipe: false) {
+                            Button(role: .destructive) { deletingQueued = send } label: {
+                                Label("Delete", systemImage: "trash")
+                            }
+                            Button { editingQueued = send } label: {
+                                Label("Edit", systemImage: "pencil")
+                            }
+                            .tint(PearColor.accent)
                         }
-                        Spacer()
-                        Text(ElapsedTime.label(for: send.queuedAt))
-                            .font(.caption2)
-                            .foregroundStyle(PearColor.textTertiary)
-                    }
                 }
 
                 if !model.stalledSends.isEmpty {
@@ -404,6 +404,40 @@ struct ConnectionSettingsView: View {
             } footer: {
                 Text("Moments are kept on this device until the server accepts them, so nothing is lost when there's no signal.")
             }
+            .sheet(item: $editingQueued) { send in
+                QueuedSendEditSheet(send: send, moments: model.moments)
+            }
+            .alert(
+                "Delete this moment?",
+                isPresented: Binding(get: { deletingQueued != nil }, set: { if !$0 { deletingQueued = nil } })
+            ) {
+                Button("Delete", role: .destructive) {
+                    if let send = deletingQueued {
+                        deletingQueued = nil
+                        Task { await app.deletePendingSend(id: send.id) }
+                    }
+                }
+                Button("Cancel", role: .cancel) { deletingQueued = nil }
+            } message: {
+                Text("It hasn't been sent yet, so it is removed from this phone and will not be sent. This cannot be undone.")
+            }
+        }
+    }
+
+    private func pendingRow(for send: PendingSend) -> some View {
+        HStack {
+            Text(send.emoji)
+            VStack(alignment: .leading, spacing: 2) {
+                Text(send.label)
+                    .foregroundStyle(PearColor.textPrimary)
+                Text(statusText(for: send))
+                    .font(.caption)
+                    .foregroundStyle(send.hasGivenUp ? PearColor.error : PearColor.textTertiary)
+            }
+            Spacer()
+            Text(ElapsedTime.label(for: send.queuedAt))
+                .font(.caption2)
+                .foregroundStyle(PearColor.textTertiary)
         }
     }
 

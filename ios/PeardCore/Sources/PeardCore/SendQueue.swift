@@ -128,6 +128,19 @@ public actor SendQueue {
         persist()
     }
 
+    /// Replaces one queued send with `transform` of itself, keeping its place in
+    /// the queue, and persists. A no-op when `id` is not queued — it may have
+    /// been sent, or discarded, between the caller reading it and asking.
+    ///
+    /// For editing what a send says before it goes (#313). The transform must
+    /// return a send with the same `id`: that is what the photo file, the
+    /// timeline row and the server's idempotency key are all keyed on.
+    public func update(id: String, _ transform: (PendingSend) -> PendingSend) async {
+        guard let index = sends.firstIndex(where: { $0.id == id }) else { return }
+        sends[index] = transform(sends[index])
+        persist()
+    }
+
     /// Resets the failure history of every abandoned send so the next flush tries
     /// again. Driven by an explicit "try again" in the UI.
     public func reviveStalled() async {
@@ -179,9 +192,14 @@ public actor SendQueue {
                 continue
             }
 
+            // The queue can be changed while `perform` is suspended — a send
+            // edited or deleted from the UI — so the send is found again by id
+            // afterwards. Removing by the index taken before the await would
+            // take out a different send (or trap) once something ahead of it
+            // had gone.
             do {
                 try await perform(send)
-                sends.remove(at: index)
+                index = drop(send.id, near: index)
                 result.sent += 1
                 continue
             } catch {
@@ -189,7 +207,7 @@ public actor SendQueue {
                 case .permanent:
                     // Already recorded (the client_id index rejected a duplicate)
                     // or refused outright. Either way, retrying cannot help.
-                    sends.remove(at: index)
+                    index = drop(send.id, near: index)
                     result.abandoned += 1
                     continue
                 case .retryable(let message):
@@ -204,7 +222,11 @@ public actor SendQueue {
                         if result.didChangeAnything { persist() }
                         return result
                     }
-                    sends[index] = send.failed(with: message, at: now)
+                    // Applied to the queue's current copy, which an edit made
+                    // while this request was out has already replaced.
+                    if let current = sends.firstIndex(where: { $0.id == send.id }) {
+                        sends[current] = sends[current].failed(with: message, at: now)
+                    }
                     result.failed += 1
                     // Stop at the first retryable failure: it almost certainly
                     // means no connectivity, so the rest would fail too, and
@@ -219,6 +241,14 @@ public actor SendQueue {
         result.remaining = sends.count
         if result.didChangeAnything || result.failed > 0 { persist() }
         return result
+    }
+
+    /// Removes the send with `id` and returns where the flush should carry on
+    /// from: the slot it occupied, or `fallback` when it has already gone.
+    private func drop(_ id: String, near fallback: Int) -> Int {
+        let slot = sends.firstIndex { $0.id == id }
+        sends.removeAll { $0.id == id }
+        return slot ?? min(fallback, sends.count)
     }
 
     private func persist() {

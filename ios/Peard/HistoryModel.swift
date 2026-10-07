@@ -126,8 +126,9 @@ final class HistoryModel {
     /// only fail.
     ///
     /// A moment still queued on this device has no server record to edit or
-    /// delete, so it offers neither — editing a queued send is slice C's job,
-    /// done against the queue rather than the API (#313).
+    /// delete, so it offers neither here — editing and deleting it act on the
+    /// queue instead, through `pendingSend(for:)` and `QueuedSendEditSheet`
+    /// (#313).
     func canEdit(_ post: Post) -> Bool { post.author == signedInUserID && !isPending(post) }
 
     /// Everything this connection can log, which is what a moment may be
@@ -471,7 +472,18 @@ final class HistoryModel {
     /// True for a timeline row that is a moment queued on this device, not yet
     /// accepted by the server — the `pending:` id prefix its `optimisticPost`
     /// carries. Drives the "waiting"/"sending" indicator on the row (#313).
-    func isPending(_ post: Post) -> Bool { post.id.hasPrefix("pending:") }
+    func isPending(_ post: Post) -> Bool { post.id.hasPrefix(Self.pendingPrefix) }
+
+    private static let pendingPrefix = "pending:"
+
+    /// The queued send behind a pending timeline row, for editing or deleting it
+    /// against the queue. `nil` when the row is not a pending one, or when the
+    /// send has gone (sent, or discarded) since the row was drawn.
+    func pendingSend(for post: Post) -> PendingSend? {
+        guard isPending(post) else { return nil }
+        let id = String(post.id.dropFirst(Self.pendingPrefix.count))
+        return pendingSends().first { $0.id == id }
+    }
 
     /// What the pending indicator should say: offline moments are waiting for
     /// signal, online ones are on their way up. Matches the home screen's hero.

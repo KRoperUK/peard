@@ -351,6 +351,134 @@ final class SendQueueTests: XCTestCase {
         XCTAssertTrue(FilePendingSendStore(url: url).loadPendingSends().isEmpty)
     }
 
+    // MARK: Editing a queued send (#313)
+
+    func testUpdateEditsTheNoteAndPersistsIt() async {
+        let store = MemoryStore()
+        let queue = SendQueue(store: store)
+        await queue.enqueue(send(id: "a"))
+
+        await queue.update(id: "a") {
+            $0.edited(note: "flat white", kind: $0.kind, emoji: $0.emoji, label: $0.label)
+        }
+
+        let pending = await queue.pending
+        XCTAssertEqual(pending.map(\.note), ["flat white"])
+        XCTAssertEqual(store.stored.map(\.note), ["flat white"], "an edit has to survive the app being killed")
+    }
+
+    func testUpdateCanChangeTheKind() async {
+        let queue = SendQueue(store: MemoryStore())
+        await queue.enqueue(send(.beer, id: "a"))
+
+        await queue.update(id: "a") {
+            $0.edited(note: $0.note, kind: .coffee, emoji: "☕", label: "Coffee")
+        }
+
+        let edited = await queue.pending.first
+        XCTAssertEqual(edited?.kind, .coffee)
+        XCTAssertEqual(edited?.emoji, "☕")
+        XCTAssertEqual(edited?.label, "Coffee")
+        XCTAssertEqual(edited?.postFields["event_kind"], "coffee")
+    }
+
+    func testUpdateOfAMissingIDChangesNothingAndDoesNotPersist() async {
+        let store = MemoryStore()
+        let queue = SendQueue(store: store)
+        await queue.enqueue(send(id: "a"))
+        let writesBefore = store.writes
+
+        await queue.update(id: "gone") {
+            $0.edited(note: "x", kind: .coffee, emoji: "☕", label: "Coffee")
+        }
+
+        let pending = await queue.pending
+        XCTAssertEqual(pending.map(\.id), ["a"])
+        XCTAssertEqual(pending.first?.note, "")
+        XCTAssertEqual(store.writes, writesBefore)
+    }
+
+    /// An edit keeps the send where it was, or fixing a typo would send the
+    /// moment out of order.
+    func testUpdateKeepsQueuePosition() async {
+        let queue = SendQueue(store: MemoryStore())
+        for id in ["a", "b", "c"] { await queue.enqueue(send(id: id)) }
+
+        await queue.update(id: "b") {
+            $0.edited(note: "edited", kind: $0.kind, emoji: $0.emoji, label: $0.label)
+        }
+
+        let pending = await queue.pending
+        XCTAssertEqual(pending.map(\.id), ["a", "b", "c"])
+        XCTAssertEqual(pending.map(\.note), ["", "edited", ""])
+    }
+
+    func testEditedKeepsIdentityTimeAndPhoto() {
+        let original = PendingSend(
+            id: "p", pairID: "p1", authorID: "me", kind: EventKind(rawValue: ""),
+            emoji: "📸", label: "Photo", note: "old",
+            queuedAt: Date(timeIntervalSince1970: 5), postType: .photo, hasPhoto: true,
+            happenedAt: Date(timeIntervalSince1970: 4), replyTo: "orig"
+        )
+
+        let edited = original.edited(note: "new", kind: original.kind, emoji: original.emoji, label: original.label)
+
+        XCTAssertEqual(edited.note, "new")
+        XCTAssertEqual(edited.id, original.id)
+        XCTAssertEqual(edited.queuedAt, original.queuedAt)
+        XCTAssertEqual(edited.postType, .photo)
+        XCTAssertTrue(edited.hasPhoto)
+        XCTAssertEqual(edited.happenedAt, original.happenedAt)
+        XCTAssertEqual(edited.replyTo, "orig")
+    }
+
+    /// Deleting while a flush has a request out must not take a neighbour with
+    /// it: the flush used to remove by the index it held before the await.
+    func testDeletingAnEarlierSendMidFlushDoesNotLoseTheNext() async {
+        let queue = SendQueue(store: MemoryStore())
+        // "x" is waiting out a backoff, so the flush passes it and sends "b"
+        // from the second slot; "c" is behind.
+        await queue.enqueue(send(id: "x", attempts: 1, lastAttemptAt: Date()))
+        await queue.enqueue(send(id: "b"))
+        await queue.enqueue(send(id: "c"))
+
+        let result = await queue.flush { pending in
+            if pending.id == "b" { await queue.remove(id: "x") }
+        }
+
+        let remaining = await queue.pending.map(\.id)
+        XCTAssertEqual(result.sent, 2, "b sent, and the flush carried on to c")
+        XCTAssertEqual(remaining, [])
+    }
+
+    func testDeletingTheSendInFlightIsHarmless() async {
+        let queue = SendQueue(store: MemoryStore())
+        for id in ["a", "b"] { await queue.enqueue(send(id: id)) }
+
+        await queue.flush { pending in
+            if pending.id == "a" { await queue.remove(id: "a") }
+        }
+
+        let remaining = await queue.pending.map(\.id)
+        XCTAssertEqual(remaining, [])
+    }
+
+    /// An edit made while the request is out is not overwritten by the failure
+    /// being recorded against the stale copy.
+    func testEditMidFlushSurvivesARetryableFailure() async {
+        let queue = SendQueue(store: MemoryStore())
+        await queue.enqueue(send(id: "a"))
+
+        await queue.flush { _ in
+            await queue.update(id: "a") { $0.edited(note: "edited", kind: $0.kind, emoji: $0.emoji, label: $0.label) }
+            throw APIError.transport("offline")
+        }
+
+        let pending = await queue.pending.first
+        XCTAssertEqual(pending?.note, "edited")
+        XCTAssertEqual(pending?.attempts, 1)
+    }
+
     // MARK: Optimistic post
 
     /// A pending row and the real record it becomes must never collide in a
