@@ -62,6 +62,13 @@ final class AppModel {
     var lowData: LowDataPreference {
         didSet { sharedStore.lowData = lowData }
     }
+
+    /// Millilitres or fluid ounces — how water is drawn, never what is stored
+    /// (#324). Mirrored like `appearance` so every screen redraws the moment it
+    /// changes.
+    var waterUnit: WaterUnit {
+        didSet { sharedStore.waterUnit = waterUnit }
+    }
     let widgetSync: WidgetSync
     let push: PushCoordinator
     let liveActivities: LiveActivityCoordinator
@@ -147,6 +154,7 @@ final class AppModel {
         self.sharedStore = sharedStore
         self.appearance = sharedStore.appearance
         self.lowData = sharedStore.lowData
+        self.waterUnit = sharedStore.waterUnit
         let api = APIClient(baseURL: config.serverURL, tokenProvider: sessionStore, session: session)
         self.api = api
         self.fileTokens = FileTokenStore(api: api)

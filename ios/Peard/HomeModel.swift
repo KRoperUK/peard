@@ -193,6 +193,9 @@ final class HomeModel {
     /// Today's water against this connection's own targets.
     var waterProgress: WaterProgress { waterConfig.progress(ml: tallies.waterToday) }
 
+    /// The unit water is drawn in: the user's, not this connection's (#324).
+    var waterUnit: WaterUnit { app.waterUnit }
+
     /// The chips the quick-send window offers: this connection's sizes while the
     /// pending moment is water, or `nil` — no picker at all — for any other
     /// moment, and for water when the connection has turned it off.

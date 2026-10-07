@@ -2,6 +2,11 @@ import Foundation
 
 /// The size of a water moment, in whole millilitres.
 ///
+/// Millilitres is the canonical unit and the only one stored or sent. What a
+/// reader sees can be fluid ounces instead (#324, `WaterUnit`); every formatter
+/// and parser here that takes a unit converts at the edge and leaves the stored
+/// amount alone.
+///
 /// Water is an ordinary moment that carries one more fact. This is the little
 /// that is specific to it: the two sizes offered with a tap, what a typed size
 /// may be, and how a total reads. Everything else — posting, queueing, tallying —
@@ -15,7 +20,14 @@ public enum WaterAmount {
         public var id: Int { ml }
 
         /// "330 ml (glass)", or just "250 ml" for a size with no name.
-        public var label: String { name.isEmpty ? WaterAmount.label(ml) : "\(WaterAmount.label(ml)) (\(name))" }
+        public var label: String { label(in: .millilitres) }
+
+        /// The same chip in the reader's unit: "11.2 fl oz (glass)". The size is
+        /// still `ml`; only the words change.
+        public func label(in unit: WaterUnit, locale: Locale = .current) -> String {
+            let size = WaterAmount.label(ml, unit: unit, locale: locale)
+            return name.isEmpty ? size : "\(size) (\(name))"
+        }
     }
 
     /// The chip for a size: the built-in glass and bottle keep their names, anything
@@ -52,13 +64,41 @@ public enum WaterAmount {
         return normalised(Int(trimmed))
     }
 
-    /// "1,330 ml", grouped for the reader's locale.
-    public static func label(_ ml: Int, locale: Locale = .current) -> String {
-        "\(ml.formatted(.number.locale(locale))) ml"
+    /// A typed size in `unit`, as canonical millilitres, or `nil` when it is not a
+    /// whole number that ends up in range. Whole fluid ounces, like whole
+    /// millilitres: a decimal point would be a guess, and "12" in ounces is
+    /// the common case (355 ml). Nothing is stored in ounces; this is the way back.
+    public static func parse(_ text: String, unit: WaterUnit) -> Int? {
+        switch unit {
+        case .millilitres:
+            return parse(text)
+        case .fluidOunces:
+            let trimmed = text.trimmingCharacters(in: .whitespaces)
+            guard !trimmed.isEmpty, trimmed.allSatisfy(\.isASCII), trimmed.allSatisfy(\.isNumber),
+                  let ounces = Int(trimmed) else { return nil }
+            return normalised(unit.ml(fromDisplayed: Double(ounces)))
+        }
+    }
+
+    /// "1,330 ml", grouped for the reader's locale; in fluid ounces, "45 fl oz"
+    /// or "11.2 fl oz" (a tenth, a trailing ".0" dropped).
+    public static func label(_ ml: Int, unit: WaterUnit = .millilitres, locale: Locale = .current) -> String {
+        "\(number(ml, unit: unit, locale: locale)) \(unit.symbol)"
     }
 
     /// "1,330 ml today".
-    public static func todayLabel(_ ml: Int, locale: Locale = .current) -> String {
-        "\(label(ml, locale: locale)) today"
+    public static func todayLabel(_ ml: Int, unit: WaterUnit = .millilitres, locale: Locale = .current) -> String {
+        "\(label(ml, unit: unit, locale: locale)) today"
+    }
+
+    /// Just the figure, with no symbol: what a text field or stepper shows beside
+    /// a unit of its own.
+    public static func number(_ ml: Int, unit: WaterUnit = .millilitres, locale: Locale = .current) -> String {
+        switch unit {
+        case .millilitres:
+            return ml.formatted(.number.locale(locale))
+        case .fluidOunces:
+            return unit.displayed(ml: ml).formatted(.number.locale(locale).precision(.fractionLength(0...1)))
+        }
     }
 }
