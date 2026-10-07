@@ -2,6 +2,7 @@
 // kept going.
 //
 //	GET /api/peard/recap?pair=X[&from=…&tz=±minutes]  -> see response below
+//	POST /api/peard/water/target  { pair, minimum, recommended }  -> see target.go
 //
 // Why this exists: the app could say how many moments there had ever been and
 // how many today, and nothing in between. Neither is a story. "Fourteen coffees
@@ -81,9 +82,8 @@ HAVING SUM(COALESCE(amount, 0)) >= {:target}
 ORDER BY day DESC`
 
 // defaultWaterTarget is the built-in recommended daily amount in millilitres,
-// used when the caller sends no target. Mirrors the app's
-// `WaterAmount.defaultRecommended`; the server cannot see a connection's own
-// target because it lives on the device (#322).
+// used for a member who has stored no target when the caller sends none either.
+// Mirrors the app's `WaterAmount.defaultRecommended`.
 const defaultWaterTarget = 2000
 
 // windowQuery counts the recap window in one pass, split by authorship.
@@ -110,6 +110,7 @@ LIMIT 1`
 func Register(app core.App) {
 	app.OnServe().BindFunc(func(se *core.ServeEvent) error {
 		se.Router.GET("/api/peard/recap", handler(app)).Bind(apis.RequireAuth())
+		registerTarget(se)
 		return se.Next()
 	})
 }
@@ -196,7 +197,8 @@ func handler(app core.App) func(e *core.RequestEvent) error {
 		}
 
 		current, best := streaks(app, pairID, shift)
-		waterCurrent, waterBest := waterStreaks(app, pairID, shift, waterTarget(e))
+		targets := memberTargets(app, pairID)
+		waterCurrent, waterBest := waterStreaks(app, pairID, shift, streakTarget(targets, waterTarget(e)))
 
 		res := map[string]any{
 			"pair":   pairID,
@@ -208,6 +210,9 @@ func handler(app core.App) func(e *core.RequestEvent) error {
 			"streak": map[string]any{"current": current, "best": best},
 			// Consecutive days the connection's water reached the target.
 			"water_streak": map[string]any{"current": waterCurrent, "best": waterBest},
+			// Every member's own daily targets (#335), the caller's included, so
+			// both people see each other's goals. Zero means none stored.
+			"water_targets": targets,
 		}
 
 		var busiest []busiestRow
@@ -302,9 +307,11 @@ func streaksFrom(app core.App, query string, params dbx.Params, shift string) (c
 	return current, best
 }
 
-// waterTarget reads the caller's recommended daily amount in millilitres.
+// waterTarget reads the recommended daily amount the caller sent in millilitres.
 //
-// Absent or not a number is the built-in default, because an older app sends
+// It is the fallback for a member who has stored no target of their own (#335):
+// an app that predates per-person targets still sends its device-local one.
+// Absent or not a number is the built-in default, because the oldest sent
 // nothing. A number that is zero or negative is taken at its word as "no target",
 // which waterStreaks answers with zero.
 func waterTarget(e *core.RequestEvent) int {

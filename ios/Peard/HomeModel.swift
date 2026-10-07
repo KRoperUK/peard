@@ -176,28 +176,118 @@ final class HomeModel {
 
     // MARK: Water settings
 
-    /// This connection's water targets, chips and on/off switch (#322). Read once
-    /// and written through, like the pins, so every screen redraws on a change.
+    /// This connection's water settings (#322): sizes, the on/off switch, and the
+    /// local echo of this user's own targets. Read once and written through, like
+    /// the pins, so every screen redraws on a change.
     private(set) var waterConfig = WaterConfig.standard
 
     /// Changes the settings and keeps them. Turning water off hides its UI and
     /// nothing else: the moments already logged are not touched.
+    ///
+    /// A change to the targets also goes to the server (#335), where they are this
+    /// user's own, shared with the connection. The local copy is already updated
+    /// by then, so the stepper never waits on the network; the sizes and the
+    /// switch never leave the device.
     func updateWaterConfig(_ change: (inout WaterConfig) -> Void) {
         var updated = waterConfig
         change(&updated)
         guard updated != waterConfig else { return }
-        let targetChanged = updated.recommended != waterConfig.recommended
+        let targetsChanged = updated.minimum != waterConfig.minimum || updated.recommended != waterConfig.recommended
         waterConfig = updated
         app.sharedStore.setWaterConfig(updated, forConnection: pairID)
-        // The water streak is counted by the server against this target, so a
-        // new one leaves the last answer describing a different goal (#323).
-        if targetChanged {
-            Task { await refreshRecap() }
+        if targetsChanged {
+            pushWaterTargets()
         }
     }
 
-    /// Today's water against this connection's own targets.
-    var waterProgress: WaterProgress { waterConfig.progress(ml: tallies.waterToday) }
+    /// Whether the last write of the targets failed in a way worth retrying, so
+    /// the next recap pushes them again instead of overwriting them with the
+    /// server's older copy. Held in memory: a relaunch trusts the server.
+    private var waterTargetsNeedPushing = false
+    private var waterTargetPush: Task<Void, Never>?
+    private var waterTargetPushesInFlight = 0
+
+    /// Writes this user's targets to the server, then asks for the recap again —
+    /// the streak is counted against them, so the last answer describes a goal
+    /// nobody has any more (#323).
+    ///
+    /// Chained, each push sending whatever the config holds when its turn comes, so
+    /// a quick run of stepper taps arrives in order and the server ends on the last
+    /// one rather than on whichever request happened to land last.
+    private func pushWaterTargets() {
+        waterTargetPushesInFlight += 1
+        let previous = waterTargetPush
+        waterTargetPush = Task { [weak self] in
+            await previous?.value
+            guard let self else { return }
+            await self.sendWaterTargets()
+            self.waterTargetPushesInFlight -= 1
+        }
+    }
+
+    private func sendWaterTargets() async {
+        let config = waterConfig
+        do {
+            try await api.setWaterTarget(
+                pairID: pairID, minimum: config.minimum, recommended: config.recommended
+            )
+            waterTargetsNeedPushing = false
+        } catch let error as APIError where error.status == 404 {
+            // A server that predates per-person targets: they stay on this device,
+            // as they always did, and the streak is counted against the one the
+            // recap request sends.
+            waterTargetsNeedPushing = false
+        } catch {
+            // Offline, or the server said no. The local copy stands; the next recap
+            // tries again rather than letting the server's old number win.
+            waterTargetsNeedPushing = true
+            return
+        }
+        await refreshRecap()
+    }
+
+    /// Takes the server's copy of this user's own targets once a recap has come
+    /// back, and the other way round for the one case where this phone is ahead.
+    ///
+    /// - Nothing happens against a server that sends no targets.
+    /// - While a write is on its way, or has failed, the local copy is the newer
+    ///   one, so the server's is not allowed to overwrite it.
+    /// - A target stored on the server wins: it is the one every device and the
+    ///   other member see.
+    /// - With none stored, targets this user changed before they were shared are
+    ///   sent up once, so nobody's goal is lost to the upgrade.
+    private func adoptWaterTargets(from recap: MomentRecap) {
+        guard recap.waterTargets != nil, waterTargetPushesInFlight == 0 else { return }
+        if waterTargetsNeedPushing {
+            pushWaterTargets()
+            return
+        }
+        if let mine = recap.waterTarget(forUser: signedInUserID) {
+            var adopted = waterConfig
+            adopted.setTargets(minimum: mine.minimum, recommended: mine.recommended)
+            guard adopted != waterConfig else { return }
+            waterConfig = adopted
+            app.sharedStore.setWaterConfig(adopted, forConnection: pairID)
+        } else if !waterConfig.hasStandardTargets {
+            pushWaterTargets()
+        }
+    }
+
+    /// Today's water, yours alone, against your own targets (#335). The tallies
+    /// still show everybody's total; the bar is the user's own day.
+    var waterProgress: WaterProgress { waterConfig.progress(ml: tallies.waterTodayMine) }
+
+    /// The other members' stored goals, named, for "Your goal 2.5 L · Ari 2 L".
+    /// Members who have set none are left out rather than shown at a guess.
+    var otherWaterGoals: [WaterGoal] {
+        guard let recap else { return [] }
+        return recap.otherWaterTargets(excluding: signedInUserID).map { target in
+            WaterGoal(
+                label: connection?.name(forUser: target.user) ?? PartnerLabel.fallback,
+                ml: target.recommended
+            )
+        }
+    }
 
     /// The unit water is drawn in: the user's, not this connection's (#324).
     var waterUnit: WaterUnit { app.waterUnit }
@@ -391,7 +481,9 @@ final class HomeModel {
 
     func refreshRecap() async {
         do {
-            recap = try await api.recap(pairID: pairID, waterTarget: waterConfig.recommended)
+            let fetched = try await api.recap(pairID: pairID, waterTarget: waterConfig.recommended)
+            recap = fetched
+            adoptWaterTargets(from: fetched)
         } catch let error as APIError where error.status == 404 || error.isCancellation {
             // Older server, or a refresh that was replaced by the next one.
             // Neither is worth a word on screen.

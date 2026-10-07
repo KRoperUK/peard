@@ -141,6 +141,12 @@ public struct ConnectionTallies: Codable, Hashable, Sendable {
         kinds.first { $0.kind == .water }?.dayAmount ?? 0
     }
 
+    /// Your own millilitres of water today (#335): what your personal target is
+    /// measured against, as opposed to `waterToday`, which is everybody's.
+    public var waterTodayMine: Int {
+        kinds.first { $0.kind == .water }?.mine.dayAmount ?? 0
+    }
+
     /// True when the breakdown has something to show. False against a server with
     /// no tallies endpoint, where the fallback path can only produce side totals.
     public var hasKindBreakdown: Bool { !kinds.isEmpty }

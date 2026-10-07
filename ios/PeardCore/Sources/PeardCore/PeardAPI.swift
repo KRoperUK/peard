@@ -149,6 +149,25 @@ public extension APIClient {
         )
     }
 
+    /// `POST /api/peard/water/target` — sets the caller's own daily water targets
+    /// in this connection (#335), in millilitres.
+    ///
+    /// Only ever the caller's own: the server takes the user from the session, so
+    /// there is no way to name somebody else's. Both go up together because the
+    /// server holds them to one rule, the minimum no higher than the goal. An
+    /// older server has no such route and answers 404; the caller treats that as
+    /// "targets stay on this device".
+    func setWaterTarget(pairID: String, minimum: Int, recommended: Int) async throws {
+        try await postIgnoringResponse(
+            path: "/api/peard/water/target",
+            typedFields: [
+                "pair": .string(pairID),
+                "minimum": .int(minimum),
+                "recommended": .int(recommended),
+            ]
+        )
+    }
+
     /// `POST /api/peard/connections/seen` — marks this connection read up to now.
     ///
     /// The server stamps its own clock rather than accepting one from here: the
@@ -206,9 +225,10 @@ public extension APIClient {
     /// sequence of days. A phone in Sydney and a server in London would
     /// otherwise disagree about which days those were.
     ///
-    /// `waterTarget` is the connection's recommended daily water in millilitres.
-    /// It lives on the device (#322), so the server can only count water days
-    /// against it if told; omitted, the server uses the built-in amount.
+    /// `waterTarget` is this device's recommended daily water in millilitres. The
+    /// server now keeps each member's own (#335) and counts the streak against
+    /// those; this is only the fallback for a member who has stored none, and what
+    /// an older server counts against.
     func recap(
         pairID: String,
         days: Int = 7,

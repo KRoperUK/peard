@@ -195,6 +195,7 @@ private struct TalliesTab: View {
                     tallies: model.momentTallies,
                     config: model.waterConfig,
                     unit: model.waterUnit,
+                    otherGoals: model.otherWaterGoals,
                     mineLabel: "You",
                     othersLabel: model.othersLabel
                 )

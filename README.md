@@ -1001,7 +1001,8 @@ receive live pushes.
 | POST | `/api/peard/pairs/remove` | owner | Remove somebody else from a connection |
 | POST | `/api/peard/contacts/match` | user | Which of the supplied contact hashes belong to discoverable accounts |
 | POST | `/api/peard/contacts/settings` | user | Set your discoverability, phone number and the email address to be matched on |
-| GET  | `/api/peard/recap?pair=` | member | The week's moments, the busiest day and the current and best streak |
+| GET  | `/api/peard/recap?pair=` | member | The week's moments, the busiest day, the current and best streak, and every member's water targets |
+| POST | `/api/peard/water/target` | member | Set your own daily water minimum and goal in a connection; everyone in it sees them |
 | GET  | `/api/peard/status` | none | Build commit and time, which the deploy job watches |
 | GET  | `/api/peard/export` | user | JSON snapshot of your profile, connections and moments; `?media=zip` adds every photo in a zip |
 | DELETE | `/api/peard/account` | user | Delete your account and everything that cascades from it |
