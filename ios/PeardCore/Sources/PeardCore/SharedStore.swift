@@ -19,6 +19,7 @@ public final class SharedStore: @unchecked Sendable {
         public static let appearance = "appearance"
         public static let pinnedMoments = "pinnedMoments"
         public static let waterConfigs = "waterConfigs"
+        public static let waterUnit = "waterUnit"
         public static let watchLastMoments = "watchLastMoments"
         public static let cachedMoments = "cachedMoments"
         public static let cachedAvatars = "cachedAvatars"
@@ -119,6 +120,23 @@ public final class SharedStore: @unchecked Sendable {
     public var lowData: LowDataPreference {
         get { LowDataPreference(storedValue: defaults?.string(forKey: Key.lowData)) }
         set { set(newValue.rawValue, forKey: Key.lowData) }
+    }
+
+    // MARK: Water unit
+
+    /// Millilitres or fluid ounces, for display only (#324); see `WaterUnit`.
+    ///
+    /// The user's, so one value for every connection, unlike `WaterConfig`.
+    /// Nothing stored until somebody chooses: the locale decides until then. What
+    /// a moment carries is millilitres either way, so this never touches data.
+    public var waterUnit: WaterUnit {
+        get { waterUnit(locale: .current) }
+        set { set(newValue.rawValue, forKey: Key.waterUnit) }
+    }
+
+    /// The same, against a given locale; the testable form of the getter.
+    public func waterUnit(locale: Locale) -> WaterUnit {
+        WaterUnit(storedValue: defaults?.string(forKey: Key.waterUnit), locale: locale)
     }
 
     // MARK: Pinned moments

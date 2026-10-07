@@ -560,7 +560,9 @@ struct HomeView: View {
             }
 
             if let send = model.quickSend, let presets = model.quickSendWaterPresets {
-                WaterAmountPicker(amount: send.amount, presets: presets) { model.setQuickSendAmount($0) }
+                WaterAmountPicker(amount: send.amount, presets: presets, unit: model.waterUnit) {
+                    model.setQuickSendAmount($0)
+                }
             }
 
             HStack(spacing: 8) {

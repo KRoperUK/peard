@@ -189,6 +189,7 @@ private struct TalliesTab: View {
                 WaterTodaySection(
                     tallies: model.momentTallies,
                     config: model.waterConfig,
+                    unit: model.waterUnit,
                     mineLabel: "You",
                     othersLabel: model.othersLabel
                 )

@@ -168,12 +168,20 @@ enum MomentBreakdownCopy {
 extension MomentBreakdownCopy {
     /// Who drank what today, naming only the sides that logged something, the
     /// way a row's split does.
-    static func waterSplit(mine: Int, others: Int, mineLabel: String, othersLabel: String) -> String {
+    static func waterSplit(
+        mine: Int,
+        others: Int,
+        mineLabel: String,
+        othersLabel: String,
+        unit: WaterUnit = .millilitres,
+        locale: Locale = .current
+    ) -> String {
+        func amount(_ ml: Int) -> String { WaterAmount.label(ml, unit: unit, locale: locale) }
         switch (mine, others) {
         case (0, 0): return ""
-        case (let m, 0): return "\(mineLabel) \(WaterAmount.label(m))"
-        case (0, let o): return "\(othersLabel) \(WaterAmount.label(o))"
-        case (let m, let o): return "\(mineLabel) \(WaterAmount.label(m)) · \(othersLabel) \(WaterAmount.label(o))"
+        case (let m, 0): return "\(mineLabel) \(amount(m))"
+        case (0, let o): return "\(othersLabel) \(amount(o))"
+        case (let m, let o): return "\(mineLabel) \(amount(m)) · \(othersLabel) \(amount(o))"
         }
     }
 }
@@ -181,17 +189,22 @@ extension MomentBreakdownCopy {
 extension MomentBreakdownCopy {
     /// How far today's water is from the targets, one line. The wording changes
     /// at each stage so the state reads without seeing the bar.
-    static func waterProgress(_ progress: WaterProgress, locale: Locale = .current) -> String {
-        let minimum = WaterAmount.label(progress.minimum, locale: locale)
-        let recommended = WaterAmount.label(progress.recommended, locale: locale)
+    static func waterProgress(
+        _ progress: WaterProgress,
+        unit: WaterUnit = .millilitres,
+        locale: Locale = .current
+    ) -> String {
+        func amount(_ ml: Int) -> String { WaterAmount.label(ml, unit: unit, locale: locale) }
+        let minimum = amount(progress.minimum)
+        let recommended = amount(progress.recommended)
         switch progress.stage {
         case .none:
             return ""
         case .underMinimum:
-            let toMinimum = WaterAmount.label(progress.minimum - progress.ml, locale: locale)
+            let toMinimum = amount(progress.minimum - progress.ml)
             return "\(toMinimum) to the \(minimum) minimum"
         case .minimumMet:
-            let toGoal = WaterAmount.label(progress.remaining, locale: locale)
+            let toGoal = amount(progress.remaining)
             return "Minimum met · \(toGoal) to the \(recommended) goal"
         case .recommendedMet:
             return "Goal met · \(recommended)"
@@ -199,7 +212,7 @@ extension MomentBreakdownCopy {
     }
 }
 
-/// Today's water in millilitres, for the whole connection (#320), against the
+/// Today's water, for the whole connection (#320), against the
 /// connection's own daily targets (#321, #322).
 ///
 /// Always today, whichever window the breakdown below is showing: the total is
@@ -210,12 +223,19 @@ extension MomentBreakdownCopy {
 struct WaterTodaySection: View {
     let tallies: ConnectionTallies
     let config: WaterConfig
+    var unit: WaterUnit = .millilitres
     let mineLabel: String
     let othersLabel: String
 
     private var water: ConnectionTallies.Kind? { tallies.kinds.first { $0.kind == .water } }
     private var total: Int { tallies.waterToday }
     private var progress: WaterProgress { config.progress(ml: total) }
+
+    /// "45 fl oz today" or "1,330 ml today": the connection's total in the user's
+    /// unit. The total itself is millilitres, whichever is showing.
+    func totalLabel(locale: Locale = .current) -> String {
+        WaterAmount.todayLabel(total, unit: unit, locale: locale)
+    }
 
     /// Whether the section draws at all.
     var isShown: Bool { config.isEnabled && total > 0 && water != nil }
@@ -229,16 +249,17 @@ struct WaterTodaySection: View {
                         .frame(width: 28)
                         .accessibilityHidden(true)
                     VStack(alignment: .leading, spacing: 6) {
-                        Text(WaterAmount.todayLabel(total))
+                        Text(totalLabel())
                             .font(.headline)
                             .foregroundStyle(PearColor.textPrimary)
                             .monospacedDigit()
-                        WaterProgressBar(progress: progress)
+                        WaterProgressBar(progress: progress, unit: unit)
                         Text(MomentBreakdownCopy.waterSplit(
                             mine: water.mine.dayAmount,
                             others: water.others.dayAmount,
                             mineLabel: mineLabel,
-                            othersLabel: othersLabel
+                            othersLabel: othersLabel,
+                            unit: unit
                         ))
                         .font(.caption2)
                         .foregroundStyle(PearColor.textTertiary)
@@ -260,6 +281,7 @@ struct WaterTodaySection: View {
 /// a tick mark, so it is not a matter of reading a shade.
 struct WaterProgressBar: View {
     let progress: WaterProgress
+    var unit: WaterUnit = .millilitres
 
     private var fill: Color {
         switch progress.stage {
@@ -293,7 +315,7 @@ struct WaterProgressBar: View {
                     .padding(.vertical, 2)
                     .background(PearColor.accent, in: Capsule())
             } else {
-                Text(MomentBreakdownCopy.waterProgress(progress))
+                Text(MomentBreakdownCopy.waterProgress(progress, unit: unit))
                     .font(.caption2)
                     .foregroundStyle(PearColor.textSecondary)
             }

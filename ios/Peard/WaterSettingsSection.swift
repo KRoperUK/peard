@@ -8,6 +8,9 @@ import SwiftUI
 /// enough already. Every change goes through `HomeModel.updateWaterConfig`, so
 /// the quick-send window and the Tallies tab pick it up as it is made. The
 /// settings are this device's, per connection — see `WaterConfig`.
+///
+/// Sizes and targets are shown, and a new size typed, in the user's unit (#324,
+/// `WaterUnitSection`); the config itself is always millilitres.
 struct WaterSettingsSection: View {
     let model: HomeModel
 
@@ -15,6 +18,7 @@ struct WaterSettingsSection: View {
     @FocusState private var newSizeFocused: Bool
 
     private var config: WaterConfig { model.waterConfig }
+    private var unit: WaterUnit { model.waterUnit }
 
     var body: some View {
         Section {
@@ -47,38 +51,60 @@ struct WaterSettingsSection: View {
 
     private var targetsSection: some View {
         Section {
-            Stepper(
-                value: Binding(
-                    get: { config.minimum },
-                    set: { ml in model.updateWaterConfig { $0.setMinimum(ml) } }
-                ),
-                in: WaterConfig.step...config.recommended,
-                step: WaterConfig.step
-            ) {
-                row("Minimum", WaterAmount.label(config.minimum))
-            }
-            .listRowBackground(PearColor.surface)
-            .accessibilityLabel("Daily minimum")
-            .accessibilityValue(WaterAmount.label(config.minimum))
+            targetStepper(
+                "Minimum",
+                accessibility: "Daily minimum",
+                ml: config.minimum,
+                range: WaterConfig.step...config.recommended
+            ) { ml in model.updateWaterConfig { $0.setMinimum(ml) } }
 
-            Stepper(
-                value: Binding(
-                    get: { config.recommended },
-                    set: { ml in model.updateWaterConfig { $0.setRecommended(ml) } }
-                ),
-                in: config.minimum...WaterAmount.maximum,
-                step: WaterConfig.step
-            ) {
-                row("Goal", WaterAmount.label(config.recommended))
-            }
-            .listRowBackground(PearColor.surface)
-            .accessibilityLabel("Daily goal")
-            .accessibilityValue(WaterAmount.label(config.recommended))
+            targetStepper(
+                "Goal",
+                accessibility: "Daily goal",
+                ml: config.recommended,
+                range: config.minimum...WaterAmount.maximum
+            ) { ml in model.updateWaterConfig { $0.setRecommended(ml) } }
         } header: {
             Text("Daily targets")
         } footer: {
             Text("The minimum cannot be more than the goal.")
         }
+    }
+
+    /// One target. In millilitres it is the plain stepper it has always been; in
+    /// fluid ounces it steps along whole multiples of 4 fl oz (`WaterUnit.stepped`)
+    /// rather than 100 ml, which would read 50.7, 54.1, 57.5. Either way `set`
+    /// is handed millilitres and the range is millilitres.
+    private func targetStepper(
+        _ title: String,
+        accessibility: String,
+        ml: Int,
+        range: ClosedRange<Int>,
+        set: @escaping (Int) -> Void
+    ) -> some View {
+        let value = WaterAmount.label(ml, unit: unit)
+        return Group {
+            if unit == .millilitres {
+                Stepper(
+                    value: Binding(get: { ml }, set: set),
+                    in: range,
+                    step: WaterConfig.step
+                ) {
+                    row(title, value)
+                }
+            } else {
+                Stepper {
+                    row(title, value)
+                } onIncrement: {
+                    set(min(unit.stepped(ml, up: true), range.upperBound))
+                } onDecrement: {
+                    set(max(unit.stepped(ml, up: false), range.lowerBound))
+                }
+            }
+        }
+        .listRowBackground(PearColor.surface)
+        .accessibilityLabel(accessibility)
+        .accessibilityValue(value)
     }
 
     // MARK: Sizes
@@ -87,7 +113,7 @@ struct WaterSettingsSection: View {
         Section {
             ForEach(config.presets) { preset in
                 HStack {
-                    Text(preset.label)
+                    Text(preset.label(in: unit))
                         .foregroundStyle(PearColor.textPrimary)
                     Spacer()
                     Button(role: .destructive) {
@@ -99,7 +125,7 @@ struct WaterSettingsSection: View {
                             .contentShape(Rectangle())
                     }
                     .buttonStyle(.plain)
-                    .accessibilityLabel("Remove \(preset.label)")
+                    .accessibilityLabel("Remove \(preset.label(in: unit))")
                 }
                 .listRowBackground(PearColor.surface)
             }
@@ -111,8 +137,9 @@ struct WaterSettingsSection: View {
                         .focused($newSizeFocused)
                         .foregroundStyle(PearColor.textPrimary)
                         .onSubmit(addSize)
-                        .accessibilityLabel("New size in millilitres")
-                    Text("ml")
+                        .accessibilityLabel("New size in \(unit.spokenName)")
+                        .onChange(of: unit) { newSize = "" }
+                    Text(unit.symbol)
                         .foregroundStyle(PearColor.textSecondary)
                     Button("Add", action: addSize)
                         .foregroundStyle(canAdd ? PearColor.accent : PearColor.textTertiary)
@@ -144,12 +171,12 @@ struct WaterSettingsSection: View {
     }
 
     private var canAdd: Bool {
-        guard let ml = WaterAmount.parse(newSize) else { return false }
+        guard let ml = WaterAmount.parse(newSize, unit: unit) else { return false }
         return !config.presetMLs.contains(ml)
     }
 
     private func addSize() {
-        guard let ml = WaterAmount.parse(newSize) else { return }
+        guard let ml = WaterAmount.parse(newSize, unit: unit) else { return }
         model.updateWaterConfig { $0.addPreset(ml) }
         newSize = ""
     }
