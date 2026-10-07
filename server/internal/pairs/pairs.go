@@ -237,7 +237,11 @@ func acceptHandler(app core.App) func(e *core.RequestEvent) error {
 			return e.BadRequestError(err.Error(), nil)
 		}
 
-		// Joining an existing connection (a group invite).
+		// Joining an existing connection (a group invite). The checks above
+		// run outside the transaction only as a fast path; the authoritative
+		// versions run inside it, because two accepts of one code can both pass
+		// an out-of-transaction check and then both commit — spending a
+		// single-use invite twice, or taking a connection past maxMembers.
 		if existingPairID != "" {
 			if isMember(app, existingPairID, e.Auth.Id) {
 				return e.BadRequestError("you are already in that connection", nil)
@@ -245,16 +249,21 @@ func acceptHandler(app core.App) func(e *core.RequestEvent) error {
 			if err := requireMemberHeadroom(app, existingPairID); err != nil {
 				return e.BadRequestError(err.Error(), nil)
 			}
-			err = app.RunInTransaction(func(txApp core.App) error {
+			if err := acceptInTransaction(app, inv.Id, func(txApp core.App, inv *core.Record) error {
+				if isMember(txApp, existingPairID, e.Auth.Id) {
+					return errAlreadyMember
+				}
+				if err := requireMemberHeadroom(txApp, existingPairID); err != nil {
+					return err
+				}
 				if err := addMember(txApp, existingPairID, e.Auth.Id, "member"); err != nil {
 					return err
 				}
 				inv.Set("status", "accepted")
 				inv.Set("invitee", e.Auth.Id)
 				return txApp.Save(inv)
-			})
-			if err != nil {
-				return e.InternalServerError("failed to join connection", err)
+			}); err != nil {
+				return acceptError(e, err, "failed to join connection")
 			}
 			return e.JSON(http.StatusOK, map[string]any{"pair": existingPairID})
 		}
@@ -265,7 +274,16 @@ func acceptHandler(app core.App) func(e *core.RequestEvent) error {
 		}
 
 		var pairID string
-		err = app.RunInTransaction(func(txApp core.App) error {
+		if err := acceptInTransaction(app, inv.Id, func(txApp core.App, inv *core.Record) error {
+			// Re-check headroom for both users inside the transaction: a
+			// concurrent accept of a different code could have used up either
+			// user's last slot since the out-of-transaction check above.
+			if err := requireConnectionHeadroom(txApp, e.Auth.Id); err != nil {
+				return err
+			}
+			if err := requireConnectionHeadroom(txApp, inviterID); err != nil {
+				return err
+			}
 			pairsCol, err := txApp.FindCollectionByNameOrId("pairs")
 			if err != nil {
 				return err
@@ -286,12 +304,66 @@ func acceptHandler(app core.App) func(e *core.RequestEvent) error {
 			inv.Set("status", "accepted")
 			inv.Set("invitee", e.Auth.Id)
 			return txApp.Save(inv)
-		})
-		if err != nil {
-			return e.InternalServerError("failed to create pair", err)
+		}); err != nil {
+			return acceptError(e, err, "failed to create pair")
 		}
 		return e.JSON(http.StatusOK, map[string]any{"pair": pairID})
 	}
+}
+
+// errAlreadyMember and errInviteSpent are the two conditions that make an accept
+// fail cleanly rather than as a server error, so the caller sees a 400 with a
+// useful message instead of a 500.
+var (
+	errAlreadyMember = errors.New("you are already in that connection")
+	errInviteSpent   = errors.New("that code has expired or has already been used")
+)
+
+// acceptInTransaction runs claim with the invite re-read FOR UPDATE inside a
+// transaction, and only if it is still pending. This is what serialises two
+// accepts of one code: the first to commit flips status to accepted, and the
+// second re-reads it, no longer finds status = 'pending', and is turned away
+// with errInviteSpent before it can add a member or create a pair.
+func acceptInTransaction(app core.App, inviteID string, claim func(core.App, *core.Record) error) error {
+	return app.RunInTransaction(func(txApp core.App) error {
+		inv, err := txApp.FindFirstRecordByFilter("pair_invites",
+			"id = {:id} && status = 'pending'", dbx.Params{"id": inviteID})
+		if err != nil || inv == nil {
+			return errInviteSpent
+		}
+		return claim(txApp, inv)
+	})
+}
+
+// acceptError maps the transaction's error to the right HTTP response: the two
+// clean sentinels (and any headroom/membership message) become a 400, anything
+// else a 500 with the supplied context.
+func acceptError(e *core.RequestEvent, err error, serverMsg string) error {
+	if errors.Is(err, errInviteSpent) {
+		return e.NotFoundError(errInviteSpent.Error(), err)
+	}
+	if errors.Is(err, errAlreadyMember) {
+		return e.BadRequestError(errAlreadyMember.Error(), err)
+	}
+	// requireMemberHeadroom / requireConnectionHeadroom return plain errors with
+	// a user-facing message; surface those as a 400 rather than a 500.
+	if isHeadroomError(err) {
+		return e.BadRequestError(err.Error(), err)
+	}
+	return e.InternalServerError(serverMsg, err)
+}
+
+// isHeadroomError reports whether err is one of the capacity messages the
+// headroom helpers produce, which are safe to show the user as a 400.
+func isHeadroomError(err error) bool {
+	switch err.Error() {
+	case "that connection is full",
+		"you have joined as many connections as Pear'd allows",
+		"could not count the connection's members",
+		"could not count your connections":
+		return true
+	}
+	return false
 }
 
 func leaveHandler(app core.App) func(e *core.RequestEvent) error {

@@ -30,7 +30,16 @@ final class WidgetSync {
     }
 
     /// Removes the token and refreshes timelines (Requirement 16.4).
+    ///
+    /// Revokes the token server-side first so sign-out actually invalidates the
+    /// credential rather than only forgetting the local copy (#340). Best-effort:
+    /// the server also expires and caps tokens, so a missed revoke is bounded,
+    /// and the local removal happens regardless.
     func clear() {
+        if let token = store.widgetToken, !token.isEmpty {
+            let api = api
+            Task { try? await api.revokeWidgetToken(token) }
+        }
         store.removeWidgetToken()
         WatchSync.shared.update(nil)
         reloadTimelines()
