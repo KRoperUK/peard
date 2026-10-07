@@ -8,9 +8,13 @@ name: TestFlight
 # build to external testers.
 #
 # A workflow of its own, rather than jobs in CI, so that a newer push to main
-# can cut CI's older run without also killing an upload in progress. GitHub cancels a run whole; a job cannot opt out. Here
-# nothing is cancelled at the workflow level, and the internal job's
-# concurrency group lets a running upload finish while a newer build waits.
+# can cut CI's older run without also killing an upload in progress. Each
+# approval lives in its own gate job (approve-internal, approve-external) whose
+# concurrency group cancels in progress: a run paused for approval still counts
+# as in progress, so a newer push to main cancels an older build still waiting
+# at that gate — you only ever approve the newest. The upload jobs depend on
+# the gate but carry no concurrency, so once approved they run to completion
+# and a newer push waits behind them rather than killing a build mid-upload.
 
 on:
   push:
@@ -23,18 +27,31 @@ permissions:
   contents: read
 
 jobs:
-  ios-release:
-    name: TestFlight (internal)
-    runs-on: macos-26
-    # The first approval. The testflight-internal environment requires a
-    # reviewer, so the run pauses here until somebody approves it in the Actions
-    # tab. Once this job is running nothing cancels it; a newer push's job waits
-    # behind it, and GitHub keeps only the newest of those waiting.
+  # The first approval, held in a job of its own so that cancelling a stale
+  # approval never touches a running upload. This job has no steps: its only
+  # purpose is the testflight-internal environment's required-reviewer gate, so
+  # it is the thing that pauses in the Actions tab. Its concurrency group
+  # cancels in-progress, and a run paused for approval still counts as in
+  # progress — so when a newer push to main arrives, GitHub cancels the older
+  # run sitting at this gate. The upload below depends on this job but carries
+  # no concurrency of its own, so once approval is given the upload runs to
+  # completion and a newer push waits behind it rather than killing it.
+  approve-internal:
+    name: TestFlight (internal approval)
+    runs-on: ubuntu-latest
     environment:
       name: testflight-internal
     concurrency:
-      group: testflight-internal
-      cancel-in-progress: false
+      group: testflight-internal-approval
+      cancel-in-progress: true
+    steps:
+      - name: Approved
+        run: echo "Internal release approved for ${{ github.sha }}"
+
+  ios-release:
+    name: TestFlight (internal)
+    runs-on: macos-26
+    needs: approve-internal
     outputs:
       build_number: ${{ steps.release.outputs.build_number }}
       version: ${{ steps.release.outputs.version }}
@@ -117,23 +134,31 @@ jobs:
       - name: Wait for processing, then set What to Test
         run: bundle exec fastlane testflight_changelog
 
+  # The second approval, in a job of its own for the same reason as the
+  # internal one: its concurrency group cancels in progress, so a newer build
+  # waiting at this gate supersedes an older one, while the external upload
+  # below runs to completion once approved.
+  approve-external:
+    name: TestFlight (external approval)
+    runs-on: ubuntu-latest
+    needs: ios-release
+    if: needs.ios-release.outputs.build_number != ''
+    environment:
+      name: testflight-external
+    concurrency:
+      group: testflight-external-approval
+      cancel-in-progress: true
+    steps:
+      - name: Approved
+        run: echo "External release approved for build ${{ needs.ios-release.outputs.build_number }}"
+
   testflight-external:
     name: TestFlight (external)
     # Linux: this only talks to App Store Connect's API — wait for processing,
     # add the build to a group — so a macOS runner bought nothing but its price.
     runs-on: ubuntu-latest
-    needs: ios-release
+    needs: [ios-release, approve-external]
     if: needs.ios-release.outputs.build_number != ''
-    # The second approval. The testflight-external environment requires a
-    # reviewer, so the run pauses here until somebody approves it in the Actions
-    # tab; reject an older one there when a newer build should go instead.
-    # Nothing is rebuilt: the build internal testers have is the one that goes
-    # out.
-    environment:
-      name: testflight-external
-    concurrency:
-      group: testflight-external
-      cancel-in-progress: false
     # The pending release notes below list pull requests. A job-level block
     # replaces the workflow's rather than adding to it, hence contents again.
     permissions:
