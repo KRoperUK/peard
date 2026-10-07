@@ -322,6 +322,12 @@ struct HistoryView: View {
                     if post.rewound {
                         RewoundChip(loggedAt: post.created)
                     }
+                    // A moment queued on this device that the server has not
+                    // accepted yet says so, rather than looking identical to one
+                    // that has — the same marker the home screen's hero uses.
+                    if model.isPending(post) {
+                        QueuedChip(offline: model.pendingIndicatorIsOffline)
+                    }
                 }
 
                 if post.replyTo != nil {
@@ -388,6 +394,9 @@ struct HistoryView: View {
         if post.hasMedia { parts.append("photo") }
         if post.replyTo != nil { parts.append(model.replyTitle(for: post)) }
         if post.isEdited { parts.append("edited") }
+        if model.isPending(post) {
+            parts.append(model.pendingIndicatorIsOffline ? "waiting to send" : "sending")
+        }
         if model.strayNewPostIDs.contains(post.id) { parts.append("new") }
         if post.rewound { parts.append(RewoundChip.accessibilityLabel(loggedAt: post.created)) }
         let time = model.time(for: post)
@@ -491,5 +500,22 @@ private struct MomentActions: ViewModifier {
         } else {
             content
         }
+    }
+}
+
+/// Marks a moment queued on this device that the server has not accepted yet —
+/// "waiting" with no signal, "sending" once it is on its way. The same marker
+/// the home screen's hero uses, so a queued moment reads the same wherever it
+/// is seen (#313).
+private struct QueuedChip: View {
+    let offline: Bool
+
+    var body: some View {
+        Label(
+            offline ? "waiting" : "sending",
+            systemImage: offline ? "wifi.slash" : "arrow.up.circle"
+        )
+        .font(.caption2)
+        .foregroundStyle(PearColor.textTertiary)
     }
 }

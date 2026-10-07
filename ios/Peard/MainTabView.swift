@@ -108,7 +108,9 @@ private struct TimelineTab: View {
                 signedInUserID: model.signedInUserID,
                 customKinds: model.customKinds,
                 connection: model.connection,
-                unreadWatermark: app.unreadWatermark(forConnection: model.pairID)
+                unreadWatermark: app.unreadWatermark(forConnection: model.pairID),
+                pendingSends: { app.pendingSends(forConnection: model.pairID) },
+                isOffline: { !app.isOnline }
             ),
             serverURL: model.serverURL,
             title: model.connectionTitle,

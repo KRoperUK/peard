@@ -33,6 +33,16 @@ final class HistoryModel {
     /// Where to draw the "new since you last looked" line, frozen at the moment
     /// this connection was opened — see `AppModel.unreadWatermarks`.
     private let unreadWatermark: Date?
+    /// This connection's sends that have not reached the server yet, read live
+    /// each time the timeline is grouped so a flush or a new tap is reflected
+    /// without reloading. A closure rather than a stored array because the
+    /// authority is `AppModel`'s queue, which the model does not otherwise hold;
+    /// defaults to none so tests and previews need not supply one (#313).
+    private let pendingSends: () -> [PendingSend]
+    /// Whether the device currently has no connection, read live so the pending
+    /// indicator says "waiting" offline and "sending" once signal returns.
+    /// Defaults to online for tests and previews (#313).
+    private let isOffline: () -> Bool
 
     private(set) var posts: [Post] = []
     /// Replaceable so a test can see what was felt.
@@ -114,7 +124,11 @@ final class HistoryModel {
     /// account of their own evening is not something being in a group entitles
     /// you to. Checked here as well so the app does not offer a button that can
     /// only fail.
-    func canEdit(_ post: Post) -> Bool { post.author == signedInUserID }
+    ///
+    /// A moment still queued on this device has no server record to edit or
+    /// delete, so it offers neither — editing a queued send is slice C's job,
+    /// done against the queue rather than the API (#313).
+    func canEdit(_ post: Post) -> Bool { post.author == signedInUserID && !isPending(post) }
 
     /// Everything this connection can log, which is what a moment may be
     /// changed *to*. The same list the home screen offers, so "the wrong one"
@@ -336,7 +350,9 @@ final class HistoryModel {
         customKinds: [MomentKind],
         connection: Connection?,
         calendar: Calendar = .peardTally,
-        unreadWatermark: Date? = nil
+        unreadWatermark: Date? = nil,
+        pendingSends: @escaping () -> [PendingSend] = { [] },
+        isOffline: @escaping () -> Bool = { false }
     ) {
         self.api = api
         self.pairID = pairID
@@ -345,6 +361,8 @@ final class HistoryModel {
         self.connection = connection
         self.calendar = calendar
         self.unreadWatermark = unreadWatermark
+        self.pendingSends = pendingSends
+        self.isOffline = isOffline
     }
 
     /// True for a moment somebody else posted after the watermark — the ones
@@ -398,13 +416,66 @@ final class HistoryModel {
     var days: [Day] {
         var order: [Date] = []
         var grouped: [Date: [Post]] = [:]
-        for post in posts {
+        for post in timelinePosts {
             let key = post.hasTimestamp ? calendar.startOfDay(for: post.happenedAt) : Date.distantPast
             if grouped[key] == nil { order.append(key) }
             grouped[key, default: []].append(post)
         }
         return order.map { Day(date: $0, posts: grouped[$0] ?? []) }
     }
+
+    /// The loaded server posts with this device's not-yet-sent moments merged
+    /// in, newest first — so a moment logged offline shows in the timeline
+    /// beside the ones that have landed, rather than vanishing until signal
+    /// comes back (#313).
+    ///
+    /// Pending moments are drawn as their `optimisticPost`, whose id is prefixed
+    /// `pending:` so it never collides with a real row in a `ForEach`. There is
+    /// no id-based de-duplication because none is needed: `SendQueue` drops a
+    /// send the instant the server accepts it, and the same flush bumps the
+    /// refresh fingerprint that pulls the real row in — the swap the home
+    /// screen's hero already relies on.
+    private var timelinePosts: [Post] {
+        let pending = matchingPendingPosts
+        guard !pending.isEmpty else { return posts }
+        // Newest-first, matching the server order the pages arrive in. A queued
+        // moment and a sent one share a `happenedAt` ordering, so a tap made now
+        // sits at the top where it was just logged.
+        return (posts + pending).sorted { $0.happenedAt > $1.happenedAt }
+    }
+
+    /// This device's queued sends as timeline rows, narrowed by the active
+    /// filter the same way the server narrows the loaded pages. The filter runs
+    /// here rather than on the server because these have never reached it.
+    private var matchingPendingPosts: [Post] {
+        pendingSends().compactMap { send in
+            if let author = filter.author, !author.isEmpty, send.authorID != author { return nil }
+            if let kind = filter.kind, !kind.rawValue.isEmpty, send.kind != kind { return nil }
+            if filter.photosOnly, !send.hasPhoto { return nil }
+            if !filter.search.isEmpty, !pendingMatchesSearch(send) { return nil }
+            return send.optimisticPost
+        }
+    }
+
+    /// Whether a queued send matches the text search: in its note, or in the
+    /// label of the moment it is — mirroring the server's note/kind match so a
+    /// search for "coffee" finds a queued coffee as it would a sent one.
+    private func pendingMatchesSearch(_ send: PendingSend) -> Bool {
+        let options: String.CompareOptions = [.caseInsensitive, .diacriticInsensitive]
+        if send.note.range(of: filter.search, options: options) != nil { return true }
+        if filter.searchKinds.contains(send.kind.rawValue) { return true }
+        let label = MomentCatalogue.label(for: send.kind, customKinds: customKinds)
+        return label.range(of: filter.search, options: options) != nil
+    }
+
+    /// True for a timeline row that is a moment queued on this device, not yet
+    /// accepted by the server — the `pending:` id prefix its `optimisticPost`
+    /// carries. Drives the "waiting"/"sending" indicator on the row (#313).
+    func isPending(_ post: Post) -> Bool { post.id.hasPrefix("pending:") }
+
+    /// What the pending indicator should say: offline moments are waiting for
+    /// signal, online ones are on their way up. Matches the home screen's hero.
+    var pendingIndicatorIsOffline: Bool { isOffline() }
 
     func heading(for day: Day) -> String {
         guard day.date != .distantPast else { return "Undated" }
