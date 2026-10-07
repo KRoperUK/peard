@@ -12,6 +12,7 @@
 #   pre-commit run --all-files      run everything by hand
 #   SKIP=app-tests git push         skip one hook, by id
 #   git push --no-verify            skip the lot, deliberately
+#   KIRO_SANDBOX_OFF=1 git push     build under a nested sandbox (see Makefile)
 #
 # Every `files:` pattern below is load-bearing: it is what stops a one-line Go
 # change from booting a simulator. A hook that ignores scope is a hook that gets
@@ -102,7 +103,7 @@ repos:
 
       - id: swift-test
         name: swift test (PeardCore)
-        entry: bash -c 'cd ios/PeardCore && swift test'
+        entry: make test
         language: system
         files: ^(ios/PeardCore/|Makefile$)
         pass_filenames: false

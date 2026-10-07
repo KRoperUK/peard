@@ -5,7 +5,19 @@ SIMULATOR ?=
 SIMULATOR_ID = $(shell scripts/pick-simulator $(if $(SIMULATOR),"$(SIMULATOR)"))
 DESTINATION ?= platform=iOS Simulator,id=$(SIMULATOR_ID)
 PROJECT = ios/Peard.xcodeproj
-XCODEBUILD = xcodebuild -project $(PROJECT) -scheme Peard
+
+# Nested-sandbox escape hatch. Some environments (e.g. an agent that already runs
+# the build under its own sandbox) forbid the toolchain's own `sandbox-exec`
+# wrapper, so xcodebuild's macro expansion / package resolution and SwiftPM's
+# manifest compile both die with "sandbox_apply: Operation not permitted". Set
+# KIRO_SANDBOX_OFF=1 to pass the toolchain's own sandbox-disable flags and build
+# anyway. Unset by default, so CI and ordinary local builds are untouched.
+ifdef KIRO_SANDBOX_OFF
+XCODE_SANDBOX_FLAGS = -skipMacroValidation 'OTHER_SWIFT_FLAGS=$$(inherited) -disable-sandbox'
+SWIFT_SANDBOX_FLAGS = --disable-sandbox
+endif
+
+XCODEBUILD = xcodebuild -project $(PROJECT) -scheme Peard $(XCODE_SANDBOX_FLAGS)
 BUILT_APP = ios/build/Build/Products/Debug-iphonesimulator/Peard.app
 
 .PHONY: server migrate app app-release run project test test-app test-ui test-integration \
@@ -113,7 +125,7 @@ icons:
 
 # PeardCore unit tests; no simulator required, so this is the fast loop.
 test:
-	cd ios/PeardCore && swift test
+	cd ios/PeardCore && swift test $(SWIFT_SANDBOX_FLAGS)
 
 # App-target tests (HomeModel's quick-send flow, AppModel's routing). These need
 # a simulator because the types they cover are @MainActor and import UIKit.
@@ -139,7 +151,7 @@ test-all: test test-app
 # Requires a running server (make server) and its superuser credentials.
 test-integration:
 	cd ios/PeardCore && PEARD_TEST_SERVER_URL=$(or $(PEARD_TEST_SERVER_URL),http://127.0.0.1:8090) \
-		swift test --filter LocalServerIntegrationTests
+		swift test $(SWIFT_SANDBOX_FLAGS) --filter LocalServerIntegrationTests
 
 # --- checks ---
 
