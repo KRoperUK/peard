@@ -107,71 +107,117 @@ test('a triage that never succeeds returns null rather than throwing', async () 
 
 // ---- screenshot PII scan --------------------------------------------------
 
-function piiFetch(reply) {
-  // One OpenRouter response carrying `reply` as the message content.
-  return async () => ({
-    ok: true,
-    status: 200,
-    json: async () => ({ choices: [{ message: { content: reply } }] }),
+const aShot = { name: 'IMG_0001.PNG', data: Buffer.from('png-bytes') };
+
+// A fake OCR read: `text` split into words at a given confidence.
+function fakeOcr(text, confidence = 92) {
+  const words = text.split(/\s+/).filter(Boolean).length;
+  return async () => ({ text, words, confidence });
+}
+
+const CLEAN_UI = 'Daily Goal 2000 ml Today 1250 ml Add Drink Settings History';
+
+test('a screenshot of plain app UI scans clean and is cleared', async () => {
+  const v = await shared.scanScreenshotForPII({}, aShot, null, { ocr: fakeOcr(CLEAN_UI) });
+  assert.deepStrictEqual(v, { pii: false, reason: 'no PII detected', scanned: true });
+});
+
+for (const [label, text, category] of [
+  ['an email address', 'Daily Goal 2000 ml contact me at jo.bloggs@example.com thanks', 'email address'],
+  ['a phone number', 'Today 1250 ml call +44 7700 900123 for the goal reset', 'phone number'],
+  ['an @handle', 'Daily Goal 2000 ml shared with @water_buddy today ok', '@handle'],
+  ['a first name', 'Daily Goal 2000 ml Today 1250 ml sarah drank 500 ml', 'first name'],
+  ['a labelled name', 'Daily Goal 2000 ml Partner: Zxqvb connected today', 'labelled name'],
+  ['a capitalised full name', 'Daily Goal 2000 ml Zxqvb Plumtree drank 500 ml today', 'possible full name'],
+  ['a URL', 'Daily Goal 2000 ml see https://example.com/profile/42 today', 'URL'],
+  ['a postcode', 'Daily Goal 2000 ml delivery to SW1A 1AA today ok', 'postal address'],
+]) {
+  test(`a screenshot showing ${label} is withheld as scanned-dirty`, async () => {
+    const v = await shared.scanScreenshotForPII({}, aShot, null, { ocr: fakeOcr(text) });
+    assert.strictEqual(v.pii, true);
+    assert.strictEqual(v.scanned, true, 'a dirty read is a real scan result, not unavailable');
+    assert.ok(v.reason.includes(category), `${v.reason} should name ${category}`);
   });
 }
 
-const aShot = { name: 'IMG_0001.PNG', data: Buffer.from('png-bytes') };
-
-test('a clean screenshot is cleared for publishing', async () => {
-  const originalFetch = global.fetch;
-  global.fetch = piiFetch('{"pii": false, "reason": "generic app UI"}');
-  try {
-    const v = await shared.scanScreenshotForPII({ model: 'm', openRouterKey: 'k' }, aShot, null);
-    assert.strictEqual(v.pii, false);
-    assert.strictEqual(v.scanned, true);
-  } finally {
-    global.fetch = originalFetch;
-  }
+test('the verdict reason never echoes the PII it found', async () => {
+  const text = 'Daily Goal 2000 ml contact jo.bloggs@example.com or 07700900123 today';
+  const v = await shared.scanScreenshotForPII({}, aShot, null, { ocr: fakeOcr(text) });
+  assert.strictEqual(v.pii, true);
+  assert.doesNotMatch(v.reason, /bloggs|example|07700/);
 });
 
-test('a screenshot the model flags as PII is withheld', async () => {
-  const originalFetch = global.fetch;
-  global.fetch = piiFetch('{"pii": true, "reason": "shows a contact name"}');
-  try {
-    const v = await shared.scanScreenshotForPII({ model: 'm', openRouterKey: 'k' }, aShot, null);
-    assert.strictEqual(v.pii, true);
-    assert.strictEqual(v.scanned, true);
-    assert.match(v.reason, /contact name/);
-  } finally {
-    global.fetch = originalFetch;
-  }
+test('the scan fails closed when OCR throws', async () => {
+  const v = await shared.scanScreenshotForPII({}, aShot, null, {
+    ocr: async () => { throw new Error('boom'); },
+  });
+  assert.strictEqual(v.pii, true, 'an erroring scan must withhold');
+  assert.strictEqual(v.scanned, false);
+  assert.match(v.reason, /^scan unavailable/);
 });
 
-test('the scan fails closed when the model never answers', async () => {
-  const originalFetch = global.fetch;
-  // Every call 500s: triageJson exhausts its retries and both the image and
-  // text-only variants, then returns null. A missing verdict must withhold.
-  global.fetch = async () => ({ ok: false, status: 500, text: async () => 'boom' });
-  try {
-    const v = await shared.scanScreenshotForPII(
-      { model: 'm', openRouterKey: 'k' },
-      aShot,
-      null,
-    );
-    assert.strictEqual(v.pii, true, 'an unanswered scan must withhold');
-    assert.strictEqual(v.scanned, false);
-  } finally {
-    global.fetch = originalFetch;
-  }
+test('the scan fails closed when tesseract is not installed', async () => {
+  // Real spawn of a binary that cannot exist -> genuine ENOENT.
+  const v = await shared.scanScreenshotForPII({}, aShot, null, {
+    ocr: (shot) => shared.ocrScreenshot(shot, { bin: 'definitely-not-a-real-binary-xyz' }),
+  });
+  assert.strictEqual(v.pii, true);
+  assert.strictEqual(v.scanned, false);
+  assert.match(v.reason, /tesseract not installed/);
 });
 
-test('the scan fails closed on a reply with no usable boolean', async () => {
-  const originalFetch = global.fetch;
-  // Model returns JSON but not a boolean pii field — treated as inconclusive.
-  global.fetch = piiFetch('{"verdict": "maybe"}');
-  try {
-    const v = await shared.scanScreenshotForPII({ model: 'm', openRouterKey: 'k' }, aShot, null);
+test('the scan fails closed when OCR times out', async () => {
+  const v = await shared.scanScreenshotForPII({}, aShot, null, {
+    ocr: (shot) => shared.ocrScreenshot(shot, {
+      run: async () => { throw Object.assign(new Error('timed out'), { killed: true, signal: 'SIGTERM' }); },
+    }),
+  });
+  assert.strictEqual(v.pii, true);
+  assert.strictEqual(v.scanned, false);
+  assert.match(v.reason, /timed out/);
+});
+
+test('the scan fails closed on a low-confidence read, even if the text looks clean', async () => {
+  const v = await shared.scanScreenshotForPII({}, aShot, null, { ocr: fakeOcr(CLEAN_UI, 35) });
+  assert.strictEqual(v.pii, true);
+  assert.strictEqual(v.scanned, false);
+  assert.match(v.reason, /low OCR confidence/);
+});
+
+test('the scan fails closed when there is too little text to judge', async () => {
+  // e.g. a photo or avatar-only image: nothing legible does not mean nothing there.
+  for (const read of [{ text: '', words: 0, confidence: 0 }, { text: 'OK', words: 1, confidence: 95 }, null]) {
+    const v = await shared.scanScreenshotForPII({}, aShot, null, { ocr: async () => read });
     assert.strictEqual(v.pii, true);
     assert.strictEqual(v.scanned, false);
-  } finally {
-    global.fetch = originalFetch;
+    assert.match(v.reason, /too little readable text/);
   }
+});
+
+test('ocrScreenshot parses tesseract TSV into text, word count and mean confidence', async () => {
+  const header = 'level\tpage_num\tblock_num\tpar_num\tline_num\tword_num\tleft\ttop\twidth\theight\tconf\ttext';
+  const row = (l, b, ln, conf, t) => `${l}\t1\t${b}\t1\t${ln}\t1\t0\t0\t1\t1\t${conf}\t${t}`;
+  const tsv = [
+    header,
+    row(1, 0, 0, -1, ''), // page row, ignored
+    row(5, 1, 1, 90, 'Daily'),
+    row(5, 1, 1, 80, 'Goal'),
+    row(5, 1, 2, 70, 'Today'),
+    row(5, 1, 2, -1, 'junk'), // negative conf, ignored
+  ].join('\n');
+  const read = await shared.ocrScreenshot(aShot, { run: async () => tsv });
+  assert.strictEqual(read.words, 3);
+  assert.strictEqual(read.text, 'Daily Goal\nToday');
+  assert.strictEqual(read.confidence, 80);
+});
+
+test('the OCR temp image is removed even when OCR fails', async () => {
+  const fs = require('node:fs');
+  let seen;
+  await assert.rejects(shared.ocrScreenshot(aShot, {
+    run: async (_bin, file) => { seen = file; assert.ok(fs.existsSync(file)); throw new Error('x'); },
+  }));
+  assert.strictEqual(fs.existsSync(seen), false);
 });
 
 test('scanScreenshots is on by default and only an explicit off disables it', () => {

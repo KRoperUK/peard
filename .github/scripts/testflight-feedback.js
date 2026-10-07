@@ -11,11 +11,13 @@
 // triage request itself.
 //
 // The repo is public, so nothing identifying a tester goes into an issue. Each
-// screenshot is run through a PII scan (shared.scanScreenshotForPII, which
-// reuses the triage vision model) and attached to the issue only when it scans
-// clean; one that shows a tester's connection — a name, avatar, message — is
-// withheld and kept in App Store Connect until the issue closes. The scan fails
-// closed: an error, timeout or inconclusive reply withholds the image. Setting
+// screenshot is run through a LOCAL PII scan (shared.scanScreenshotForPII: OCR on
+// the runner + regex/name checks, no external call) and attached to the issue
+// only when it scans clean; one that shows a tester's connection — a name,
+// avatar, message — is withheld and kept in App Store Connect until the issue
+// closes. The scan fails closed: a missing OCR binary, an error, timeout or
+// low-confidence read withholds the image, and nothing is committed to the
+// assets branch before it has passed the scan. Setting
 // PUBLISH_SCREENSHOTS force-publishes without scanning; SCAN_SCREENSHOTS=0 turns
 // the scan off, falling back to withholding everything but the override.
 //

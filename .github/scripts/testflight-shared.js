@@ -333,58 +333,171 @@ async function triageJson(cfg, { systemPrompt, userPrompt, images = [], maxAttem
 // issue when it is provably clean: it can show the other person in the
 // connection — their name, avatar, messages — which must not be published.
 //
-// The scan reuses the same OpenRouter vision model that already reads these
-// screenshots for triage (buildChatRequest / triageJson), so it adds no new
-// dependency, no OCR binary the runner may not have, and no new data-sharing
-// surface: the image already leaves to OpenRouter for the triage call. A local
-// OCR+regex pass was considered and rejected — it would miss faces/avatars and,
-// worse, fail closed on every run where the OCR binary is absent, which defeats
-// the feature.
-const PII_SCAN_PROMPT = [
-  'You are a privacy reviewer for a public GitHub repository.',
-  'You are shown ONE screenshot a beta tester submitted with their feedback.',
-  'Decide whether attaching it to a PUBLIC issue would expose any personal or',
-  'identifying information about ANY real person — their own, or anyone else shown.',
-  'Treat as PII: real names or usernames/handles, email addresses, phone numbers,',
-  'postal addresses, faces or recognisable avatars/profile photos, message text',
-  'that names or is attributed to a person, contact lists, or any other personal detail.',
-  'Do NOT treat generic app UI, placeholder/sample data, emoji, or anonymous',
-  'counters/charts as PII.',
-  'Return ONLY a JSON object: {"pii": true|false, "reason": "<=12 words"}.',
-  'If you are unsure, answer {"pii": true}.',
-].join(' ');
+// The scan is LOCAL-ONLY: the image is OCRed on the runner with the `tesseract`
+// binary and the recognised text is checked with regexes plus a small vendored
+// first-name list. No image or text leaves the runner for the scan, and it needs
+// no secret. (The triage call still sends screenshots to OpenRouter as before;
+// that is unchanged and independent of this gate.)
+//
+// It FAILS CLOSED. Anything short of a confident, clean read withholds the
+// image: tesseract missing, an OCR error or timeout, a low-confidence read, or
+// too little text to judge (a picture with no readable text could be a face).
+// The scan cannot see faces/avatars that carry no text; that is the residual
+// risk, and why a clean verdict needs enough legible text to have been a UI.
+const MIN_OCR_WORDS = 3;
+const MIN_OCR_CONFIDENCE = 60; // mean per-word tesseract confidence, 0-100
+const OCR_TIMEOUT_MS = 30000;
+
+// Common given names. Deliberately omits names that are also everyday words or
+// UI vocabulary (will, mark, may, grace, rose, bill, jack, ...) to keep false
+// positives down; a miss still has to get past the other detectors.
+const FIRST_NAMES = new Set((
+  'aaron adam adrian alan albert alex alexander alice alicia amanda amber amy andrew andy angela anna anne ' +
+  'anthony ashley barbara ben benjamin beth betty brandon brian bruce caroline carol catherine charles ' +
+  'charlotte chloe chris christine christopher claire daniel danielle darren dave david deborah diane ' +
+  'donna dorothy douglas dylan edward eleanor elizabeth ella ellie emily emma eric ethan eva evelyn ' +
+  'fiona frances gareth gary gemma george gillian gordon hannah harry heather helen henry holly ian isaac ' +
+  'isabel jacob james jamie jane janet jason jean jennifer jenny jeremy jessica jill joanna joe john ' +
+  'jonathan joseph josh joshua judith julia julie karen kate katherine kathleen katie keith kelly ken ' +
+  'kevin kieran kim kirsty laura lauren lee lewis liam linda lisa liz louise lucy luke lynn margaret ' +
+  'maria marie martin mary matthew megan melissa michael michelle mike natalie nathan neil nicholas ' +
+  'nicola nicole noah olivia oliver owen patricia patrick paul paula peter philip rachel rebecca richard ' +
+  'robert robin roger ross ruth ryan sam samantha samuel sandra sarah scott sean sharon simon sophie ' +
+  'stephanie stephen steve steven stuart susan tanya teresa thomas tim timothy tina tom tony tracy ' +
+  'victoria vincent wayne william zoe'
+).split(' '));
+
+// Capitalised UI words that may legitimately sit next to each other (Title Case
+// labels). A capitalised pair of anything NOT in here is treated as a possible
+// full name.
+const UI_WORDS = new Set((
+  'about account activity add all amount app apple back bottle cancel cup daily day days delete details ' +
+  'done drink drinks edit enable enabled feedback filter general glass goal goals health help history home ' +
+  'hydration intake item items litre litres log monday tuesday wednesday thursday friday saturday sunday ' +
+  'january february march april june july august september october november december menu month more ' +
+  'next notifications off ok on open peard pear per preferences privacy progress remind reminder reminders ' +
+  'reset save search settings share sign start stats streak sync target team testflight today total ' +
+  'tracker units update version water week weekly year yesterday'
+).split(' '));
+
+// Each detector: [reason, test(text) -> boolean]. Reasons are CATEGORIES only —
+// never the matched text, because the reason is logged and written into a
+// public issue body.
+const PII_DETECTORS = [
+  ['email address', (t) => /[A-Za-z0-9._%+-]+@[A-Za-z0-9-]+(?:\.[A-Za-z0-9-]+)*\.[A-Za-z]{2,}/.test(t)],
+  ['phone number', (t) => (t.match(/\+?\d[\d\s().-]{7,}\d/g) || []).some((m) => m.replace(/\D/g, '').length >= 9)],
+  ['@handle', (t) => /(?:^|[^\w@])@[A-Za-z0-9_.]{2,}/.test(t)],
+  ['URL', (t) => /\bhttps?:\/\/\S+|\bwww\.\S+/i.test(t)],
+  ['postal address', (t) =>
+    /\b[A-Z]{1,2}\d[A-Z\d]?\s*\d[A-Z]{2}\b/.test(t) ||
+    /\b\d{1,5}\s+[A-Z][a-z]+(?:\s+[A-Z][a-z]+)?\s+(?:Street|St|Road|Rd|Avenue|Ave|Lane|Ln|Close|Drive|Dr|Way|Court|Ct)\b/.test(t)],
+  ['labelled name', (t) =>
+    /\b(?:[Nn]ame|[Ff]rom|[Hh]i|[Hh]ello|[Dd]ear|[Pp]artner|[Ii]nvited by|[Ss]hared by|[Ss]ent by)\b\s*[:,-]?\s+[A-Z][a-z]{2,}/.test(t)],
+  ['first name', (t) => (t.match(/[A-Za-z]+/g) || []).some((w) => FIRST_NAMES.has(w.toLowerCase()))],
+  ['possible full name', (t) => {
+    const lines = t.split('\n');
+    for (const line of lines) {
+      const words = line.match(/[A-Za-z]+/g) || [];
+      for (let i = 0; i + 1 < words.length; i++) {
+        const [a, b] = [words[i], words[i + 1]];
+        const cap = (w) => /^[A-Z][a-z]{2,}$/.test(w) && !UI_WORDS.has(w.toLowerCase());
+        if (cap(a) && cap(b)) return true;
+      }
+    }
+    return false;
+  }],
+];
+
+// Pure: text in, list of PII categories found (empty when none).
+function detectPII(text) {
+  const t = String(text || '');
+  return PII_DETECTORS.filter(([, test]) => test(t)).map(([reason]) => reason);
+}
+
+// Parse `tesseract <img> stdout tsv` into { text, words, confidence }.
+// Only real word rows (level 5, conf >= 0, non-empty text) count.
+function parseTesseractTsv(tsv) {
+  const lines = [];
+  const confs = [];
+  const byLine = new Map();
+  for (const row of String(tsv || '').split('\n').slice(1)) {
+    const c = row.split('\t');
+    if (c.length < 12 || c[0] !== '5') continue;
+    const conf = Number.parseFloat(c[10]);
+    const word = c.slice(11).join('\t').trim();
+    if (!word || !(conf >= 0)) continue;
+    const key = `${c[2]}-${c[3]}-${c[4]}`;
+    if (!byLine.has(key)) {
+      byLine.set(key, []);
+      lines.push(key);
+    }
+    byLine.get(key).push(word);
+    confs.push(conf);
+  }
+  const mean = confs.length ? confs.reduce((a, b) => a + b, 0) / confs.length : 0;
+  return { text: lines.map((k) => byLine.get(k).join(' ')).join('\n'), words: confs.length, confidence: mean };
+}
+
+// Default OCR runner: tesseract on a 0700 temp dir, killed after the timeout.
+// Rejects with err.code === 'ENOENT' when the binary is not installed.
+function runTesseract(bin, imagePath, timeoutMs) {
+  const { execFile } = require('child_process');
+  return new Promise((resolve, reject) => {
+    execFile(
+      bin,
+      [imagePath, 'stdout', '-l', 'eng', 'tsv'],
+      { timeout: timeoutMs, maxBuffer: 16 * 1024 * 1024, encoding: 'utf8' },
+      (err, stdout) => (err ? reject(err) : resolve(stdout)),
+    );
+  });
+}
+
+// OCR one screenshot -> { text, words, confidence }. Throws on any failure.
+async function ocrScreenshot(shot, { bin = 'tesseract', timeoutMs = OCR_TIMEOUT_MS, run = runTesseract } = {}) {
+  const fs = require('fs');
+  const os = require('os');
+  const path = require('path');
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'tf-ocr-'));
+  try {
+    const file = path.join(dir, 'shot.img');
+    fs.writeFileSync(file, shot.data, { mode: 0o600 });
+    return parseTesseractTsv(await run(bin, file, timeoutMs));
+  } finally {
+    fs.rmSync(dir, { recursive: true, force: true });
+  }
+}
 
 // Scan one screenshot. Returns { pii, reason, scanned }.
 //
-// Fails CLOSED: any error, timeout, empty or unparseable reply, or a model that
-// does not give a clear boolean is treated as "contains PII" (pii: true,
-// scanned: false) so a tester image is NEVER published on a guess.
-async function scanScreenshotForPII(cfg, shot, core) {
-  let parsed;
+// pii:false is returned ONLY for a confident read that found nothing. Every
+// other outcome is { pii: true } — scanned:true with a category reason when PII
+// was found (scanned-dirty), scanned:false with a cause when the scan could not
+// give a confident answer (scan-unavailable). A tester image is NEVER published
+// on a guess.
+async function scanScreenshotForPII(cfg, shot, core, { ocr = ocrScreenshot } = {}) {
+  let read;
   try {
-    parsed = await triageJson(
-      cfg,
-      {
-        systemPrompt: PII_SCAN_PROMPT,
-        userPrompt: 'Does this screenshot contain any PII? Answer with the JSON object only.',
-        images: [shot],
-        maxAttempts: 2,
-      },
-      core,
-    );
+    read = await ocr(shot);
   } catch (err) {
-    core?.warning(`PII scan errored for ${shot.name} (${err.message}) — withholding.`);
-    return { pii: true, reason: 'scan error', scanned: false };
+    const why = err && err.code === 'ENOENT' ? 'tesseract not installed'
+      : err && (err.killed || err.signal) ? 'OCR timed out'
+      : 'OCR error';
+    core?.warning(`PII scan unavailable for ${shot.name} (${why}) — withholding.`);
+    return { pii: true, reason: `scan unavailable: ${why}`, scanned: false };
   }
 
-  // triageJson retries text-only when the image call fails; a verdict reached
-  // without the image cannot have seen it, so withhold. We detect that by the
-  // reply not carrying a usable boolean either.
-  if (!parsed || typeof parsed.pii !== 'boolean') {
-    core?.warning(`PII scan inconclusive for ${shot.name} — withholding.`);
-    return { pii: true, reason: 'scan unavailable', scanned: false };
+  if (!read || !(read.words >= MIN_OCR_WORDS)) {
+    core?.warning(`PII scan inconclusive for ${shot.name} (too little readable text) — withholding.`);
+    return { pii: true, reason: 'scan unavailable: too little readable text', scanned: false };
   }
-  return { pii: parsed.pii, reason: hasText(parsed.reason) ? parsed.reason.trim() : '', scanned: true };
+  if (!(read.confidence >= MIN_OCR_CONFIDENCE)) {
+    core?.warning(`PII scan inconclusive for ${shot.name} (low OCR confidence) — withholding.`);
+    return { pii: true, reason: 'scan unavailable: low OCR confidence', scanned: false };
+  }
+
+  const found = detectPII(read.text);
+  if (found.length) return { pii: true, reason: `contains ${found.join(', ')}`, scanned: true };
+  return { pii: false, reason: 'no PII detected', scanned: true };
 }
 
 // ---- GitHub --------------------------------------------------------------
@@ -470,6 +583,9 @@ module.exports = {
   quote,
   resolveAppId,
   scanScreenshots,
+  detectPII,
+  ocrScreenshot,
+  parseTesseractTsv,
   scanScreenshotForPII,
   shortenTitle,
   sleep,

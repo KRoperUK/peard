@@ -20,9 +20,14 @@ name: TestFlight Feedback to Issues
 #   vars.ASC_APP_ID    App Store Connect app resource id (defaults to 6795739297)
 #   vars.ASC_BUNDLE_ID Defaults to com.peard.app
 #   vars.OPENROUTER_MODEL  OpenRouter model slug (defaults to deepseek/deepseek-v4.1-flash;
-#                          use a vision-capable model so screenshots are read AND PII-scanned)
+#                          use a vision-capable model so screenshots are read)
 #   vars.TESTFLIGHT_SCAN_SCREENSHOTS  Set to "0"/"false" to disable the PII scan (then no
 #                          screenshot is published unless PUBLISH_SCREENSHOTS forces it). On by default.
+#   vars.TESTFLIGHT_PUBLISH_SCREENSHOTS  Force-publish every screenshot without scanning.
+#
+# The screenshot PII scan is local-only (tesseract OCR on the runner + regex/name
+# checks): no extra secret, no image sent anywhere for it. It fails closed — if
+# tesseract is missing or a read is low-confidence, the screenshot is withheld.
 
 on:
   schedule:
@@ -52,6 +57,15 @@ jobs:
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
         with:
           fetch-depth: 1
+
+      # OCR for the local screenshot PII scan. Best-effort on purpose: if the
+      # install fails the importer still runs and the scan fails closed
+      # (every screenshot withheld) rather than the whole poll failing.
+      - name: Install tesseract (screenshot PII scan)
+        continue-on-error: true
+        run: |
+          sudo apt-get update -qq
+          sudo apt-get install -y -qq --no-install-recommends tesseract-ocr tesseract-ocr-eng
 
       - name: Poll TestFlight feedback
         uses: actions/github-script@3a2844b7e9c422d3c10d287c895573f7108da1b3 # v9
