@@ -397,6 +397,82 @@ final class QuickSendFlowTests: XCTestCase {
     // MARK: Helpers
 
     /// Lets the detached commit tasks that `tap` spawns finish before asserting.
+    // MARK: Water (#320)
+
+    /// Published, so tapping it needs no network round trip first.
+    private var water: Moment {
+        Moment(kind: .water, emoji: "💧", label: "Water", origin: .custom(recordID: "rec-water"))
+    }
+
+    func testAWaterSendCarriesTheAmountThatWasPicked() async {
+        model.tap(moment: water)
+        model.setQuickSendAmount(500)
+
+        await model.sendNow()
+
+        let queued = await queue.pending
+        XCTAssertEqual(queued.count, 1)
+        XCTAssertEqual(queued.first?.kind, .water)
+        XCTAssertEqual(queued.first?.amount, 500)
+        XCTAssertEqual(queued.first?.postFields["amount"], "500", "and it is what goes to the server")
+    }
+
+    func testACustomAmountIsCarriedToo() async {
+        model.tap(moment: water)
+        model.setQuickSendAmount(WaterAmount.parse("275"))
+
+        await model.sendNow()
+
+        let queued = await queue.pending
+        XCTAssertEqual(queued.first?.amount, 275)
+    }
+
+    func testPickingAnAmountHoldsTheCountdown() {
+        model.tap(moment: water)
+        XCTAssertEqual(model.quickSend?.isHeld, false)
+
+        model.setQuickSendAmount(330)
+
+        XCTAssertEqual(model.quickSend?.isHeld, true)
+        XCTAssertEqual(model.quickSend?.amount, 330)
+        XCTAssertEqual(model.quickSendCaption, "Tap send when ready")
+    }
+
+    /// Water without a size is still water: the amount is optional, not a gate.
+    func testWaterWithNoAmountIsStillLogged() async {
+        model.tap(moment: water)
+
+        await model.sendNow()
+
+        let queued = await queue.pending
+        XCTAssertEqual(queued.first?.kind, .water)
+        XCTAssertNil(queued.first?.amount)
+        XCTAssertNil(queued.first?.postFields["amount"])
+    }
+
+    func testAnAmountOnAnyOtherMomentIsIgnored() async {
+        model.tap(moment: beer)
+        model.setQuickSendAmount(330)
+
+        await model.sendNow()
+
+        let queued = await queue.pending
+        XCTAssertEqual(queued.first?.kind, .beer)
+        XCTAssertNil(queued.first?.amount)
+    }
+
+    /// The amount belongs to the send it was picked for; the next water starts
+    /// with nothing chosen.
+    func testTheNextWaterStartsWithNoAmount() async {
+        model.tap(moment: water)
+        model.setQuickSendAmount(500)
+        await model.sendNow()
+
+        model.tap(moment: water)
+
+        XCTAssertNil(model.quickSend?.amount)
+    }
+
     // MARK: Haptics
 
     /// Issue #274: a light tap to start, success when it goes, and cancelling

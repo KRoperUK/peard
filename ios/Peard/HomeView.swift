@@ -559,6 +559,10 @@ struct HomeView: View {
                 Spacer(minLength: 0)
             }
 
+            if let send = model.quickSend, send.takesAmount {
+                WaterAmountPicker(amount: send.amount) { model.setQuickSendAmount($0) }
+            }
+
             HStack(spacing: 8) {
                 TextField("", text: $model.noteText, prompt: Text("Add a note (optional)…"))
                     .focused($noteFocused)

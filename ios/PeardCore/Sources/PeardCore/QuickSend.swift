@@ -17,12 +17,35 @@ public struct QuickSend: Hashable, Sendable {
     public var isHeld: Bool
     /// An earlier time somebody picked for the moment, or `nil` for now.
     public private(set) var happenedAt: Date?
+    /// How much, in millilitres, for a moment that takes an amount; `nil` until
+    /// somebody picks one, and always `nil` for any other moment.
+    public private(set) var amount: Int?
 
-    public init(moment: Moment, startedAt: Date = Date(), isHeld: Bool = false, happenedAt: Date? = nil) {
+    public init(
+        moment: Moment,
+        startedAt: Date = Date(),
+        isHeld: Bool = false,
+        happenedAt: Date? = nil,
+        amount: Int? = nil
+    ) {
         self.moment = moment
         self.startedAt = startedAt
         self.isHeld = isHeld
         self.happenedAt = happenedAt
+        self.amount = moment.kind == .water ? WaterAmount.normalised(amount) : nil
+    }
+
+    /// Whether this moment asks how much. Only water does.
+    public var takesAmount: Bool { moment.kind == .water }
+
+    /// Sets how much, or clears it with `nil`. Holds the send either way, like
+    /// typing a note: somebody choosing a size has not finished saying what they
+    /// meant. Ignored for a moment that takes no amount, and for one that is not a
+    /// sensible size.
+    public mutating func setAmount(_ ml: Int?) {
+        guard takesAmount else { return }
+        isHeld = true
+        amount = WaterAmount.normalised(ml)
     }
 
     /// Sets when the moment happened, or clears it with `nil`. Holds the send

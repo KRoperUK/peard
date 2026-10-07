@@ -166,4 +166,59 @@ final class MomentBreakdownTests: XCTestCase {
         XCTAssertFalse(model.hasMomentBreakdown)
         XCTAssertTrue(model.topMoments.isEmpty)
     }
+
+    // MARK: Water today (#320)
+
+    private var water: Moment { moment("water", "💧", "Water") }
+
+    /// Logs a glass the way the UI does: tap, choose a size, send.
+    private func drink(_ ml: Int?) async {
+        model.tap(moment: water)
+        model.setQuickSendAmount(ml)
+        await model.sendNow()
+    }
+
+    func testTodaysWaterTotalSumsEveryQueuedAmount() async {
+        await drink(330)
+        await drink(500)
+        await drink(500)
+
+        XCTAssertEqual(model.momentTallies.waterToday, 1330)
+        XCTAssertEqual(WaterAmount.todayLabel(model.momentTallies.waterToday, locale: Locale(identifier: "en_GB")), "1,330 ml today")
+    }
+
+    /// Queued sends are the user's own, so the millilitres land on their side.
+    func testQueuedWaterLandsOnTheUsersSide() async {
+        await drink(330)
+
+        let kind = model.momentTallies.kinds.first { $0.kind == .water }
+        XCTAssertEqual(kind?.mine.dayAmount, 330)
+        XCTAssertEqual(kind?.others.dayAmount, 0)
+    }
+
+    /// A water moment with no size is a moment, and adds nothing to the total.
+    func testWaterWithoutAnAmountAddsNothingToTheTotal() async {
+        await drink(330)
+        await drink(nil)
+
+        XCTAssertEqual(model.momentTallies.waterToday, 330)
+        XCTAssertEqual(model.momentTallies.kinds.first { $0.kind == .water }?.mine.day, 2)
+    }
+
+    func testNothingButWaterAddsToTheWaterTotal() async {
+        await drink(250)
+        await log(moment("beer", "🍺", "Beer"), times: 2)
+
+        XCTAssertEqual(model.momentTallies.waterToday, 250)
+    }
+
+    func testTheSplitNamesOnlyTheSidesThatDrank() {
+        XCTAssertEqual(MomentBreakdownCopy.waterSplit(mine: 830, others: 0, mineLabel: "You", othersLabel: "Ari"), "You 830 ml")
+        XCTAssertEqual(MomentBreakdownCopy.waterSplit(mine: 0, others: 250, mineLabel: "You", othersLabel: "Ari"), "Ari 250 ml")
+        XCTAssertEqual(
+            MomentBreakdownCopy.waterSplit(mine: 830, others: 250, mineLabel: "You", othersLabel: "Ari"),
+            "You 830 ml · Ari 250 ml"
+        )
+        XCTAssertEqual(MomentBreakdownCopy.waterSplit(mine: 0, others: 0, mineLabel: "You", othersLabel: "Ari"), "")
+    }
 }

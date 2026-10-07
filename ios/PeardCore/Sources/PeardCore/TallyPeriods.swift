@@ -10,14 +10,24 @@ public struct TallyPeriods: Codable, Hashable, Sendable {
     public var week: Int
     public var month: Int
     public var all: Int
+    /// Millilitres logged inside the day window; zero for a kind that carries no
+    /// amount, and from a server that predates amounts. Only the day: today's
+    /// total is what an amount is for.
+    public var dayAmount: Int
 
     public static let zero = TallyPeriods(day: 0, week: 0, month: 0, all: 0)
 
-    public init(day: Int, week: Int, month: Int, all: Int) {
+    enum CodingKeys: String, CodingKey {
+        case day, week, month, all
+        case dayAmount = "day_amount"
+    }
+
+    public init(day: Int, week: Int, month: Int, all: Int, dayAmount: Int = 0) {
         self.day = day
         self.week = week
         self.month = month
         self.all = all
+        self.dayAmount = dayAmount
     }
 
     /// A missing side decodes as zero rather than failing the whole response: a
@@ -28,6 +38,7 @@ public struct TallyPeriods: Codable, Hashable, Sendable {
         week = try container.decodeIfPresent(Int.self, forKey: .week) ?? 0
         month = try container.decodeIfPresent(Int.self, forKey: .month) ?? 0
         all = try container.decodeIfPresent(Int.self, forKey: .all) ?? 0
+        dayAmount = try container.decodeIfPresent(Int.self, forKey: .dayAmount) ?? 0
     }
 
     /// Counts `event` posts against each window independently, so a week that
@@ -45,7 +56,10 @@ public struct TallyPeriods: Codable, Hashable, Sendable {
         for post in posts {
             let happened = post.happenedAt
             periods.all += 1
-            if happened >= dayStart { periods.day += 1 }
+            if happened >= dayStart {
+                periods.day += 1
+                periods.dayAmount += post.amount ?? 0
+            }
             if happened >= weekStart { periods.week += 1 }
             if happened >= monthStart { periods.month += 1 }
         }

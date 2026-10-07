@@ -186,6 +186,12 @@ private struct TalliesTab: View {
                     }
                 }
 
+                WaterTodaySection(
+                    tallies: model.momentTallies,
+                    mineLabel: "You",
+                    othersLabel: model.othersLabel
+                )
+
                 MomentBreakdownSection(
                     tallies: model.momentTallies,
                     mineLabel: "You",
