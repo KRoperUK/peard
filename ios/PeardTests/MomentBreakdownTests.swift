@@ -269,7 +269,7 @@ final class MomentBreakdownTests: XCTestCase {
 
     func testTheWaterSectionRendersWithProgress() async throws {
         await drink(500)
-        let section = WaterTodaySection(tallies: model.momentTallies, mineLabel: "You", othersLabel: "Ari")
+        let section = WaterTodaySection(tallies: model.momentTallies, config: .standard, mineLabel: "You", othersLabel: "Ari")
 
         let image = ImageRenderer(content: Form { section }.frame(width: 360, height: 240))
         XCTAssertNotNil(image.uiImage, "the section should lay out with its progress bar")

@@ -18,6 +18,7 @@ public final class SharedStore: @unchecked Sendable {
         public static let privacyPolicyAcceptedAt = "privacyPolicyAcceptedAt"
         public static let appearance = "appearance"
         public static let pinnedMoments = "pinnedMoments"
+        public static let waterConfigs = "waterConfigs"
         public static let watchLastMoments = "watchLastMoments"
         public static let cachedMoments = "cachedMoments"
         public static let cachedAvatars = "cachedAvatars"
@@ -133,6 +134,33 @@ public final class SharedStore: @unchecked Sendable {
         var all = (defaults?.dictionary(forKey: Key.pinnedMoments) as? [String: [String]]) ?? [:]
         all[pairID] = slugs.isEmpty ? nil : slugs
         defaults?.set(all, forKey: Key.pinnedMoments)
+    }
+
+    // MARK: Water settings
+
+    /// A connection's water settings (#322): targets, chip sizes, on or off.
+    ///
+    /// Client-local and per connection, keyed like pins: nothing on the server
+    /// changes. Should gamification (#323) need targets both people see, that
+    /// will want a server-shared copy; this is deliberately only this device's
+    /// choice until then. A connection that has set nothing, or whose record
+    /// cannot be read, has `WaterConfig.standard` — never a crash.
+    public func waterConfig(forConnection pairID: String) -> WaterConfig {
+        guard
+            let all = defaults?.dictionary(forKey: Key.waterConfigs) as? [String: Data],
+            let data = all[pairID],
+            let config = try? JSONDecoder().decode(WaterConfig.self, from: data)
+        else { return .standard }
+        return config
+    }
+
+    public func setWaterConfig(_ config: WaterConfig, forConnection pairID: String) {
+        var all = (defaults?.dictionary(forKey: Key.waterConfigs) as? [String: Data]) ?? [:]
+        // The standard settings are stored as nothing, so resetting forgets
+        // rather than remembers — and a later change to the built-in defaults
+        // reaches a connection that never customised them.
+        all[pairID] = config == .standard ? nil : try? JSONEncoder().encode(config)
+        defaults?.set(all, forKey: Key.waterConfigs)
     }
 
     // MARK: Cached moment definitions

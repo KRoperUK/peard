@@ -1,7 +1,8 @@
 import PeardCore
 import SwiftUI
 
-/// How much water: a chip per preset size, and a field for any other.
+/// How much water: a chip per preset size, and a field for any other. The sizes
+/// are the connection's own (#322); the caller passes them in.
 ///
 /// Shown inside the quick-send window when the moment is water. Choosing a size
 /// holds the send, like typing a note, so the countdown cannot fire while
@@ -9,19 +10,22 @@ import SwiftUI
 struct WaterAmountPicker: View {
     /// What is chosen now, or `nil` when nothing is.
     let amount: Int?
+    let presets: [WaterAmount.Preset]
     let onSelect: (Int?) -> Void
 
     @State private var custom = ""
     @FocusState private var customFocused: Bool
 
     private var isPreset: Bool {
-        WaterAmount.presets.contains { $0.ml == amount }
+        presets.contains { $0.ml == amount }
     }
 
     var body: some View {
         VStack(alignment: .leading, spacing: 8) {
-            HStack(spacing: 8) {
-                ForEach(WaterAmount.presets) { preset in
+            // A grid, not a row: a connection can offer up to four sizes, which
+            // would not fit beside the custom field on a narrow phone.
+            LazyVGrid(columns: [GridItem(.adaptive(minimum: 110), spacing: 8)], alignment: .leading, spacing: 8) {
+                ForEach(presets) { preset in
                     chip(preset)
                 }
                 customField
