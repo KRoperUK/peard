@@ -64,6 +64,28 @@ FROM posts
 WHERE pair = {:pair} AND happened_at >= {:since}
 ORDER BY day DESC`
 
+// waterDayQuery lists the distinct local days the connection's combined water
+// reached the target, newest first (#323).
+//
+// The same bucketing as dayQuery, deliberately: `replace(happened_at,'Z',”)`
+// and the caller's `{:shift}`, so a day means one thing to both streaks. What
+// differs is the predicate. A day counts when everything logged that local day
+// adds up to the target, whoever logged it; a moment with no amount stores 0 and
+// adds nothing. Restricted to `type = 'event'` like the tallies' daily total.
+const waterDayQuery = `
+SELECT substr(datetime(replace(happened_at, 'Z', ''), {:shift}), 1, 10) AS day
+FROM posts
+WHERE pair = {:pair} AND type = 'event' AND happened_at >= {:since}
+GROUP BY day
+HAVING SUM(COALESCE(amount, 0)) >= {:target}
+ORDER BY day DESC`
+
+// defaultWaterTarget is the built-in recommended daily amount in millilitres,
+// used when the caller sends no target. Mirrors the app's
+// `WaterAmount.defaultRecommended`; the server cannot see a connection's own
+// target because it lives on the device (#322).
+const defaultWaterTarget = 2000
+
 // windowQuery counts the recap window in one pass, split by authorship.
 const windowQuery = `
 SELECT
@@ -174,6 +196,7 @@ func handler(app core.App) func(e *core.RequestEvent) error {
 		}
 
 		current, best := streaks(app, pairID, shift)
+		waterCurrent, waterBest := waterStreaks(app, pairID, shift, waterTarget(e))
 
 		res := map[string]any{
 			"pair":   pairID,
@@ -183,6 +206,8 @@ func handler(app core.App) func(e *core.RequestEvent) error {
 			"others": others,
 			"kinds":  summary,
 			"streak": map[string]any{"current": current, "best": best},
+			// Consecutive days the connection's water reached the target.
+			"water_streak": map[string]any{"current": waterCurrent, "best": waterBest},
 		}
 
 		var busiest []busiestRow
@@ -203,12 +228,32 @@ func handler(app core.App) func(e *core.RequestEvent) error {
 // passes with nothing in it, and a connection that has not logged anything yet
 // today at nine in the morning has not broken anything.
 func streaks(app core.App, pairID, shift string) (current, best int) {
-	since := time.Now().AddDate(0, 0, -streakHorizonDays).UTC().Format(pocketBaseLayout)
+	return streaksFrom(app, dayQuery, dbx.Params{"pair": pairID, "shift": shift}, shift)
+}
+
+// waterStreaks is streaks for water: how many days in a row the connection's
+// combined total reached `target` millilitres, and the longest such run.
+//
+// The same rule as streaks, so the same liveness: the run reaches back from the
+// most recent day that met the target, and is live only if that day is today or
+// yesterday. A day that has not reached the target *yet* does not break it.
+//
+// No target is no streak, not a vacuously true one: with a target of zero every
+// day would qualify.
+func waterStreaks(app core.App, pairID, shift string, target int) (current, best int) {
+	if target <= 0 {
+		return 0, 0
+	}
+	return streaksFrom(app, waterDayQuery, dbx.Params{"pair": pairID, "shift": shift, "target": target}, shift)
+}
+
+// streaksFrom runs a query that lists qualifying local days newest first, and
+// reads the current and best runs of consecutive days from them.
+func streaksFrom(app core.App, query string, params dbx.Params, shift string) (current, best int) {
+	params["since"] = time.Now().AddDate(0, 0, -streakHorizonDays).UTC().Format(pocketBaseLayout)
 
 	var rows []dayRow
-	if err := app.DB().NewQuery(dayQuery).Bind(dbx.Params{
-		"pair": pairID, "since": since, "shift": shift,
-	}).All(&rows); err != nil {
+	if err := app.DB().NewQuery(query).Bind(params).All(&rows); err != nil {
 		return 0, 0
 	}
 
@@ -255,6 +300,23 @@ func streaks(app core.App, pairID, shift string) (current, best int) {
 		current++
 	}
 	return current, best
+}
+
+// waterTarget reads the caller's recommended daily amount in millilitres.
+//
+// Absent or not a number is the built-in default, because an older app sends
+// nothing. A number that is zero or negative is taken at its word as "no target",
+// which waterStreaks answers with zero.
+func waterTarget(e *core.RequestEvent) int {
+	raw := strings.TrimSpace(e.Request.URL.Query().Get("water_target"))
+	if raw == "" {
+		return defaultWaterTarget
+	}
+	target, err := strconv.Atoi(raw)
+	if err != nil {
+		return defaultWaterTarget
+	}
+	return target
 }
 
 // shiftFor turns the caller's UTC offset into a SQLite datetime modifier.

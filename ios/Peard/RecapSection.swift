@@ -11,6 +11,17 @@ struct RecapSection: View {
     let recap: MomentRecap
     let mineLabel: String
     let othersLabel: String
+    /// Whether water is tracked in this connection (#322). Off hides the water
+    /// streak with the rest of the water UI, whatever the server says.
+    var waterEnabled = false
+
+    /// Shown only while water is tracked here and there is a run worth
+    /// mentioning: a live one, or a best of more than a day. Same bar as the
+    /// moment streak's row.
+    var showsWaterStreak: Bool {
+        guard waterEnabled, let water = recap.waterStreak else { return false }
+        return water.current > 0 || water.best > 1
+    }
 
     var body: some View {
         Section {
@@ -22,6 +33,9 @@ struct RecapSection: View {
                 headline
                 if recap.streak.current > 0 || recap.streak.best > 1 {
                     streakRow
+                }
+                if showsWaterStreak, let water = recap.waterStreak {
+                    waterStreakRow(water)
                 }
                 if let busiest = recap.busiest, busiest.count > 1 {
                     busiestRow(busiest)
@@ -93,6 +107,37 @@ struct RecapSection: View {
             return "Streak broken — best was \(recap.streak.best) days"
         }
         return current == 1 ? "1 day running" : "\(current) days running"
+    }
+
+    /// Days in a row the connection's combined water reached the recommended
+    /// amount. Counted by the server, against the target this phone sent. No
+    /// amount is spelled out, so there is no unit to choose here.
+    private func waterStreakRow(_ water: MomentRecap.Streak) -> some View {
+        HStack {
+            Label {
+                Text(Self.waterStreakText(water))
+            } icon: {
+                Text("💧")
+            }
+            .font(.subheadline)
+            .foregroundStyle(PearColor.textPrimary)
+            Spacer()
+            if water.best > water.current {
+                Text("best \(water.best)")
+                    .font(.caption)
+                    .foregroundStyle(PearColor.textTertiary)
+                    .monospacedDigit()
+            }
+        }
+        .accessibilityElement(children: .combine)
+    }
+
+    static func waterStreakText(_ water: MomentRecap.Streak) -> String {
+        switch water.current {
+        case 0: return "Water streak ended — best was \(water.best) days hitting your goal"
+        case 1: return "1 day hitting your water goal"
+        default: return "\(water.current) days hitting your water goal"
+        }
     }
 
     private func busiestRow(_ busiest: MomentRecap.BusiestDay) -> some View {

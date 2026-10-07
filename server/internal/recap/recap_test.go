@@ -9,6 +9,7 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"os"
+	"strings"
 	"testing"
 	"time"
 
@@ -52,6 +53,10 @@ type response struct {
 		Current int `json:"current"`
 		Best    int `json:"best"`
 	} `json:"streak"`
+	WaterStreak struct {
+		Current int `json:"current"`
+		Best    int `json:"best"`
+	} `json:"water_streak"`
 }
 
 // MARK: The window
@@ -481,5 +486,243 @@ func TestTheWindowCountsWhenAMomentHappened(t *testing.T) {
 
 	if got := w.recap(t, w.aliceTok); got.Total != 0 {
 		t.Errorf("total=%d, want 0 — it happened before the window", got.Total)
+	}
+}
+
+// MARK: Water streaks (#323)
+
+// A day counts only when everything logged that day adds up to the target.
+func TestOnlyDaysThatMetTheTargetCountForWater(t *testing.T) {
+	w := newWorld(t)
+	w.water(t, w.alice, 2000, 0)
+	w.water(t, w.alice, 2000, 1)
+	w.water(t, w.alice, 1900, 2) // a hair short, so the run stops here
+	w.water(t, w.alice, 2000, 3)
+
+	got := w.recapWith(t, w.aliceTok, "")
+
+	if got.WaterStreak.Current != 2 || got.WaterStreak.Best != 2 {
+		t.Errorf("water streak = %d/%d, want 2/2", got.WaterStreak.Current, got.WaterStreak.Best)
+	}
+	if got.Streak.Current != 4 {
+		t.Errorf("moment streak = %d, want the four days anybody logged", got.Streak.Current)
+	}
+}
+
+// The connection's water is combined across people and across the day.
+func TestWaterFromEverybodyAddsUpWithinADay(t *testing.T) {
+	w := newWorld(t)
+	w.water(t, w.alice, 900, 0)
+	w.water(t, w.bob, 600, 0)
+	w.water(t, w.alice, 500, 0)
+
+	got := w.recapWith(t, w.aliceTok, "")
+
+	if got.WaterStreak.Current != 1 {
+		t.Errorf("water streak = %d, want 1 (900+600+500 reaches 2000)", got.WaterStreak.Current)
+	}
+}
+
+// Moments with no amount, and other moments, add nothing.
+func TestMomentsWithoutAnAmountDoNotCountTowardsWater(t *testing.T) {
+	w := newWorld(t)
+	w.post(t, w.alice, "coffee", 0)
+	w.post(t, w.alice, "water", 0)
+	w.photo(t, w.alice, 0)
+
+	got := w.recapWith(t, w.aliceTok, "")
+
+	if got.WaterStreak.Current != 0 || got.WaterStreak.Best != 0 {
+		t.Errorf("water streak = %d/%d, want zeroes", got.WaterStreak.Current, got.WaterStreak.Best)
+	}
+}
+
+// The caller's own target decides, since the server cannot see it.
+func TestTheRequestsTargetDecidesWhatCounts(t *testing.T) {
+	w := newWorld(t)
+	w.water(t, w.alice, 1500, 0)
+	w.water(t, w.alice, 1500, 1)
+
+	if got := w.recapWith(t, w.aliceTok, "&water_target=1500"); got.WaterStreak.Current != 2 {
+		t.Errorf("at 1500: water streak = %d, want 2", got.WaterStreak.Current)
+	}
+	if got := w.recapWith(t, w.aliceTok, "&water_target=3000"); got.WaterStreak.Current != 0 {
+		t.Errorf("at 3000: water streak = %d, want 0", got.WaterStreak.Current)
+	}
+}
+
+// Without a target the built-in 2000 ml applies; so it does for one that is not
+// a number, which an older or confused client might send.
+func TestAMissingOrGarbledTargetFallsBackToTheDefault(t *testing.T) {
+	w := newWorld(t)
+	w.water(t, w.alice, 2000, 0)
+	w.water(t, w.alice, 1999, 1)
+
+	for _, extra := range []string{"", "&water_target=", "&water_target=lots"} {
+		got := w.recapWith(t, w.aliceTok, extra)
+		if got.WaterStreak.Current != 1 || got.WaterStreak.Best != 1 {
+			t.Errorf("%q: water streak = %d/%d, want 1/1 at the default", extra, got.WaterStreak.Current, got.WaterStreak.Best)
+		}
+	}
+}
+
+// A target of zero would be met by every day. It is no target, so no streak.
+func TestAZeroTargetIsNoWaterStreakRatherThanAnEndlessOne(t *testing.T) {
+	w := newWorld(t)
+	w.water(t, w.alice, 2000, 0)
+	w.water(t, w.alice, 2000, 1)
+
+	for _, extra := range []string{"&water_target=0", "&water_target=-5"} {
+		got := w.recapWith(t, w.aliceTok, extra)
+		if got.WaterStreak.Current != 0 || got.WaterStreak.Best != 0 {
+			t.Errorf("%q: water streak = %d/%d, want zeroes", extra, got.WaterStreak.Current, got.WaterStreak.Best)
+		}
+	}
+}
+
+// Today has not reached the target yet, which has not broken anything: the run
+// reaches back from the most recent day that did.
+func TestATodayShortOfTheTargetDoesNotBreakTheWaterStreak(t *testing.T) {
+	w := newWorld(t)
+	w.water(t, w.alice, 500, 0) // not there yet
+	w.water(t, w.alice, 2000, 1)
+	w.water(t, w.alice, 2000, 2)
+
+	got := w.recapWith(t, w.aliceTok, "")
+
+	if got.WaterStreak.Current != 2 {
+		t.Errorf("water streak = %d, want 2 ending yesterday", got.WaterStreak.Current)
+	}
+}
+
+// Once a whole day has passed without reaching it, the run is over, though the
+// best is kept.
+func TestAWaterStreakThatEndedIsNotCurrent(t *testing.T) {
+	w := newWorld(t)
+	w.water(t, w.alice, 2000, 2)
+	w.water(t, w.alice, 2000, 3)
+	w.water(t, w.alice, 2000, 4)
+
+	got := w.recapWith(t, w.aliceTok, "")
+
+	if got.WaterStreak.Current != 0 || got.WaterStreak.Best != 3 {
+		t.Errorf("water streak = %d/%d, want 0/3", got.WaterStreak.Current, got.WaterStreak.Best)
+	}
+}
+
+// A gap in the middle ends the run that follows it; the older one is the best.
+func TestAShortDayInTheMiddleSplitsTheWaterStreak(t *testing.T) {
+	w := newWorld(t)
+	w.water(t, w.alice, 2000, 0)
+	w.water(t, w.alice, 2000, 1)
+	w.water(t, w.alice, 1000, 2)
+	for day := 3; day < 7; day++ {
+		w.water(t, w.alice, 2000, day)
+	}
+
+	got := w.recapWith(t, w.aliceTok, "")
+
+	if got.WaterStreak.Current != 2 || got.WaterStreak.Best != 4 {
+		t.Errorf("water streak = %d/%d, want 2/4", got.WaterStreak.Current, got.WaterStreak.Best)
+	}
+}
+
+// Days are the caller's, as for the moment streak. Two moments at 23:30 and
+// 00:30 UTC are one local day in UTC but two on opposite sides of a boundary
+// in UTC+1, and which side decides whether the day reaches the target.
+func TestWaterDaysFollowTheCallersClock(t *testing.T) {
+	w := newWorld(t)
+	// 23:30 UTC yesterday and 00:30 UTC today, 1000 ml each.
+	w.waterAt(t, w.alice, 1000, -1, 23, 30)
+	w.waterAt(t, w.alice, 1000, 0, 0, 30)
+
+	if got := w.recapWith(t, w.aliceTok, ""); got.WaterStreak.Best != 0 {
+		t.Errorf("UTC: best = %d, want 0 (1000 ml on each of two days)", got.WaterStreak.Best)
+	}
+	// Both fall on one local day at UTC+1 and sum to the target. The local
+	// day is "today" there whenever the first is already the 0:30 of it.
+	got := w.recapWith(t, w.aliceTok, "&tz=60")
+	if got.WaterStreak.Best != 1 {
+		t.Errorf("UTC+1: best = %d, want 1 (the two share a local day)", got.WaterStreak.Best)
+	}
+}
+
+// Like the moment streak, water is only looked for within the horizon.
+func TestAWaterStreakIsReadWithinTheHorizon(t *testing.T) {
+	w := newWorld(t)
+	for day := 0; day < 200; day++ {
+		w.water(t, w.alice, 2000, day)
+	}
+
+	got := w.recapWith(t, w.aliceTok, "")
+
+	if got.WaterStreak.Current < 179 || got.WaterStreak.Current > 181 {
+		t.Errorf("water streak = %d, want about the 180-day horizon", got.WaterStreak.Current)
+	}
+	if got.WaterStreak.Best != got.WaterStreak.Current {
+		t.Errorf("best = %d, want it equal to current %d", got.WaterStreak.Best, got.WaterStreak.Current)
+	}
+}
+
+// A connection nobody has logged in answers with zeroes, as it does for the moment streak.
+func TestAnEmptyConnectionHasNoWaterStreak(t *testing.T) {
+	w := newWorld(t)
+
+	got := w.recapWith(t, w.aliceTok, "")
+
+	if got.WaterStreak.Current != 0 || got.WaterStreak.Best != 0 {
+		t.Errorf("water streak = %d/%d, want zeroes", got.WaterStreak.Current, got.WaterStreak.Best)
+	}
+}
+
+// recapWith is recap with extra query parameters appended.
+func (w *world) recapWith(t *testing.T, token, extra string) response {
+	t.Helper()
+	from := time.Now().UTC().AddDate(0, 0, -6).Format("2006-01-02") + "T00:00:00Z"
+	path := fmt.Sprintf("/api/peard/recap?pair=%s&from=%s%s", w.pair.Id, from, extra)
+	if !strings.Contains(extra, "tz=") {
+		path += "&tz=0"
+	}
+	status, body := w.do(t, path, token)
+	if status != 200 {
+		t.Fatalf("recap: %d %s", status, body)
+	}
+	var got response
+	if err := json.Unmarshal([]byte(body), &got); err != nil {
+		t.Fatalf("decode %s: %v", body, err)
+	}
+	return got
+}
+
+// water logs `ml` of water `daysAgo` days back, at midday UTC.
+func (w *world) water(t *testing.T, author *core.Record, ml, daysAgo int) {
+	t.Helper()
+	w.waterAt(t, author, ml, -daysAgo, 12, 0)
+}
+
+// waterAt logs water on the UTC day `offset` days from today (negative is the
+// past), at the given UTC hour and minute.
+func (w *world) waterAt(t *testing.T, author *core.Record, ml, offset, hour, minute int) {
+	t.Helper()
+	col, err := w.app.FindCollectionByNameOrId("posts")
+	if err != nil {
+		t.Fatalf("posts collection: %v", err)
+	}
+	r := core.NewRecord(col)
+	r.Set("pair", w.pair.Id)
+	r.Set("author", author.Id)
+	r.Set("type", "event")
+	r.Set("event_kind", "water")
+	r.Set("amount", ml)
+	if err := w.app.Save(r); err != nil {
+		t.Fatalf("save water: %v", err)
+	}
+	day := time.Now().UTC().AddDate(0, 0, offset)
+	want := time.Date(day.Year(), day.Month(), day.Day(), hour, minute, 0, 0, time.UTC).
+		Format("2006-01-02 15:04:05.000Z")
+	if _, err := w.app.DB().
+		NewQuery("UPDATE {{posts}} SET [[created]] = {:t}, [[happened_at]] = {:t} WHERE [[id]] = {:id}").
+		Bind(map[string]any{"t": want, "id": r.Id}).Execute(); err != nil {
+		t.Fatalf("backdate: %v", err)
 	}
 }
