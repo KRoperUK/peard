@@ -205,18 +205,29 @@ public extension APIClient {
     /// business guessing a device's time zone, and a streak is nothing but a
     /// sequence of days. A phone in Sydney and a server in London would
     /// otherwise disagree about which days those were.
-    func recap(pairID: String, days: Int = 7, calendar: Calendar = .peardTally, now: Date = Date()) async throws -> MomentRecap {
+    ///
+    /// `waterTarget` is the connection's recommended daily water in millilitres.
+    /// It lives on the device (#322), so the server can only count water days
+    /// against it if told; omitted, the server uses the built-in amount.
+    func recap(
+        pairID: String,
+        days: Int = 7,
+        waterTarget: Int? = nil,
+        calendar: Calendar = .peardTally,
+        now: Date = Date()
+    ) async throws -> MomentRecap {
         let startOfToday = calendar.startOfDay(for: now)
         let from = calendar.date(byAdding: .day, value: -(max(1, days) - 1), to: startOfToday) ?? startOfToday
         let offsetMinutes = TimeZone.current.secondsFromGMT(for: now) / 60
-        return try await get(
-            path: "/api/peard/recap",
-            query: [
-                "pair": pairID,
-                "from": ISO8601DateFormatter().string(from: from),
-                "tz": String(offsetMinutes),
-            ]
-        )
+        var query = [
+            "pair": pairID,
+            "from": ISO8601DateFormatter().string(from: from),
+            "tz": String(offsetMinutes),
+        ]
+        if let waterTarget {
+            query["water_target"] = String(waterTarget)
+        }
+        return try await get(path: "/api/peard/recap", query: query)
     }
 
     /// `GET /api/peard/status` — which build of the server is running.

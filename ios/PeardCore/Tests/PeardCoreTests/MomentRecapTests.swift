@@ -65,6 +65,63 @@ final class MomentRecapTests: XCTestCase {
         XCTAssertEqual(parsed, expected)
     }
 
+    // MARK: Water streak (#323)
+
+    /// The connection's own recommended amount goes up, because it lives on the
+    /// device and the server cannot know a custom one.
+    func testTheRequestCarriesTheWaterTarget() async throws {
+        StubURLProtocol.respond(json: #"{"total":0}"#)
+
+        _ = try await client.recap(pairID: "pair1", waterTarget: 2500)
+
+        let components = try XCTUnwrap(URLComponents(
+            url: try XCTUnwrap(StubURLProtocol.lastRequest?.url), resolvingAgainstBaseURL: false
+        ))
+        XCTAssertEqual(components.queryItems?.first { $0.name == "water_target" }?.value, "2500")
+    }
+
+    /// Without one, nothing is sent and the server uses the built-in amount.
+    func testTheRequestOmitsTheWaterTargetWhenThereIsNone() async throws {
+        StubURLProtocol.respond(json: #"{"total":0}"#)
+
+        _ = try await client.recap(pairID: "pair1")
+
+        let components = try XCTUnwrap(URLComponents(
+            url: try XCTUnwrap(StubURLProtocol.lastRequest?.url), resolvingAgainstBaseURL: false
+        ))
+        XCTAssertNil(components.queryItems?.first { $0.name == "water_target" })
+    }
+
+    func testAWaterStreakDecodes() throws {
+        let json = #"{"total":3,"streak":{"current":5,"best":9},"water_streak":{"current":4,"best":6}}"#
+
+        let recap = try JSONDecoder.peard.decode(MomentRecap.self, from: Data(json.utf8))
+
+        XCTAssertEqual(recap.waterStreak, MomentRecap.Streak(current: 4, best: 6))
+        XCTAssertEqual(recap.streak.current, 5, "the moment streak is its own number")
+    }
+
+    /// A server that predates the field says nothing, which is not a streak of
+    /// zero.
+    func testAnOldServerHasNoWaterStreak() throws {
+        let json = #"{"total":3,"streak":{"current":5,"best":9}}"#
+
+        let recap = try JSONDecoder.peard.decode(MomentRecap.self, from: Data(json.utf8))
+
+        XCTAssertNil(recap.waterStreak)
+        XCTAssertEqual(recap.streak.current, 5)
+    }
+
+    /// A malformed field costs the water row, not the recap.
+    func testAMalformedWaterStreakIsIgnored() throws {
+        let json = #"{"total":3,"streak":{"current":2,"best":2},"water_streak":"lots"}"#
+
+        let recap = try JSONDecoder.peard.decode(MomentRecap.self, from: Data(json.utf8))
+
+        XCTAssertNil(recap.waterStreak)
+        XCTAssertEqual(recap.total, 3)
+    }
+
     // MARK: Decoding
 
     func testAFullRecapDecodes() throws {

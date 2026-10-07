@@ -172,7 +172,12 @@ private struct TalliesTab: View {
                 // First, because it is the only part of this screen that reads
                 // as news rather than as arithmetic.
                 if let recap = model.recap {
-                    RecapSection(recap: recap, mineLabel: "You", othersLabel: model.othersLabel)
+                    RecapSection(
+                        recap: recap,
+                        mineLabel: "You",
+                        othersLabel: model.othersLabel,
+                        waterEnabled: model.waterConfig.isEnabled
+                    )
                 }
 
                 Section {

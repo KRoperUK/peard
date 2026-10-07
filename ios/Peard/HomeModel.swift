@@ -186,8 +186,14 @@ final class HomeModel {
         var updated = waterConfig
         change(&updated)
         guard updated != waterConfig else { return }
+        let targetChanged = updated.recommended != waterConfig.recommended
         waterConfig = updated
         app.sharedStore.setWaterConfig(updated, forConnection: pairID)
+        // The water streak is counted by the server against this target, so a
+        // new one leaves the last answer describing a different goal (#323).
+        if targetChanged {
+            Task { await refreshRecap() }
+        }
     }
 
     /// Today's water against this connection's own targets.
@@ -385,7 +391,7 @@ final class HomeModel {
 
     func refreshRecap() async {
         do {
-            recap = try await api.recap(pairID: pairID)
+            recap = try await api.recap(pairID: pairID, waterTarget: waterConfig.recommended)
         } catch let error as APIError where error.status == 404 || error.isCancellation {
             // Older server, or a refresh that was replaced by the next one.
             // Neither is worth a word on screen.

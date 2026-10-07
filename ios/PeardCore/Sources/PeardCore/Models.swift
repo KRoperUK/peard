@@ -1542,6 +1542,10 @@ public struct MomentRecap: Codable, Hashable, Sendable {
     public let kinds: [Kind]
     public let busiest: BusiestDay?
     public let streak: Streak
+    /// Days in a row the connection's combined water reached the recommended
+    /// amount (#323). Nil from a server that predates it, which is not the same
+    /// as a streak of zero: the screen shows nothing rather than "broken".
+    public let waterStreak: Streak?
 
     public init(
         total: Int = 0,
@@ -1549,7 +1553,8 @@ public struct MomentRecap: Codable, Hashable, Sendable {
         others: Int = 0,
         kinds: [Kind] = [],
         busiest: BusiestDay? = nil,
-        streak: Streak = Streak()
+        streak: Streak = Streak(),
+        waterStreak: Streak? = nil
     ) {
         self.total = total
         self.mine = mine
@@ -1557,6 +1562,12 @@ public struct MomentRecap: Codable, Hashable, Sendable {
         self.kinds = kinds
         self.busiest = busiest
         self.streak = streak
+        self.waterStreak = waterStreak
+    }
+
+    private enum CodingKeys: String, CodingKey {
+        case total, mine, others, kinds, busiest, streak
+        case waterStreak = "water_streak"
     }
 
     public init(from decoder: any Decoder) throws {
@@ -1567,6 +1578,7 @@ public struct MomentRecap: Codable, Hashable, Sendable {
         kinds = try container.decodeIfPresent([Kind].self, forKey: .kinds) ?? []
         busiest = try? container.decodeIfPresent(BusiestDay.self, forKey: .busiest)
         streak = try container.decodeIfPresent(Streak.self, forKey: .streak) ?? Streak()
+        waterStreak = try? container.decodeIfPresent(Streak.self, forKey: .waterStreak)
     }
 
     /// True when there is nothing to summarise, so a screen can say so rather
