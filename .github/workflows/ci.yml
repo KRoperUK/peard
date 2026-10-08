@@ -1,9 +1,10 @@
 name: CI
 
-# Every push to a pull request or to main runs the fast checks: SwiftLint,
-# PeardCore's unit tests, the server's, and the Docker image when a change
-# touches it. They are small jobs in parallel, none of which builds the app or
-# boots a simulator, and every merge is gated on them.
+# Every push to a pull request or to main runs the checks that gate a merge:
+# SwiftLint, PeardCore's unit tests, the server's, the app-target tests on a
+# simulator, and the Docker image when a change touches it. Most are small jobs
+# in parallel; the app-target tests (`test-app`) need a simulator and so run on
+# a macOS runner. Every merge is gated on them.
 #
 # On main the server deploys. Releasing the app — and the app's UI smoke test,
 # which runs with it — is testflight.yml, a workflow of its own so that
@@ -117,6 +118,41 @@ jobs:
         # simulator. The integration test skips itself without a server.
         run: swift test
 
+  test-app:
+    name: App unit tests
+    runs-on: macos-26
+    if: github.event.action != 'closed'
+    # The app-target tests (PeardTests) on a simulator. These are what the
+    # header calls "the app-target tests gate every merge"; before this job they
+    # ran only post-merge in testflight.yml, with the local pre-push hook — which
+    # is bypassable — the only thing catching a regression on a pull request.
+    # Same lane TestFlight runs (`test_app`), so what gates a merge and what
+    # gates an upload are the exact same test action; PeardUITests is skipped
+    # here, as it is there, and runs with the release.
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+
+      - name: Toolchain
+        # App Store Connect refuses an SDK older than iOS 26, and the tests
+        # should build against the same Xcode the release does; picking the
+        # newest keeps it so when the image adds one.
+        run: scripts/select-newest-xcode && swift --version
+
+      - uses: ruby/setup-ruby@14594264cd68ce8a2345dd349bc3d138a4ef85c8 # v1.327.0
+        with:
+          # fastlane's supported range; the Gemfile pins fastlane itself.
+          ruby-version: "3.3"
+          bundler-cache: true
+
+      - name: Tools
+        # XcodeGen generates the project, which is not committed.
+        run: brew install xcodegen
+
+      - name: Test
+        # The same lane that gates every TestFlight upload: it generates the
+        # project and runs PeardTests on a simulator, skipping PeardUITests.
+        run: bundle exec fastlane test_app
+
   docker:
     name: Docker image + compose
     runs-on: ubuntu-latest
@@ -210,7 +246,9 @@ jobs:
     # The server's own checks. The iOS release job is deliberately not here: it
     # waits on App Store Connect, and a server fix should not wait on Apple's
     # upload queue — or fail because TestFlight is slow. The app's unit tests
-    # still gate every merge, on the pull request that brought it.
+    # still gate every merge via the `test-app` job above, on the pull request
+    # that brought it, so a deploy that does not wait on them is not a deploy
+    # that skipped them.
     needs: [server, docker]
 
     # Records the deploy against a named environment, so the Environments tab
