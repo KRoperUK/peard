@@ -22,7 +22,11 @@
 #
 # The same golang image as the build stage, which already has git, so nothing
 # extra is pulled.
-FROM golang:1.27.1-alpine AS commit
+#
+# Digest-pinned (the repo's convention): the tag is kept in the comment so
+# Dependabot can still see and bump it, but the build resolves the exact image
+# by digest so a retag upstream cannot change what we build.
+FROM golang:1.27.1-alpine@sha256:8a5910f31396cd4d89662f56c68b3ae31d374308270a1c3bd96672ee5ed43414 AS commit
 
 WORKDIR /repo
 
@@ -45,7 +49,7 @@ RUN git config --global --add safe.directory /repo; \
     cat /commit.txt
 
 # --- build ------------------------------------------------------------------
-FROM golang:1.27.1-alpine AS build
+FROM golang:1.27.1-alpine@sha256:8a5910f31396cd4d89662f56c68b3ae31d374308270a1c3bd96672ee5ed43414 AS build
 
 WORKDIR /src
 
@@ -73,7 +77,8 @@ RUN CGO_ENABLED=0 GOOS=linux go build -trimpath \
     -o /out/peard-server .
 
 # --- runtime ----------------------------------------------------------------
-FROM alpine:3.24
+# Digest-pinned; the tag stays in the comment for Dependabot.
+FROM alpine:3.24@sha256:294b683cb724975bec92580e1e685676bd4b50bda910ddb8c51d4cabeaec77e6
 
 # ca-certificates is required, not optional: the server makes outbound TLS calls
 # to Apple's JWKS (identity-token and notification verification), to APNs, and to

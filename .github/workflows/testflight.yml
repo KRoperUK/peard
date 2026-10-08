@@ -39,6 +39,8 @@ jobs:
   approve-internal:
     name: TestFlight (internal approval)
     runs-on: ubuntu-latest
+    # Waits for a human reviewer; the ceiling only bounds a forgotten approval.
+    timeout-minutes: 1440
     environment:
       name: testflight-internal
     concurrency:
@@ -52,6 +54,7 @@ jobs:
     name: TestFlight (internal)
     runs-on: macos-26
     needs: approve-internal
+    timeout-minutes: 60
     outputs:
       build_number: ${{ steps.release.outputs.build_number }}
       version: ${{ steps.release.outputs.version }}
@@ -142,6 +145,8 @@ jobs:
     name: TestFlight (external approval)
     runs-on: ubuntu-latest
     needs: ios-release
+    # Waits for a human reviewer; the ceiling only bounds a forgotten approval.
+    timeout-minutes: 1440
     if: needs.ios-release.outputs.build_number != ''
     environment:
       name: testflight-external
@@ -158,6 +163,7 @@ jobs:
     # add the build to a group — so a macOS runner bought nothing but its price.
     runs-on: ubuntu-latest
     needs: [ios-release, approve-external]
+    timeout-minutes: 50
     if: needs.ios-release.outputs.build_number != ''
     # The pending release notes below list pull requests. A job-level block
     # replaces the workflow's rather than adding to it, hence contents again.

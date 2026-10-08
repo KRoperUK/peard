@@ -40,15 +40,18 @@ jobs:
   lint:
     name: SwiftLint
     runs-on: ubuntu-latest
+    timeout-minutes: 10
     if: github.event.action != 'closed'
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
 
       # Linux and SwiftLint's own image: no macOS runner to wait for, and the
-      # same version .swiftlint.yml was written against.
+      # same version .swiftlint.yml was written against. Digest-pinned (the
+      # repo's convention); the tag stays in the comment so a bump is visible.
       - name: Lint
         run: |
-          docker run --rm -v "$PWD:/work" -w /work ghcr.io/realm/swiftlint:0.65.1 \
+          docker run --rm -v "$PWD:/work" -w /work \
+            ghcr.io/realm/swiftlint:0.65.1@sha256:f47e083201e47a136cda5ae847595bfe00226c444ca226fa74fa5dc648a9b057 \
             swiftlint lint --config .swiftlint.yml --reporter github-actions-logging
 
       # The workflow scripts' own tests. Here rather than in a job of their own:
@@ -59,6 +62,9 @@ jobs:
   server:
     name: Server unit tests
     runs-on: ubuntu-latest
+    # The race-instrumented suite takes ~15m here and is slower on a shared
+    # runner; this ceiling sits above that but still fails a hung job.
+    timeout-minutes: 40
     if: github.event.action != 'closed'
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
@@ -78,7 +84,18 @@ jobs:
 
       - name: Test
         working-directory: server
-        run: go test ./...
+        # -race over the push/fan-out layer, which is goroutine-heavy — a data
+        # race there would otherwise only ever surface in production. The race
+        # detector needs cgo, so the plain CGO_ENABLED=0 image build is
+        # unaffected; this is test-only.
+        #
+        # Explicit -timeout: race instrumentation plus the suite's real
+        # per-test work (the push/APNs and posts suites each run many ~5s
+        # cases) can push the slowest package past Go's default 10m
+        # per-package timeout on a shared runner. 30m is comfortably clear of
+        # the ~5.5m the slowest package takes while still failing a genuinely
+        # hung test.
+        run: go test -race -timeout 30m ./...
 
       - name: Check gofmt
         working-directory: server
@@ -104,6 +121,7 @@ jobs:
   core:
     name: PeardCore unit tests
     runs-on: macos-26
+    timeout-minutes: 30
     if: github.event.action != 'closed'
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
@@ -121,6 +139,7 @@ jobs:
   test-app:
     name: App unit tests
     runs-on: macos-26
+    timeout-minutes: 45
     if: github.event.action != 'closed'
     # The app-target tests (PeardTests) on a simulator. These are what the
     # header calls "the app-target tests gate every merge"; before this job they
@@ -153,9 +172,17 @@ jobs:
         # project and runs PeardTests on a simulator, skipping PeardUITests.
         run: bundle exec fastlane test_app
 
+      - name: Smoke test (UI)
+        # The PeardUITests smoke lane. It exists (and the Fastfile says CI runs
+        # it straight after test_app) but was never wired to execute — so the
+        # smoke coverage was nominal only. Runs here, reusing the simulator and
+        # generated project test_app already set up.
+        run: bundle exec fastlane test_ui
+
   docker:
     name: Docker image + compose
     runs-on: ubuntu-latest
+    timeout-minutes: 20
     # On main it gates the server deploy. On a pull request it runs only the
     # checks that can tell something: a broken server/Dockerfile used to surface
     # on main, where it blocked the deploy, rather than on the pull request that
@@ -243,6 +270,10 @@ jobs:
   deploy:
     name: Deploy server
     runs-on: ubuntu-latest
+    # The "wait for the new build to answer" step polls for about seven
+    # minutes; this ceiling sits above that so a genuinely stuck deploy fails
+    # fast without tripping on the normal poll window.
+    timeout-minutes: 15
     # The server's own checks. The iOS release job is deliberately not here: it
     # waits on App Store Connect, and a server fix should not wait on Apple's
     # upload queue — or fail because TestFlight is slow. The app's unit tests
