@@ -81,6 +81,25 @@ GROUP BY day
 HAVING SUM(COALESCE(amount, 0)) >= {:target}
 ORDER BY day DESC`
 
+// rawDayQuery lists every moment's UTC timestamp within the horizon, newest
+// first, so each can be bucketed into its own local day in Go using the IANA
+// zone — which knows that day's actual offset (#344). The fixed-offset SQL
+// bucketing in dayQuery lands pre-DST days an hour off their true boundary.
+const rawDayQuery = `
+SELECT happened_at AS day
+FROM posts
+WHERE pair = {:pair} AND happened_at >= {:since}
+ORDER BY happened_at DESC`
+
+// rawWaterDayQuery is rawDayQuery for water: every event's timestamp and amount,
+// so the per-local-day sum (and the >= target test) can be computed in Go with
+// IANA-correct day boundaries (#344).
+const rawWaterDayQuery = `
+SELECT happened_at AS day, COALESCE(amount, 0) AS amount
+FROM posts
+WHERE pair = {:pair} AND type = 'event' AND happened_at >= {:since}
+ORDER BY happened_at DESC`
+
 // defaultWaterTarget is the built-in recommended daily amount in millilitres,
 // used for a member who has stored no target when the caller sends none either.
 // Mirrors the app's `WaterAmount.defaultRecommended`.
@@ -128,6 +147,12 @@ type kindRow struct {
 type busiestRow struct {
 	Day   string `db:"day"`
 	Total int    `db:"total"`
+}
+
+// waterRawRow is one event's timestamp and amount, for IANA day-bucketing (#344).
+type waterRawRow struct {
+	Day    string `db:"day"`
+	Amount int    `db:"amount"`
 }
 
 func handler(app core.App) func(e *core.RequestEvent) error {
@@ -196,9 +221,9 @@ func handler(app core.App) func(e *core.RequestEvent) error {
 			})
 		}
 
-		current, best := streaks(app, pairID, shift)
+		current, best := streaks(app, pairID, shift, loc)
 		targets := memberTargets(app, pairID)
-		waterCurrent, waterBest := waterStreaks(app, pairID, shift, streakTarget(targets, waterTarget(e)))
+		waterCurrent, waterBest := waterStreaks(app, pairID, shift, loc, streakTarget(targets, waterTarget(e)))
 
 		res := map[string]any{
 			"pair":   pairID,
@@ -232,7 +257,12 @@ func handler(app core.App) func(e *core.RequestEvent) error {
 // "In a row" ends at yesterday, not at today: a streak is alive until a day
 // passes with nothing in it, and a connection that has not logged anything yet
 // today at nine in the morning has not broken anything.
-func streaks(app core.App, pairID, shift string) (current, best int) {
+func streaks(app core.App, pairID, shift string, loc *time.Location) (current, best int) {
+	since := time.Now().AddDate(0, 0, -streakHorizonDays).UTC().Format(pocketBaseLayout)
+	if loc != nil && loc != time.UTC {
+		days := ianaDays(app, pairID, since, loc)
+		return runsFromDays(days, nowInZone(loc))
+	}
 	return streaksFrom(app, dayQuery, dbx.Params{"pair": pairID, "shift": shift}, shift)
 }
 
@@ -245,11 +275,125 @@ func streaks(app core.App, pairID, shift string) (current, best int) {
 //
 // No target is no streak, not a vacuously true one: with a target of zero every
 // day would qualify.
-func waterStreaks(app core.App, pairID, shift string, target int) (current, best int) {
+func waterStreaks(app core.App, pairID, shift string, loc *time.Location, target int) (current, best int) {
 	if target <= 0 {
 		return 0, 0
 	}
+	since := time.Now().AddDate(0, 0, -streakHorizonDays).UTC().Format(pocketBaseLayout)
+	if loc != nil && loc != time.UTC {
+		days := ianaWaterDays(app, pairID, since, loc, target)
+		return runsFromDays(days, nowInZone(loc))
+	}
 	return streaksFrom(app, waterDayQuery, dbx.Params{"pair": pairID, "shift": shift, "target": target}, shift)
+}
+
+// ianaDays returns the distinct local days (newest first) the connection logged
+// anything on, each day's boundary taken from the IANA zone so a clock change
+// does not misplace a moment (#344).
+func ianaDays(app core.App, pairID, since string, loc *time.Location) []time.Time {
+	var rows []dayRow
+	if err := app.DB().NewQuery(rawDayQuery).Bind(dbx.Params{"pair": pairID, "since": since}).All(&rows); err != nil {
+		return nil
+	}
+	seen := map[string]struct{}{}
+	days := make([]time.Time, 0, len(rows))
+	for _, r := range rows {
+		day, ok := localDay(r.Day, loc)
+		if !ok {
+			continue
+		}
+		key := day.Format("2006-01-02")
+		if _, dup := seen[key]; dup {
+			continue
+		}
+		seen[key] = struct{}{}
+		days = append(days, day)
+	}
+	return days
+}
+
+// ianaWaterDays returns the distinct local days (newest first) on which the
+// connection's combined water met the target, bucketed by the IANA zone (#344).
+func ianaWaterDays(app core.App, pairID, since string, loc *time.Location, target int) []time.Time {
+	var rows []waterRawRow
+	if err := app.DB().NewQuery(rawWaterDayQuery).Bind(dbx.Params{"pair": pairID, "since": since}).All(&rows); err != nil {
+		return nil
+	}
+	totals := map[string]int{}
+	keys := map[string]time.Time{}
+	for _, r := range rows {
+		day, ok := localDay(r.Day, loc)
+		if !ok {
+			continue
+		}
+		key := day.Format("2006-01-02")
+		totals[key] += r.Amount
+		keys[key] = day
+	}
+	days := make([]time.Time, 0, len(totals))
+	for key, total := range totals {
+		if total >= target {
+			days = append(days, keys[key])
+		}
+	}
+	sort.Slice(days, func(a, b int) bool { return days[a].After(days[b]) })
+	return days
+}
+
+// localDay parses a PocketBase timestamp and returns the date-only value of the
+// local day it falls on in loc, as a UTC-midnight time comparable to the others.
+func localDay(raw string, loc *time.Location) (time.Time, bool) {
+	raw = strings.TrimSpace(raw)
+	t, err := time.Parse(pocketBaseLayout, raw)
+	if err != nil {
+		// Timestamps without millisecond precision still have to bucket.
+		t, err = time.Parse("2006-01-02 15:04:05Z", raw)
+		if err != nil {
+			return time.Time{}, false
+		}
+	}
+	local := t.In(loc)
+	return time.Date(local.Year(), local.Month(), local.Day(), 0, 0, 0, 0, time.UTC), true
+}
+
+// nowInZone is today's date in loc, as a UTC-midnight value to compare against
+// the bucketed days.
+func nowInZone(loc *time.Location) time.Time {
+	now := time.Now().In(loc)
+	return time.Date(now.Year(), now.Month(), now.Day(), 0, 0, 0, 0, time.UTC)
+}
+
+// runsFromDays reads the current and best runs of consecutive days from a
+// newest-first list of local days. Shared by the IANA and shift paths so both
+// count a streak the same way; `today` is the clock the days were bucketed in.
+func runsFromDays(days []time.Time, today time.Time) (current, best int) {
+	if len(days) == 0 {
+		return 0, 0
+	}
+	run := 1
+	best = 1
+	for i := 1; i < len(days); i++ {
+		if days[i-1].AddDate(0, 0, -1).Equal(days[i]) {
+			run++
+		} else {
+			run = 1
+		}
+		if run > best {
+			best = run
+		}
+	}
+	gap := int(today.Sub(days[0]).Hours() / 24)
+	if gap > 1 {
+		return 0, best
+	}
+	current = 1
+	for i := 1; i < len(days); i++ {
+		if !days[i-1].AddDate(0, 0, -1).Equal(days[i]) {
+			break
+		}
+		current++
+	}
+	return current, best
 }
 
 // streaksFrom runs a query that lists qualifying local days newest first, and
@@ -270,41 +414,10 @@ func streaksFrom(app core.App, query string, params dbx.Params, shift string) (c
 		}
 		days = append(days, parsed)
 	}
-	if len(days) == 0 {
-		return 0, 0
-	}
 
 	// The caller's today, derived from the same shift the days were bucketed
 	// with, so "is the newest day today or yesterday" is asked in one clock.
-	today := shiftedNow(shift)
-
-	run := 1
-	best = 1
-	for i := 1; i < len(days); i++ {
-		if days[i-1].AddDate(0, 0, -1).Equal(days[i]) {
-			run++
-		} else {
-			run = 1
-		}
-		if run > best {
-			best = run
-		}
-	}
-
-	// The current run is only the leading one, and only if it reaches today or
-	// yesterday.
-	gap := int(today.Sub(days[0]).Hours() / 24)
-	if gap > 1 {
-		return 0, best
-	}
-	current = 1
-	for i := 1; i < len(days); i++ {
-		if !days[i-1].AddDate(0, 0, -1).Equal(days[i]) {
-			break
-		}
-		current++
-	}
-	return current, best
+	return runsFromDays(days, shiftedNow(shift))
 }
 
 // waterTarget reads the recommended daily amount the caller sent in millilitres.

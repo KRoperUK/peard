@@ -56,22 +56,90 @@ struct ProtectedImage<Placeholder: View, Failure: View>: View {
         }
         image = nil
         unavailable = false
-        // No token means no photo. Signed out, or the server said no — either
-        // way the failure view is the honest answer, and it is the same one a
-        // missing file gives.
-        guard
-            let token = await app.fileTokens.current(),
-            let url = URL(string: serverURL.absoluteString + FileTokenStore.decorate(path, token: token)),
-            let data = try? await APIClient.data(from: url),
-            let decoded = UIImage(data: data)
-        else {
-            // A row scrolled away mid-download is not a failed photo.
-            if !Task.isCancelled { unavailable = true }
-            return
+
+        // Transient failures — a timeout, or a 401 right after the file token
+        // rolled — must not turn a moment's photo permanently broken (#346).
+        // Only a genuine not-found latches `unavailable`; everything else is
+        // retried a few times, refreshing the token first on a 401, and left
+        // retryable (the view re-runs this when it reappears) if it still fails.
+        let maxAttempts = 3
+        for attempt in 0..<maxAttempts {
+            if Task.isCancelled { return }
+            switch await fetchOnce() {
+            case .loaded(let decoded):
+                guard !Task.isCancelled else { return }
+                image = decoded
+                unavailable = false
+                return
+            case .gone:
+                // The one case that is genuinely, permanently gone.
+                if !Task.isCancelled { unavailable = true }
+                return
+            case .cancelled:
+                return
+            case .retry:
+                // Fall through to the backoff and try again.
+                break
+            }
+            if attempt < maxAttempts - 1 {
+                try? await Task.sleep(nanoseconds: backoff(attempt))
+            }
+            // Out of attempts: leave it retryable (placeholder), do not latch —
+            // a later reappearance re-runs load() and may well succeed.
         }
-        PhotoThumbnailCache.shared.store(decoded, for: cacheKey)
-        guard !Task.isCancelled else { return }
-        image = decoded
+    }
+
+    /// The outcome of one load attempt: a decoded image, a permanent not-found,
+    /// a cancellation, or a transient failure worth retrying.
+    private enum Attempt {
+        case loaded(UIImage)
+        case gone
+        case cancelled
+        case retry
+    }
+
+    /// One fetch, classified so `load()` can decide whether to latch, stop, or
+    /// retry. A 401 clears the token here so the next attempt mints a fresh one.
+    private func fetchOnce() async -> Attempt {
+        guard let token = await app.fileTokens.current() else {
+            // No token at all (signed out, or the mint failed): retryable.
+            return .retry
+        }
+        guard let url = URL(string: serverURL.absoluteString + FileTokenStore.decorate(path, token: token)) else {
+            return .gone
+        }
+        do {
+            let data = try await APIClient.data(from: url)
+            guard let decoded = UIImage(data: data) else {
+                // 2xx but undecodable bytes: a broken file, not transient.
+                return .gone
+            }
+            PhotoThumbnailCache.shared.store(decoded, for: cacheKey)
+            return .loaded(decoded)
+        } catch let error as APIError {
+            switch error {
+            case .cancelled:
+                return .cancelled
+            case .server(let status, _) where status == 404 || status == 410:
+                return .gone
+            case .unauthorized:
+                // Likely the token rolled under us: drop it so the next attempt
+                // mints a fresh one, then retry.
+                await app.fileTokens.clear()
+                return .retry
+            default:
+                return .retry
+            }
+        } catch {
+            return .retry
+        }
+    }
+
+    /// Growing delay between retries: ~0.3s, ~0.9s. Short enough that a photo
+    /// that recovers does so while the row is still on screen.
+    private func backoff(_ attempt: Int) -> UInt64 {
+        let seconds = 0.3 * pow(3, Double(attempt))
+        return UInt64(seconds * 1_000_000_000)
     }
 }
 

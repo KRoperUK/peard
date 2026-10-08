@@ -10,6 +10,7 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"os"
+	"strings"
 	"testing"
 	"time"
 
@@ -18,6 +19,7 @@ import (
 	"github.com/pocketbase/pocketbase/tests"
 	"github.com/pocketbase/pocketbase/tools/types"
 
+	"peard/internal/moments"
 	"peard/internal/posts"
 
 	_ "peard/migrations"
@@ -67,6 +69,11 @@ func newWorld(t *testing.T, register ...func(core.App)) *world {
 	w.pair = w.newPair(t)
 	w.addMember(t, w.alice)
 	w.addMember(t, w.bob)
+	// Water and tea are presets: the real client publishes a moment_kinds row
+	// for them before logging, so a connection that logs them has them. The
+	// tests log both, so the harness publishes them too (#347).
+	w.newMomentKind(t, "water")
+	w.newMomentKind(t, "tea")
 	w.alicePost = w.newEvent(t, w.alice, "beer", "at the pub")
 	w.bobPost = w.newEvent(t, w.bob, "coffee", "")
 	w.alicePhoto = w.newPhoto(t, w.alice)
@@ -273,6 +280,91 @@ func TestNothingElseAboutAMomentCanBeChanged(t *testing.T) {
 	}
 }
 
+// MARK: #343 note length is measured in characters, not bytes
+
+// A 280-character emoji note is within the field's limit, but each emoji is
+// several bytes — so a byte count rejected it far short of 280. The note here is
+// 280 runes of a 4-byte emoji (1120 bytes), which must now be accepted.
+func TestAnEmojiNoteIsCountedInCharactersNotBytes(t *testing.T) {
+	w := newWorld(t)
+	note := strings.Repeat("🍐", 280) // 280 runes, 1120 bytes
+
+	status, body := w.edit(t, w.aliceTok, `{"post":"`+w.alicePost.Id+`","note":"`+note+`"}`)
+	if status != 200 {
+		t.Fatalf("280-rune emoji note: %d %s", status, body)
+	}
+	if got := []rune(w.reload(t, w.alicePost.Id).GetString("note")); len(got) != 280 {
+		t.Errorf("note is %d runes, want 280", len(got))
+	}
+}
+
+// 281 runes is over the limit however few bytes each is.
+func TestANoteOf281CharactersIsStillRefused(t *testing.T) {
+	w := newWorld(t)
+	note := strings.Repeat("a", 281)
+
+	if status, body := w.edit(t, w.aliceTok, `{"post":"`+w.alicePost.Id+`","note":"`+note+`"}`); status != 400 {
+		t.Fatalf("281-char note: %d %s", status, body)
+	}
+}
+
+// MARK: #347 event_kind must be a known kind
+
+// A built-in kind is always known, with or without a connection.
+func TestABuiltInKindIsKnown(t *testing.T) {
+	w := newWorld(t)
+	for _, kind := range []string{"beer", "coffee", "loo"} {
+		if !moments.IsKnownKind(w.app, w.pair.Id, kind) {
+			t.Errorf("built-in %q was not known", kind)
+		}
+	}
+}
+
+// A connection's own moment_kinds row is known for that connection; anything
+// else is not.
+func TestACustomKindIsKnownForItsConnection(t *testing.T) {
+	w := newWorld(t)
+	w.newMomentKind(t, "dog_walk")
+
+	if !moments.IsKnownKind(w.app, w.pair.Id, "dog_walk") {
+		t.Error("a seeded custom kind was not known")
+	}
+	if moments.IsKnownKind(w.app, w.pair.Id, "never_logged") {
+		t.Error("an unknown kind was treated as known")
+	}
+	if moments.IsKnownKind(w.app, w.pair.Id, "") {
+		t.Error("an empty kind was treated as known")
+	}
+}
+
+// Changing a moment to a kind nobody ever defined is refused, so it cannot
+// leak into the tallies.
+func TestEditingToAnUnknownKindIsRefused(t *testing.T) {
+	w := newWorld(t)
+
+	status, body := w.edit(t, w.aliceTok, `{"post":"`+w.alicePost.Id+`","event_kind":"made_up_kind"}`)
+	if status != 400 {
+		t.Fatalf("unknown kind on edit: %d %s", status, body)
+	}
+	if got := w.reload(t, w.alicePost.Id).GetString("event_kind"); got != "beer" {
+		t.Errorf("event_kind = %q, want it untouched", got)
+	}
+}
+
+// A connection's own custom kind is accepted on edit.
+func TestEditingToACustomKindIsAccepted(t *testing.T) {
+	w := newWorld(t)
+	w.newMomentKind(t, "dog_walk")
+
+	status, body := w.edit(t, w.aliceTok, `{"post":"`+w.alicePost.Id+`","event_kind":"dog_walk"}`)
+	if status != 200 {
+		t.Fatalf("custom kind on edit: %d %s", status, body)
+	}
+	if got := w.reload(t, w.alicePost.Id).GetString("event_kind"); got != "dog_walk" {
+		t.Errorf("event_kind = %q, want dog_walk", got)
+	}
+}
+
 func TestAnEmptyEditIsRefused(t *testing.T) {
 	w := newWorld(t)
 
@@ -437,6 +529,25 @@ func (w *world) newEvent(t *testing.T, author *core.Record, kind, note string) *
 func (w *world) newPhoto(t *testing.T, author *core.Record) *core.Record {
 	t.Helper()
 	return w.newPost(t, author, "photo", "", "")
+}
+
+// newMomentKind seeds a custom moment kind for the connection, so a test can
+// edit a moment to it and expect it accepted (#347).
+func (w *world) newMomentKind(t *testing.T, slug string) *core.Record {
+	t.Helper()
+	col, err := w.app.FindCollectionByNameOrId("moment_kinds")
+	if err != nil {
+		t.Fatalf("moment_kinds collection: %v", err)
+	}
+	r := core.NewRecord(col)
+	r.Set("pair", w.pair.Id)
+	r.Set("slug", slug)
+	r.Set("label", slug)
+	r.Set("emoji", "🐕")
+	if err := w.app.Save(r); err != nil {
+		t.Fatalf("save moment_kind %s: %v", slug, err)
+	}
+	return r
 }
 
 func (w *world) newPost(t *testing.T, author *core.Record, kind, eventKind, note string) *core.Record {
