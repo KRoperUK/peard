@@ -72,7 +72,7 @@ struct PhotoViewer: View {
             // Hidden while zoomed in, because at that point the chrome is
             // covering the part somebody zoomed in to look at.
             .opacity(isZoomedIn ? 0 : 1)
-            .animation(.easeInOut(duration: 0.2), value: isZoomedIn)
+            .animation(reduceMotion ? nil : .easeInOut(duration: 0.2), value: isZoomedIn)
         }
         .statusBarHidden()
         .task { await countReplies() }
@@ -144,7 +144,7 @@ struct PhotoViewer: View {
                 .accessibilityLabel("Photo from \(authorLabel)")
         } else if failed {
             VStack(spacing: 10) {
-                Text("📷").font(.system(size: 44))
+                Text("📷").font(.system(size: 44)).accessibilityHidden(true)
                 Text("This photo couldn't be loaded.")
                     .font(.subheadline)
                     .foregroundStyle(.white.opacity(0.8))

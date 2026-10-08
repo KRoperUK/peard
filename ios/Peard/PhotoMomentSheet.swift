@@ -19,6 +19,7 @@ import SwiftUI
 /// where somebody actually has the words: right after taking the picture.
 struct PhotoMomentSheet: View {
     @Environment(\.dismiss) private var dismiss
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
 
     let image: UIImage
     let moments: [Moment]
@@ -182,7 +183,7 @@ struct PhotoMomentSheet: View {
                 .transition(.opacity)
             }
         }
-        .animation(.easeOut(duration: 0.15), value: edit.isIdentity)
+        .animation(reduceMotion ? nil : .easeOut(duration: 0.15), value: edit.isIdentity)
         // The whole point of Fit is not losing an edge, so a zoom left over
         // from Fill would quietly undo it.
         .onChange(of: edit.fit) { oldValue, newValue in

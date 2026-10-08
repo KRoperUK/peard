@@ -140,6 +140,7 @@ struct ConnectionsView: View {
             VStack(spacing: 10) {
                 Text("🍐")
                     .font(.system(size: 48))
+                    .accessibilityHidden(true)
                 Text("No connections yet")
                     .font(.headline)
                     .foregroundStyle(PearColor.textPrimary)
@@ -162,6 +163,7 @@ struct ConnectionsView: View {
                 } label: {
                     HStack(spacing: 12) {
                         AvatarView(avatar: connection.avatar, serverURL: app.config.serverURL, size: 40)
+                            .accessibilityHidden(true)
                         VStack(alignment: .leading, spacing: 2) {
                             Text(connection.title())
                                 .foregroundStyle(PearColor.textPrimary)
@@ -301,6 +303,7 @@ struct ConnectionsView: View {
                 serverURL: app.config.serverURL,
                 size: 40
             )
+            .accessibilityHidden(true)
             VStack(alignment: .leading, spacing: 2) {
                 Text(row.name)
                     .foregroundStyle(PearColor.textPrimary)

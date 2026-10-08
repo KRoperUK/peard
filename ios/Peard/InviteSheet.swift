@@ -11,6 +11,8 @@ struct InviteSheet: View {
     let pairID: String
     let connectionTitle: String
 
+    @ScaledMetric(relativeTo: .largeTitle) private var codeSize: CGFloat = 44
+
     @State private var invite: PairInvite?
     @State private var isWorking = false
     @State private var errorMessage: String?
@@ -25,8 +27,10 @@ struct InviteSheet: View {
 
                 if let invite {
                     Text(invite.code)
-                        .font(.system(size: 44, weight: .heavy, design: .rounded))
+                        .font(.system(size: codeSize, weight: .heavy, design: .rounded))
                         .tracking(8)
+                        .lineLimit(1)
+                        .minimumScaleFactor(0.5)
                         .foregroundStyle(PearColor.accent)
                         .accessibilityLabel(
                             "Invite code \(invite.code.map(String.init).joined(separator: " "))"
