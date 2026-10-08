@@ -240,13 +240,7 @@ func momentHandler(app core.App) func(e *core.RequestEvent) error {
 // isKnownKind reports whether a slug is a built-in moment or one this connection
 // has published.
 func isKnownKind(app core.App, pairID, slug string) bool {
-	if _, ok := moments.Builtin(slug); ok {
-		return true
-	}
-	rec, err := app.FindFirstRecordByFilter("moment_kinds",
-		"pair = {:pair} && slug = {:slug}",
-		dbx.Params{"pair": pairID, "slug": slug})
-	return err == nil && rec != nil
+	return moments.IsKnownKind(app, pairID, slug)
 }
 
 // connectionTitle mirrors the client's Connection.title(): the name somebody set,

@@ -44,6 +44,29 @@ func Builtin(slug string) (Descriptor, bool) {
 	return d, ok
 }
 
+// IsKnownKind reports whether a kind is one the connection may log: a built-in,
+// or one of this connection's own moment_kinds rows. Used to refuse an unknown
+// kind at write time so it never reaches the tallies or recap (#347).
+//
+// An empty slug is not known — a kind is required on an event — and the pair is
+// consulted only for a non-built-in, so a built-in costs no query.
+func IsKnownKind(app core.App, pairID, slug string) bool {
+	slug = strings.TrimSpace(slug)
+	if slug == "" {
+		return false
+	}
+	if _, ok := builtin[slug]; ok {
+		return true
+	}
+	if pairID == "" {
+		return false
+	}
+	rec, err := app.FindFirstRecordByFilter("moment_kinds",
+		"pair = {:pair} && slug = {:slug}",
+		dbx.Params{"pair": pairID, "slug": slug})
+	return err == nil && rec != nil
+}
+
 // Resolve looks a single kind up for one connection.
 func Resolve(app core.App, pairID, slug string) Descriptor {
 	slug = strings.TrimSpace(slug)

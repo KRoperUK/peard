@@ -13,7 +13,7 @@ import Network
 /// choosing and the only shared state is one `Bool`, so a lock is both cheaper and
 /// easier to reason about than hopping executors on every path update.
 public final class Reachability: @unchecked Sendable {
-    private let monitor: NWPathMonitor
+    private var monitor: NWPathMonitor
     private let queue = DispatchQueue(label: "com.peard.reachability")
     private let lock = NSLock()
 
@@ -22,6 +22,7 @@ public final class Reachability: @unchecked Sendable {
     private var handlers: [@Sendable (Bool) -> Void] = []
     private var constrainedHandlers: [@Sendable (Bool) -> Void] = []
     private var isStarted = false
+    private var wasCancelled = false
 
     public init() {
         monitor = NWPathMonitor()
@@ -47,6 +48,11 @@ public final class Reachability: @unchecked Sendable {
     }
 
     /// Begins monitoring. Safe to call more than once.
+    ///
+    /// A cancelled `NWPathMonitor` cannot be restarted — Apple's API gives no
+    /// way to resume one, and starting it again silently delivers no updates.
+    /// So a start that follows a stop builds a fresh monitor rather than reusing
+    /// the cancelled one (#345).
     public func start() {
         lock.lock()
         guard !isStarted else {
@@ -54,21 +60,38 @@ public final class Reachability: @unchecked Sendable {
             return
         }
         isStarted = true
+        if wasCancelled {
+            monitor = NWPathMonitor()
+            wasCancelled = false
+        }
+        let active = monitor
         lock.unlock()
 
-        monitor.pathUpdateHandler = { [weak self] path in
+        active.pathUpdateHandler = { [weak self] path in
             self?.update(isOnline: path.status == .satisfied)
             self?.update(isConstrained: path.isConstrained)
         }
-        monitor.start(queue: queue)
+        active.start(queue: queue)
     }
 
     public func stop() {
         lock.lock()
         let wasStarted = isStarted
         isStarted = false
+        let active = monitor
+        if wasStarted { wasCancelled = true }
         lock.unlock()
-        if wasStarted { monitor.cancel() }
+        if wasStarted { active.cancel() }
+    }
+
+    /// Releases every registered change handler, so neither they nor whatever
+    /// they capture outlive the need for them (#345). Call when tearing down the
+    /// owner that registered them; a later `onChange` starts a fresh list.
+    public func removeHandlers() {
+        lock.lock()
+        handlers.removeAll()
+        constrainedHandlers.removeAll()
+        lock.unlock()
     }
 
     /// Registers a handler called on every change, and only on a change — a

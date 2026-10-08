@@ -33,6 +33,9 @@ import (
 	"net/http"
 	"strings"
 	"time"
+	"unicode/utf8"
+
+	"peard/internal/moments"
 
 	"github.com/pocketbase/pocketbase/apis"
 	"github.com/pocketbase/pocketbase/core"
@@ -80,6 +83,9 @@ func Register(app core.App) {
 			return e.BadRequestError(msg, nil)
 		}
 		if msg := CheckAmount(e.Record); msg != "" {
+			return e.BadRequestError(msg, nil)
+		}
+		if msg := CheckEventKind(e.App, e.Record); msg != "" {
 			return e.BadRequestError(msg, nil)
 		}
 		return e.Next()
@@ -132,7 +138,9 @@ func editHandler(app core.App) func(e *core.RequestEvent) error {
 
 		if body.Note != nil {
 			note := strings.TrimSpace(*body.Note)
-			if len(note) > maxNoteLength {
+			// Runes, not bytes: the field's Max is 280 characters, so a byte
+			// count would reject an emoji or non-Latin note far short of it.
+			if utf8.RuneCountInString(note) > maxNoteLength {
 				return e.BadRequestError("that note is too long", nil)
 			}
 			if note == "" && post.GetString("type") == noteType {
@@ -151,8 +159,14 @@ func editHandler(app core.App) func(e *core.RequestEvent) error {
 			if kind == "" {
 				return e.BadRequestError("a moment needs a kind", nil)
 			}
-			if len(kind) > maxKindLength {
+			if utf8.RuneCountInString(kind) > maxKindLength {
 				return e.BadRequestError("that kind is too long", nil)
+			}
+			// An unknown kind must not reach the tallies, where it would be
+			// counted as a real moment nobody logged. Validate against the
+			// built-in kinds plus this connection's own moment_kinds (#347).
+			if !moments.IsKnownKind(app, post.GetString("pair"), kind) {
+				return e.BadRequestError("that is not a known moment kind", nil)
 			}
 			post.Set("event_kind", kind)
 		}
@@ -262,6 +276,28 @@ func CheckAmount(post *core.Record) string {
 		return "an amount can be at most 5000 ml"
 	case post.GetString("type") != "event":
 		return "only a moment can carry an amount"
+	}
+	return ""
+}
+
+// CheckEventKind returns why a post's `event_kind` is refused, or "" when it is
+// fine or does not apply.
+//
+// A free-text kind that is neither a built-in nor one of the connection's own
+// moment_kinds would be counted in the tallies and the recap as a real moment
+// nobody logged (#347), so an unknown kind is refused at write time. Only an
+// `event` carries a kind — a photo or a reply has none — and an event with no
+// kind is left to the field's own required check, not second-guessed here.
+func CheckEventKind(app core.App, post *core.Record) string {
+	if post.GetString("type") != "event" {
+		return ""
+	}
+	kind := strings.TrimSpace(post.GetString("event_kind"))
+	if kind == "" {
+		return ""
+	}
+	if !moments.IsKnownKind(app, post.GetString("pair"), kind) {
+		return "that is not a known moment kind"
 	}
 	return ""
 }
