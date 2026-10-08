@@ -84,6 +84,17 @@ public extension APIClient {
         try await post(path: "/api/peard/widget/token")
     }
 
+    /// `POST /api/peard/widget/revoke` — drops a widget token server-side (#340).
+    ///
+    /// Called from sign-out and the widget's clear path so the credential is
+    /// actually invalidated, not just forgotten locally. Idempotent: an unknown
+    /// or already-revoked token is a success, so a best-effort caller can ignore
+    /// the result. An older server has no such route and answers 404; the caller
+    /// treats that as "nothing more to do here".
+    func revokeWidgetToken(_ token: String) async throws {
+        try await postIgnoringResponse(path: "/api/peard/widget/revoke", fields: ["token": token])
+    }
+
     /// `POST /api/peard/pairs/invite` (Requirement 10.1). Passing `pairID`
     /// makes the invite add the accepting user to that existing connection,
     /// which is how a group grows; omitting it creates a new connection.

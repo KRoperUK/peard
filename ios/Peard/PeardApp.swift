@@ -252,7 +252,12 @@ final class AppDelegate: NSObject, UIApplicationDelegate, UNUserNotificationCent
         let session = KeychainSessionStore()
         guard let userID = session.userID, !userID.isEmpty else { return }
         let api = APIClient(baseURL: PeardConfig.current.serverURL, tokenProvider: session)
-        _ = try? await api.create("reactions", of: Reaction.self, fields: reaction.fields(userID: userID))
+        // Retried a few times rather than attempted once and dropped: a flaky
+        // network between the tap and the server used to lose the reaction
+        // silently (#341). Idempotent, so no bookkeeping is needed.
+        await reaction.send(userID: userID) { fields in
+            let _: Reaction = try await api.create("reactions", fields: fields)
+        }
     }
 
     /// "Me too" or a reply, sent the way any moment is: through the queue.

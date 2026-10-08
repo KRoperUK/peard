@@ -351,6 +351,58 @@ final class SendQueueTests: XCTestCase {
         XCTAssertTrue(FilePendingSendStore(url: url).loadPendingSends().isEmpty)
     }
 
+    /// A corrupt file is not simply read as empty and then overwritten: its bytes
+    /// are moved aside so moments somebody logged can be recovered, rather than
+    /// erased on the next save (#342).
+    func testFileStoreQuarantinesCorruptContentInsteadOfLosingIt() throws {
+        let dir = URL(fileURLWithPath: NSTemporaryDirectory())
+            .appendingPathComponent("peard-queue-corrupt-\(UUID().uuidString)", isDirectory: true)
+        try FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true)
+        defer { try? FileManager.default.removeItem(at: dir) }
+        let url = dir.appendingPathComponent("pending-sends.json")
+        let corruptBytes = Data("{ truncated queue".utf8)
+        try corruptBytes.write(to: url)
+
+        let store = FilePendingSendStore(url: url)
+        // Loading reads it as empty (the app must not crash) …
+        XCTAssertTrue(store.loadPendingSends().isEmpty)
+
+        // … but the original bytes have been moved aside, not discarded.
+        let aside = url.deletingPathExtension().appendingPathExtension("corrupt.json")
+        XCTAssertTrue(FileManager.default.fileExists(atPath: aside.path),
+                      "the corrupt queue was not preserved for recovery")
+        XCTAssertEqual(try Data(contentsOf: aside), corruptBytes,
+                       "the quarantined copy must be the original bytes")
+
+        // And a subsequent empty save (the queue believing it holds nothing) must
+        // not take the recoverable copy with it.
+        store.savePendingSends([])
+        XCTAssertTrue(FileManager.default.fileExists(atPath: aside.path),
+                      "an empty save erased the quarantined queue")
+    }
+
+    /// Through the queue end to end: a corrupt file on launch does not take the
+    /// user's moments with it — they survive aside, and new sends persist cleanly
+    /// over the (now moved) corrupt file.
+    func testQueueOverACorruptFileDoesNotLoseTheOldBytesAndPersistsNewSends() async throws {
+        let dir = URL(fileURLWithPath: NSTemporaryDirectory())
+            .appendingPathComponent("peard-queue-recover-\(UUID().uuidString)", isDirectory: true)
+        try FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true)
+        defer { try? FileManager.default.removeItem(at: dir) }
+        let url = dir.appendingPathComponent("pending-sends.json")
+        try Data("not json at all".utf8).write(to: url)
+
+        let store = FilePendingSendStore(url: url)
+        let queue = SendQueue(store: store)
+        await queue.enqueue(send(id: "fresh"))
+
+        // The new send persisted …
+        XCTAssertEqual(FilePendingSendStore(url: url).loadPendingSends().map(\.id), ["fresh"])
+        // … and the old corrupt bytes are still recoverable aside.
+        let aside = url.deletingPathExtension().appendingPathExtension("corrupt.json")
+        XCTAssertTrue(FileManager.default.fileExists(atPath: aside.path))
+    }
+
     // MARK: Editing a queued send (#313)
 
     func testUpdateEditsTheNoteAndPersistsIt() async {

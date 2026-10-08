@@ -55,6 +55,7 @@ func Register(app core.App) {
 		se.Router.GET("/api/peard/widget/connections", connectionsHandler(app))
 		se.Router.POST("/api/peard/widget/moment", momentHandler(app))
 		se.Router.POST("/api/peard/widget/token", issueTokenHandler(app)).Bind(apis.RequireAuth())
+		se.Router.POST("/api/peard/widget/revoke", revokeTokenHandler(app)).Bind(apis.RequireAuth())
 		return se.Next()
 	})
 }
@@ -277,6 +278,21 @@ func connectionTitle(app core.App, pairID string, members []*core.Record, userID
 	}
 }
 
+// A widget token is a bearer credential that lives in the App Group container,
+// not behind the Keychain, so it is deliberately short-lived and capped: the
+// client re-mints one whenever it syncs. Without these an immortal token
+// accumulated per user and stayed valid after sign-out (#340).
+const (
+	// widgetTokenTTL is how long a freshly minted token is honoured. The client
+	// syncs often enough to re-mint well inside this; a stale one simply stops
+	// resolving and the widget falls back to its placeholder.
+	widgetTokenTTL = 30 * 24 * time.Hour
+	// maxWidgetTokensPerUser caps the live rows one account can hold. A person
+	// with a phone, an iPad and a watch is a handful; past this the oldest are
+	// retired so a client that re-mints without revoking cannot pile them up.
+	maxWidgetTokensPerUser = 10
+)
+
 func issueTokenHandler(app core.App) func(e *core.RequestEvent) error {
 	return func(e *core.RequestEvent) error {
 		b := make([]byte, 32)
@@ -289,14 +305,92 @@ func issueTokenHandler(app core.App) func(e *core.RequestEvent) error {
 		if err != nil {
 			return e.InternalServerError("widget_tokens collection missing", err)
 		}
+
+		// Housekeeping before the insert: drop this user's dead rows and retire
+		// the oldest if they are already at the cap. Best-effort — a failure
+		// here must not stop a legitimate token being issued, so it is logged by
+		// the helper rather than returned.
+		pruneWidgetTokens(app, e.Auth.Id)
+
 		rec := core.NewRecord(col)
 		rec.Set("user", e.Auth.Id)
 		rec.Set("token", token)
 		rec.Set("label", "ios-widget")
+		rec.Set("expires", time.Now().Add(widgetTokenTTL).UTC().Format(types.DefaultDateLayout))
 		if err := app.Save(rec); err != nil {
 			return e.InternalServerError("failed to store token", err)
 		}
 		return e.JSON(http.StatusOK, map[string]any{"id": rec.Id, "token": token})
+	}
+}
+
+// revokeTokenHandler drops a widget token server-side so sign-out and the
+// widget's clear path actually invalidate the credential rather than only
+// forgetting the local copy (#340).
+//
+// Named by its secret rather than its id: the client holds the token string, not
+// the record id, and resolving by token keeps the route from being usable to
+// delete another user's row. The ownership check is belt-and-braces on top of
+// that — the token is a 256-bit secret — and makes a mismatched token a clean
+// no-op rather than touching anything.
+func revokeTokenHandler(app core.App) func(e *core.RequestEvent) error {
+	return func(e *core.RequestEvent) error {
+		var body struct {
+			Token string `json:"token" form:"token"`
+		}
+		if err := e.BindBody(&body); err != nil {
+			return e.BadRequestError("invalid request body", err)
+		}
+		token := strings.TrimSpace(body.Token)
+		if token == "" {
+			return e.BadRequestError("token is required", nil)
+		}
+
+		rec, err := app.FindFirstRecordByFilter("widget_tokens",
+			"token = {:token}", dbx.Params{"token": token})
+		if err != nil || rec == nil {
+			// Already gone (or never ours): revoke is idempotent, so this is a
+			// success from the caller's point of view.
+			return e.JSON(http.StatusOK, map[string]any{"revoked": false})
+		}
+		if rec.GetString("user") != e.Auth.Id {
+			// Not the caller's token; refuse without disclosing it exists.
+			return e.JSON(http.StatusOK, map[string]any{"revoked": false})
+		}
+		if err := app.Delete(rec); err != nil {
+			return e.InternalServerError("failed to revoke token", err)
+		}
+		return e.JSON(http.StatusOK, map[string]any{"revoked": true})
+	}
+}
+
+// pruneWidgetTokens deletes a user's expired tokens and retires the oldest live
+// ones past the per-user cap, leaving room for the one about to be issued. It
+// mirrors the invite-cap pattern in pairs.go. Best-effort: errors are swallowed
+// so housekeeping never blocks a legitimate mint.
+func pruneWidgetTokens(app core.App, userID string) {
+	now := time.Now()
+	rows, err := app.FindRecordsByFilter("widget_tokens",
+		"user = {:user}", "created", 0, 0, dbx.Params{"user": userID})
+	if err != nil {
+		return
+	}
+
+	live := rows[:0:0]
+	for _, r := range rows {
+		exp := r.GetDateTime("expires")
+		if (!exp.IsZero() && exp.Time().Before(now)) || r.GetBool("revoked") {
+			_ = app.Delete(r)
+			continue
+		}
+		live = append(live, r)
+	}
+
+	// `rows` came back sorted oldest-first; retire from the front until there is
+	// room for the new token (one slot below the cap).
+	for len(live) >= maxWidgetTokensPerUser {
+		_ = app.Delete(live[0])
+		live = live[1:]
 	}
 }
 

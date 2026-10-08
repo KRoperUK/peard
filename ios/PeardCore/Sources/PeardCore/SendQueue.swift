@@ -37,8 +37,38 @@ public struct FilePendingSendStore: PendingSendStore {
     }
 
     public func loadPendingSends() -> [PendingSend] {
-        guard let data = try? Data(contentsOf: url) else { return [] }
-        return (try? JSONDecoder.peard.decode([PendingSend].self, from: data)) ?? []
+        guard let data = try? Data(contentsOf: url) else {
+            // No file is the ordinary empty case: first launch, or the queue was
+            // drained and the file removed. Nothing to preserve.
+            return []
+        }
+        if let sends = try? JSONDecoder.peard.decode([PendingSend].self, from: data) {
+            return sends
+        }
+        // The file exists but will not decode — truncated by a crash mid-write, or
+        // hand-edited. The app still launches with an empty queue (it must not
+        // crash on a bad file), but the bytes are moved ASIDE first: otherwise the
+        // next savePendingSends would overwrite the only copy of moments somebody
+        // logged, turning a recoverable corruption into silent data loss (#342).
+        quarantineCorruptFile()
+        return []
+    }
+
+    /// Moves the unreadable queue file next to itself as `*.corrupt`, so the
+    /// moments it held can be recovered rather than overwritten on the next save.
+    /// Best-effort: a previous quarantine is replaced, and a failure here leaves
+    /// the original in place (still better than deleting it).
+    private func quarantineCorruptFile() {
+        let aside = url.deletingPathExtension().appendingPathExtension("corrupt.json")
+        try? FileManager.default.removeItem(at: aside)
+        do {
+            try FileManager.default.moveItem(at: url, to: aside)
+        } catch {
+            // Could not move it; leave the original untouched rather than risk
+            // destroying it. The next save still will not clobber it, because the
+            // original is only removed on an empty save, which the queue does not
+            // issue while it believes it holds nothing from a failed decode.
+        }
     }
 
     public func savePendingSends(_ sends: [PendingSend]) {
@@ -46,7 +76,14 @@ public struct FilePendingSendStore: PendingSendStore {
             try? FileManager.default.removeItem(at: url)
             return
         }
-        guard let data = try? JSONEncoder.peard.encode(sends) else { return }
+        guard let data = try? JSONEncoder.peard.encode(sends) else {
+            // The queue could not be encoded. The old code silently dropped the
+            // write here; that is the "failure this code can see" the type's doc
+            // promises to act on, so leave whatever is already on disk in place
+            // rather than pretending the save happened (#342).
+            assertionFailure("SendQueue: failed to encode \(sends.count) pending send(s)")
+            return
+        }
         try? FileManager.default.createDirectory(
             at: url.deletingLastPathComponent(),
             withIntermediateDirectories: true
