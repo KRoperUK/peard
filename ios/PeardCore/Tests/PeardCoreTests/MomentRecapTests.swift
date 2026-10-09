@@ -122,6 +122,37 @@ final class MomentRecapTests: XCTestCase {
         XCTAssertEqual(recap.total, 3)
     }
 
+    /// The caller's own water streak decodes independently of the connection's
+    /// (#353): the two are different numbers for the same days.
+    func testThePersonalWaterStreakDecodes() throws {
+        let json = #"{"total":3,"streak":{"current":5,"best":9},"water_streak":{"current":4,"best":6},"water_streak_mine":{"current":2,"best":8}}"#
+
+        let recap = try JSONDecoder.peard.decode(MomentRecap.self, from: Data(json.utf8))
+
+        XCTAssertEqual(recap.waterStreakMine, MomentRecap.Streak(current: 2, best: 8))
+        XCTAssertEqual(recap.waterStreak, MomentRecap.Streak(current: 4, best: 6), "the connection's is its own number")
+    }
+
+    /// A server that predates the personal streak says nothing — not zero.
+    func testAnOldServerHasNoPersonalWaterStreak() throws {
+        let json = #"{"total":3,"streak":{"current":5,"best":9},"water_streak":{"current":4,"best":6}}"#
+
+        let recap = try JSONDecoder.peard.decode(MomentRecap.self, from: Data(json.utf8))
+
+        XCTAssertNil(recap.waterStreakMine)
+        XCTAssertNotNil(recap.waterStreak, "an old-enough server with the connection streak but not the personal one")
+    }
+
+    /// A malformed personal field costs its row, not the recap.
+    func testAMalformedPersonalWaterStreakIsIgnored() throws {
+        let json = #"{"total":3,"streak":{"current":2,"best":2},"water_streak_mine":"heaps"}"#
+
+        let recap = try JSONDecoder.peard.decode(MomentRecap.self, from: Data(json.utf8))
+
+        XCTAssertNil(recap.waterStreakMine)
+        XCTAssertEqual(recap.total, 3)
+    }
+
     // MARK: Decoding
 
     func testAFullRecapDecodes() throws {

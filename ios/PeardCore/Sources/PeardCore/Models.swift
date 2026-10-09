@@ -1546,6 +1546,11 @@ public struct MomentRecap: Codable, Hashable, Sendable {
     /// amount (#323). Nil from a server that predates it, which is not the same
     /// as a streak of zero: the screen shows nothing rather than "broken".
     public let waterStreak: Streak?
+    /// Days in a row the *caller's own* water reached their own target (#353).
+    /// Nil from a server that predates it, like waterStreak — the person's own
+    /// streak, the one the "streak at risk" reminder is about, as distinct from
+    /// the connection's combined one.
+    public let waterStreakMine: Streak?
     /// Every member's stored daily water targets (#335), the caller's included.
     /// Nil from a server that predates them — not the same as nobody having set
     /// one, which is a list of members whose targets are unset.
@@ -1559,6 +1564,7 @@ public struct MomentRecap: Codable, Hashable, Sendable {
         busiest: BusiestDay? = nil,
         streak: Streak = Streak(),
         waterStreak: Streak? = nil,
+        waterStreakMine: Streak? = nil,
         waterTargets: [MemberWaterTarget]? = nil
     ) {
         self.total = total
@@ -1568,12 +1574,14 @@ public struct MomentRecap: Codable, Hashable, Sendable {
         self.busiest = busiest
         self.streak = streak
         self.waterStreak = waterStreak
+        self.waterStreakMine = waterStreakMine
         self.waterTargets = waterTargets
     }
 
     private enum CodingKeys: String, CodingKey {
         case total, mine, others, kinds, busiest, streak
         case waterStreak = "water_streak"
+        case waterStreakMine = "water_streak_mine"
         case waterTargets = "water_targets"
     }
 
@@ -1592,6 +1600,7 @@ public struct MomentRecap: Codable, Hashable, Sendable {
         busiest = try? container.decodeIfPresent(BusiestDay.self, forKey: .busiest)
         streak = try container.decodeIfPresent(Streak.self, forKey: .streak) ?? Streak()
         waterStreak = try? container.decodeIfPresent(Streak.self, forKey: .waterStreak)
+        waterStreakMine = try? container.decodeIfPresent(Streak.self, forKey: .waterStreakMine)
         waterTargets = (try? container.decodeIfPresent([Lenient<MemberWaterTarget>].self, forKey: .waterTargets))?
             .compactMap(\.value)
     }

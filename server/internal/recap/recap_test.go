@@ -57,6 +57,10 @@ type response struct {
 		Current int `json:"current"`
 		Best    int `json:"best"`
 	} `json:"water_streak"`
+	WaterStreakMine struct {
+		Current int `json:"current"`
+		Best    int `json:"best"`
+	} `json:"water_streak_mine"`
 	WaterTargets []struct {
 		User        string `json:"user"`
 		Minimum     int    `json:"minimum"`
@@ -915,6 +919,79 @@ func TestATargetNeedsAPair(t *testing.T) {
 
 	if status, _ := w.postTarget(t, w.aliceTok, "", 1000, 2000); status != http.StatusBadRequest {
 		t.Errorf("no pair = %d, want 400", status)
+	}
+}
+
+// MARK: Per-person water streaks (#353)
+
+// The caller's own streak is judged against their own goal, not the pair's sum:
+// alice meets her 1500 three days running while the connection total never does.
+func TestThePersonalWaterStreakIsTheCallersOwn(t *testing.T) {
+	w := newWorld(t)
+	w.setTarget(t, w.alice, 1000, 1500)
+	w.setTarget(t, w.bob, 1000, 1500)
+	for day := 0; day < 3; day++ {
+		w.water(t, w.alice, 1500, day) // alice alone reaches her own 1500
+	}
+	// bob never logs, so the connection total (3000) is never met and the
+	// shared water streak is zero.
+
+	got := w.recapWith(t, w.aliceTok, "")
+
+	if got.WaterStreakMine.Current != 3 || got.WaterStreakMine.Best != 3 {
+		t.Errorf("alice's personal streak = %d/%d, want 3/3", got.WaterStreakMine.Current, got.WaterStreakMine.Best)
+	}
+	if got.WaterStreak.Current != 0 {
+		t.Errorf("connection streak = %d, want 0 (bob never contributed)", got.WaterStreak.Current)
+	}
+}
+
+// Two members see different personal streaks for the same days: bob keeps his,
+// alice does not.
+func TestPersonalWaterStreaksDifferPerMember(t *testing.T) {
+	w := newWorld(t)
+	w.setTarget(t, w.alice, 1000, 1500)
+	w.setTarget(t, w.bob, 1000, 1500)
+	for day := 0; day < 3; day++ {
+		w.water(t, w.bob, 1500, day) // bob keeps a 3-day streak
+	}
+	w.water(t, w.alice, 1500, 0) // alice only today, no run
+
+	alice := w.recapWith(t, w.aliceTok, "")
+	bob := w.recapWith(t, w.bobTok, "")
+
+	if bob.WaterStreakMine.Current != 3 {
+		t.Errorf("bob's personal streak = %d, want 3", bob.WaterStreakMine.Current)
+	}
+	if alice.WaterStreakMine.Current != 1 {
+		t.Errorf("alice's personal streak = %d, want 1", alice.WaterStreakMine.Current)
+	}
+}
+
+// A member who stored no target is judged by the caller param / default, like
+// the connection streak's fallback — not zeroed out.
+func TestThePersonalStreakFallsBackToTheRequestTarget(t *testing.T) {
+	w := newWorld(t)
+	// No stored target for alice. She logs 1500 twice.
+	w.water(t, w.alice, 1500, 0)
+	w.water(t, w.alice, 1500, 1)
+
+	if got := w.recapWith(t, w.aliceTok, "&water_target=1500"); got.WaterStreakMine.Current != 2 {
+		t.Errorf("at 1500: personal streak = %d, want 2", got.WaterStreakMine.Current)
+	}
+	if got := w.recapWith(t, w.aliceTok, "&water_target=3000"); got.WaterStreakMine.Current != 0 {
+		t.Errorf("at 3000: personal streak = %d, want 0", got.WaterStreakMine.Current)
+	}
+}
+
+// A stored personal target wins over the request param, as the connection's does.
+func TestAStoredPersonalTargetBeatsTheQueryParam(t *testing.T) {
+	w := newWorld(t)
+	w.setTarget(t, w.alice, 500, 800)
+	w.water(t, w.alice, 900, 0) // reaches the stored 800, not the 9999 param
+
+	if got := w.recapWith(t, w.aliceTok, "&water_target=9999"); got.WaterStreakMine.Current != 1 {
+		t.Errorf("personal streak = %d, want 1: 900 reaches the stored 800", got.WaterStreakMine.Current)
 	}
 }
 
