@@ -33,6 +33,10 @@ import (
 	// route and the push badge. `pairs` imports nothing internal, so no cycle.
 	"peard/internal/pairs"
 	"peard/internal/posts"
+	// For ConnectionStreak — one definition of the day streak shared with the
+	// recap route and the "at risk" reminder (#361). recap does not import
+	// widget, so no cycle.
+	"peard/internal/recap"
 	"peard/internal/zone"
 
 	"github.com/pocketbase/dbx"
@@ -509,6 +513,7 @@ func feedHandler(app core.App) func(e *core.RequestEvent) error {
 		}
 
 		today := startOfToday(time.Now(), callerZone(query.Get("tz")))
+		streakCurrent, streakBest := recap.ConnectionStreak(app, chosenPair, callerZone(query.Get("tz")))
 		res := map[string]any{
 			"state":      "ok",
 			"connection": connectionInfo(app, chosenPair, len(others)+1),
@@ -526,6 +531,10 @@ func feedHandler(app core.App) func(e *core.RequestEvent) error {
 			// complication (#364). Nil when it cannot be read; the complication
 			// then falls back to the count.
 			"water": waterSummary(app, chosenPair, today),
+			// The connection's "any moment" day streak, for the watch's streak
+			// complication (#378) — the same figure the recap shows and the
+			// "at risk" reminder (#361) is about.
+			"streak": map[string]any{"current": streakCurrent, "best": streakBest},
 		}
 
 		// Who the moment is "from": in a 1:1 that is the other member, in a

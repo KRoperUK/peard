@@ -236,6 +236,23 @@ final class ModelRoundTripTests: XCTestCase {
         XCTAssertNil(feed.water)
     }
 
+    // The streak block feeds the watch streak complication (#378): the
+    // connection's current and best day streak.
+    func testWidgetFeedDecodesTheStreakBlock() throws {
+        let json = Data(#"{"state":"ok","streak":{"current":2,"best":9}}"#.utf8)
+        let feed = try decoder.decode(WidgetFeed.self, from: json)
+        let streak = try XCTUnwrap(feed.streak)
+        XCTAssertEqual(streak.current, 2)
+        XCTAssertEqual(streak.best, 9)
+    }
+
+    // A server that predates the streak complication sends no streak block; that
+    // is nil, so the complication draws "no streak yet" rather than a zero.
+    func testWidgetFeedWithoutStreakDecodesAsNil() throws {
+        let feed = try decoder.decode(WidgetFeed.self, from: Data(#"{"state":"ok"}"#.utf8))
+        XCTAssertNil(feed.streak)
+    }
+
     func testAuthResponseDecodesUserRecord() throws {
         let json = Data("""
         {"token":"tok","record":{"id":"u1","email":"a@b.c","display_name":"Ada","verified":true}}

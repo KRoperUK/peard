@@ -1082,6 +1082,21 @@ public struct WidgetFeed: Codable, Hashable, Sendable {
     /// Today's connection water against its goal, for the watch's water
     /// complication (#364). Absent on a server that predates it.
     public let water: Water?
+    /// The connection's "any moment" day streak, for the watch's streak
+    /// complication (#378). Absent on a server that predates it.
+    public let streak: Streak?
+
+    /// The connection's current and best day streak (#378) — the same figure the
+    /// recap shows and the "at risk" reminder (#361) is about.
+    public struct Streak: Codable, Hashable, Sendable {
+        public let current: Int
+        public let best: Int
+
+        public init(current: Int, best: Int) {
+            self.current = current
+            self.best = best
+        }
+    }
 
     /// Today's connection water and the goal it is measured against (#364), both
     /// in millilitres. The watch complication draws a ring of `today / goal`.
@@ -1115,7 +1130,8 @@ public struct WidgetFeed: Codable, Hashable, Sendable {
         post: FeedPost? = nil,
         moments: [AvailableMoment]? = nil,
         unreadCount: Int = 0,
-        water: Water? = nil
+        water: Water? = nil,
+        streak: Streak? = nil
     ) {
         self.state = state
         self.partner = partner
@@ -1126,6 +1142,7 @@ public struct WidgetFeed: Codable, Hashable, Sendable {
         self.moments = moments
         self.unreadCount = unreadCount
         self.water = water
+        self.streak = streak
     }
 
     /// True when the moment on the widget is one the user has not seen in the
@@ -1138,7 +1155,7 @@ public struct WidgetFeed: Codable, Hashable, Sendable {
     // fail the decode of the *entire* feed. That is the whole widget going blank
     // to add a number to it.
     enum CodingKeys: String, CodingKey {
-        case state, partner, connection, counts, tallies, post, moments, water
+        case state, partner, connection, counts, tallies, post, moments, water, streak
         case unreadCount = "unread"
     }
 
@@ -1155,6 +1172,8 @@ public struct WidgetFeed: Codable, Hashable, Sendable {
         unreadCount = max(try container.decodeIfPresent(Int.self, forKey: .unreadCount) ?? 0, 0)
         // Absent (or null) on a server predating the water complication (#364).
         water = try? container.decodeIfPresent(Water.self, forKey: .water)
+        // Absent (or null) on a server predating the streak complication (#378).
+        streak = try? container.decodeIfPresent(Streak.self, forKey: .streak)
     }
 
     /// The moments to offer as buttons, falling back to the built-ins so a widget
