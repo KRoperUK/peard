@@ -207,7 +207,7 @@ struct HistoryView: View {
     /// one person's photos would be plainly untrue.
     private var emptyState: some View {
         VStack(spacing: 10) {
-            Text("🍐").font(.system(size: 48))
+            Text("🍐").font(.system(size: 48)).accessibilityHidden(true)
             Text(model.filter.isActive ? "Nothing matches that" : "Nothing here yet")
                 .font(.headline)
                 .foregroundStyle(PearColor.textPrimary)

@@ -19,6 +19,8 @@ struct ConnectionRail: View {
     let onSelect: (String) -> Void
     let onAdd: () -> Void
 
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
+
     // Scaled with the reader's text size (issue #4), rather than fixed points
     // that stayed put while everything around them grew. The avatar is capped so
     // the rail stays a rail at the largest sizes; the initials inside it and the
@@ -48,7 +50,7 @@ struct ConnectionRail: View {
             // the list lurching.
             .onAppear { proxy.scrollTo(selectedID, anchor: .center) }
             .onChange(of: selectedID) { _, id in
-                withAnimation(.easeOut(duration: 0.2)) { proxy.scrollTo(id, anchor: .center) }
+                withAnimation(reduceMotion ? nil : .easeOut(duration: 0.2)) { proxy.scrollTo(id, anchor: .center) }
             }
         }
         // Negative inset against the header's own padding: the tiles need to be

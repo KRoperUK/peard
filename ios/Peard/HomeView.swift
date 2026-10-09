@@ -20,6 +20,7 @@ struct HomeView: View {
 
     @Environment(AppModel.self) private var app
     @Environment(\.scenePhase) private var scenePhase
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
 
     @State private var model: HomeModel
     @State private var showCamera = false
@@ -534,7 +535,7 @@ struct HomeView: View {
                         Text(send.moment.emoji).font(.footnote)
                     }
                     .frame(width: 28, height: 28)
-                    .animation(.linear(duration: 0.1), value: model.quickSendProgress)
+                    .animation(reduceMotion ? nil : .linear(duration: 0.1), value: model.quickSendProgress)
                     .accessibilityHidden(true)
 
                     // Stacked rather than side by side: the caption and the

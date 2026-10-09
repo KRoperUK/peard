@@ -78,6 +78,7 @@ struct AvatarPickerRow: View {
         VStack(alignment: .leading, spacing: 10) {
             HStack(spacing: 14) {
                 AvatarView(avatar: avatar, serverURL: serverURL, size: 60, thumb: .large)
+                    .accessibilityHidden(true)
                     .overlay {
                         if isWorking {
                             Color.black.opacity(0.35)

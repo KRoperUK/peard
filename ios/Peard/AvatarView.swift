@@ -50,6 +50,11 @@ struct AvatarView: View {
             // reached the view. `task(id:)` re-runs when the id changes, which is
             // the guarantee this needs.
             .task(id: url) { await load() }
+            // Initials are the only thing to say here, and read as bare letters
+            // ("J D") without this. Call sites that sit beside the subject's name
+            // hide the avatar instead of repeating it.
+            .accessibilityElement(children: .ignore)
+            .accessibilityLabel("\(avatar.placeholder.initials) avatar")
     }
 
     @ViewBuilder
