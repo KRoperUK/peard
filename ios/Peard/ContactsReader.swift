@@ -118,6 +118,6 @@ enum ContactsReader {
         if !contact.organizationName.isEmpty { return contact.organizationName }
         if let email = contact.emailAddresses.first { return String(email.value) }
         if let phone = contact.phoneNumbers.first { return phone.value.stringValue }
-        return "A contact"
+        return String(localized: "A contact")
     }
 }

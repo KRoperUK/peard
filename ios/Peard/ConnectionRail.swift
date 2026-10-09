@@ -126,10 +126,12 @@ struct ConnectionRail: View {
         // Spelled out rather than read as the bare number the badge draws, which
         // VoiceOver would announce with no indication of what it counts.
         if connection.hasUnread && !isSelected {
-            parts.append(connection.unreadCount == 1 ? "1 new moment" : "\(connection.unreadCount) new moments")
+            parts.append(connection.unreadCount == 1
+                ? String(localized: "1 new moment")
+                : String(localized: "\(connection.unreadCount) new moments"))
         }
-        if connection.isMuted { parts.append("muted") }
-        if isSelected { parts.append("showing") }
+        if connection.isMuted { parts.append(String(localized: "muted")) }
+        if isSelected { parts.append(String(localized: "showing")) }
         return parts.joined(separator: ", ")
     }
 

@@ -50,13 +50,13 @@ struct PrivacyConsentView: View {
             Text("🍐")
                 .font(.system(size: 56))
                 .accessibilityHidden(true)
-            Text(app.isFirstPrivacyPrompt ? "Before you sign in" : "We've updated our privacy policy")
+            Text(app.isFirstPrivacyPrompt ? String(localized: "Before you sign in") : String(localized: "We've updated our privacy policy"))
                 .font(.title.bold())
                 .foregroundStyle(PearColor.textPrimary)
             Text(
                 app.isFirstPrivacyPrompt
-                    ? "Pear'd hasn't sent anything anywhere yet, and won't until you agree to this."
-                    : "Nothing has changed about what Pear'd sends while you were away — but the policy has, so here it is again."
+                    ? String(localized: "Pear'd hasn't sent anything anywhere yet, and won't until you agree to this.")
+                    : String(localized: "Nothing has changed about what Pear'd sends while you were away — but the policy has, so here it is again.")
             )
             .font(.subheadline)
             .foregroundStyle(PearColor.textSecondary)
@@ -70,23 +70,23 @@ struct PrivacyConsentView: View {
         VStack(alignment: .leading, spacing: 16) {
             point(
                 icon: "person.crop.circle",
-                title: "Signing in sends your email",
-                body: "Apple, Google or your own email address identifies your account. That's the first thing to leave your device, which is why we're asking now."
+                title: String(localized: "Signing in sends your email"),
+                body: String(localized: "Apple, Google or your own email address identifies your account. That's the first thing to leave your device, which is why we're asking now.")
             )
             point(
                 icon: "lock.shield",
-                title: "Only your connections see your moments",
-                body: "Your name, photo and the moments you log are visible to people you've paired or grouped with, and nobody else. The server enforces that, not just the app."
+                title: String(localized: "Only your connections see your moments"),
+                body: String(localized: "Your name, photo and the moments you log are visible to people you've paired or grouped with, and nobody else. The server enforces that, not just the app.")
             )
             point(
                 icon: "person.2",
-                title: "Contacts never leave in the clear",
-                body: "Finding friends is opt-in, and matches on one-way hashes computed on your device. Being findable by other people is a separate switch, off by default."
+                title: String(localized: "Contacts never leave in the clear"),
+                body: String(localized: "Finding friends is opt-in, and matches on one-way hashes computed on your device. Being findable by other people is a separate switch, off by default.")
             )
             point(
                 icon: "trash",
-                title: "You can export or delete it all",
-                body: "Settings has a full export of your own data, and deleting your account from there erases it — no email to us, no waiting."
+                title: String(localized: "You can export or delete it all"),
+                body: String(localized: "Settings has a full export of your own data, and deleting your account from there erases it — no email to us, no waiting.")
             )
         }
     }

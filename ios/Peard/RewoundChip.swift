@@ -12,12 +12,12 @@ struct RewoundChip: View {
     let loggedAt: Date
 
     var body: some View {
-        MomentChip(systemImage: "backward.fill", title: "Rewound")
+        MomentChip(systemImage: "backward.fill", title: String(localized: "Rewound"))
             .accessibilityLabel(Self.accessibilityLabel(loggedAt: loggedAt))
     }
 
     static func accessibilityLabel(loggedAt: Date) -> String {
-        "Rewound, logged later at \(loggedAt.formatted(date: .omitted, time: .shortened))"
+        String(localized: "Rewound, logged later at \(loggedAt.formatted(date: .omitted, time: .shortened))")
     }
 }
 
@@ -25,7 +25,7 @@ struct RewoundChip: View {
 /// `RewoundChip` so the two read as the same kind of note side by side.
 struct EditedChip: View {
     var body: some View {
-        MomentChip(systemImage: "pencil", title: "Edited")
+        MomentChip(systemImage: "pencil", title: String(localized: "Edited"))
             .accessibilityLabel("Edited")
     }
 }

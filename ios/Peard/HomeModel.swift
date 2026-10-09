@@ -150,11 +150,17 @@ final class HomeModel {
         guard count > 0 else { return nil }
         if !stalledSends.isEmpty {
             return stalledSends.count == 1
-                ? "1 moment couldn't be sent"
-                : "\(stalledSends.count) moments couldn't be sent"
+                ? String(localized: "1 moment couldn't be sent")
+                : String(localized: "\(stalledSends.count) moments couldn't be sent")
         }
-        let noun = count == 1 ? "moment" : "moments"
-        return isOffline ? "\(count) \(noun) waiting for signal" : "Sending \(count) \(noun)…"
+        // Whole sentences per count rather than a pluralised noun slotted in:
+        // other languages inflect the whole phrase, not just the noun.
+        if isOffline {
+            return count == 1
+                ? String(localized: "1 moment waiting for signal")
+                : String(localized: "\(count) moments waiting for signal")
+        }
+        return count == 1 ? String(localized: "Sending 1 moment…") : String(localized: "Sending \(count) moments…")
     }
 
     /// The moments offered on the home screen.
@@ -401,10 +407,10 @@ final class HomeModel {
         case .event:
             return label(for: post.eventKind)
         case .photo:
-            return post.replyTo == nil ? "shared a moment" : "replied with a photo"
+            return post.replyTo == nil ? String(localized: "shared a moment") : String(localized: "replied with a photo")
         case .note:
             // The words themselves are drawn under it, as any note is.
-            return "replied"
+            return String(localized: "replied")
         case .unknown(let value):
             return value
         }
@@ -688,7 +694,7 @@ final class HomeModel {
             countdownTask = nil
             UIAccessibility.post(
                 notification: .announcement,
-                argument: "\(moment.label) ready. Add a note, or activate Send."
+                argument: String(localized: "\(moment.label) ready. Add a note, or activate Send.")
             )
         } else {
             startCountdown()
@@ -845,7 +851,9 @@ final class HomeModel {
         // The moment is recorded on the device now, so the confirmation is honest
         // whether or not the request gets through.
         playHaptic(.sent)
-        showToast(isOffline ? "\(moment.emoji) saved — will send" : "\(moment.emoji) logged!")
+        showToast(isOffline
+            ? String(localized: "\(moment.emoji) saved — will send")
+            : String(localized: "\(moment.emoji) logged!"))
 
         // A delivery refreshes the whole screen from inside the flush; fetching
         // the posts and tallies again here afterwards was the same requests a
@@ -892,10 +900,10 @@ final class HomeModel {
                 await refreshCustomKinds()
                 return customKinds.contains { $0.slug == moment.kind }
             }
-            alert = AlertContent(title: "Couldn't add that moment", message: error.localizedDescription)
+            alert = AlertContent(title: String(localized: "Couldn't add that moment"), message: error.localizedDescription)
             return false
         } catch {
-            alert = AlertContent(title: "Couldn't add that moment", message: APIError.userMessage(for: error))
+            alert = AlertContent(title: String(localized: "Couldn't add that moment"), message: APIError.userMessage(for: error))
             return false
         }
     }
@@ -977,8 +985,8 @@ final class HomeModel {
         } catch {
             if await app.handleIfUnauthorized(error) { return }
             alert = AlertContent(
-                title: "Couldn't save that",
-                message: "The moment is unchanged. Check your connection and try again."
+                title: String(localized: "Couldn't save that"),
+                message: String(localized: "The moment is unchanged. Check your connection and try again.")
             )
         }
     }
@@ -1027,18 +1035,18 @@ final class HomeModel {
         switch apiError {
         case .transport:
             return AlertContent(
-                title: "Couldn't remove it",
-                message: "Couldn't reach Pear'd. Check your connection and try again."
+                title: String(localized: "Couldn't remove it"),
+                message: String(localized: "Couldn't reach Pear'd. Check your connection and try again.")
             )
         case .server(status: 403, _):
             return AlertContent(
-                title: "Couldn't remove it",
-                message: "Only whoever added a moment can remove it."
+                title: String(localized: "Couldn't remove it"),
+                message: String(localized: "Only whoever added a moment can remove it.")
             )
         default:
             return AlertContent(
-                title: "Couldn't remove it",
-                message: "Something went wrong, so it's still there. Try again."
+                title: String(localized: "Couldn't remove it"),
+                message: String(localized: "Something went wrong, so it's still there. Try again.")
             )
         }
     }
@@ -1140,7 +1148,10 @@ final class HomeModel {
     /// point at which it can first be written.
     func upload(image: UIImage, moment: Moment? = nil, caption: String = "") async {
         guard let data = image.jpegData(compressionQuality: PhotoSquare.jpegQuality), !data.isEmpty else {
-            alert = AlertContent(title: "Upload failed", message: "The photo couldn't be prepared for upload.")
+            alert = AlertContent(
+                title: String(localized: "Upload failed"),
+                message: String(localized: "The photo couldn't be prepared for upload.")
+            )
             playHaptic(.failed)
             return
         }
@@ -1156,7 +1167,7 @@ final class HomeModel {
             authorID: signedInUserID,
             kind: moment?.kind ?? EventKind(rawValue: ""),
             emoji: moment?.emoji ?? "📸",
-            label: moment?.label ?? "Photo",
+            label: moment?.label ?? String(localized: "Photo"),
             // The sheet normalises this already; doing it again here means no
             // other caller can hand the server something it will reject.
             note: PostNote.normalised(caption),
@@ -1166,13 +1177,16 @@ final class HomeModel {
         do {
             try app.pendingPhotos.save(data, for: send.id)
         } catch {
-            alert = AlertContent(title: "Upload failed", message: "The photo couldn't be saved to send.")
+            alert = AlertContent(
+                title: String(localized: "Upload failed"),
+                message: String(localized: "The photo couldn't be saved to send.")
+            )
             playHaptic(.failed)
             return
         }
         await app.enqueue(send)
         playHaptic(.sent)
-        showToast(isOffline ? "📸 saved — will send" : "📸 sending…")
+        showToast(isOffline ? String(localized: "📸 saved — will send") : String(localized: "📸 sending…"))
 
         // A delivery refreshes the screen from inside the flush, as for a moment.
         await app.flushSendQueueAndWait()

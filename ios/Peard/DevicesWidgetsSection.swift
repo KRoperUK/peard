@@ -131,12 +131,12 @@ struct DevicesWidgetsSection: View {
         if let expires = token.expires {
             parts.append("expires \(expires.formatted(date: .abbreviated, time: .omitted))")
         }
-        return parts.isEmpty ? "No dates recorded" : parts.joined(separator: " · ")
+        return parts.isEmpty ? String(localized: "No dates recorded") : parts.joined(separator: " · ")
     }
 
     private var revocationPrompt: String {
-        guard let pendingRevocation else { return "Revoke access?" }
-        return "Revoke \(title(for: pendingRevocation))?"
+        guard let pendingRevocation else { return String(localized: "Revoke access?") }
+        return String(localized: "Revoke \(title(for: pendingRevocation))?")
     }
 
     // MARK: Actions

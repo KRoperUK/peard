@@ -62,13 +62,13 @@ struct PairView: View {
             }
             .padding(.bottom, 16)
 
-            Text(app.canReturnHome ? "Another connection 🍐" : "Pear up 🍐")
+            Text(app.canReturnHome ? String(localized: "Another connection 🍐") : String(localized: "Pear up 🍐"))
                 .font(.title.bold())
                 .foregroundStyle(PearColor.textPrimary)
             Text(
                 app.canReturnHome
-                    ? "Start a second connection, or join a friend's group with their code."
-                    : "Share a code with your partner, or enter theirs."
+                    ? String(localized: "Start a second connection, or join a friend's group with their code.")
+                    : String(localized: "Share a code with your partner, or enter theirs.")
             )
                 .font(.subheadline)
                 .foregroundStyle(PearColor.textSecondary)
@@ -124,7 +124,7 @@ struct PairView: View {
             Button {
                 createInvite()
             } label: {
-                primaryLabel(title: "Create invite code", isBusy: busy == .invite)
+                primaryLabel(title: String(localized: "Create invite code"), isBusy: busy == .invite)
             }
             .buttonStyle(.plain)
             .disabled(busy != nil)
@@ -159,7 +159,7 @@ struct PairView: View {
             Button {
                 accept()
             } label: {
-                primaryLabel(title: app.canReturnHome ? "Accept & join" : "Accept & pear up", isBusy: busy == .accept)
+                primaryLabel(title: app.canReturnHome ? String(localized: "Accept & join") : String(localized: "Accept & pear up"), isBusy: busy == .accept)
             }
             .buttonStyle(.plain)
             .disabled(!canAccept)

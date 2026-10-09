@@ -16,7 +16,7 @@ enum AuthError: LocalizedError, Equatable {
     var errorDescription: String? {
         switch self {
         case .cancelled: return nil
-        case .noIdentityToken: return "Apple returned no identity token"
+        case .noIdentityToken: return String(localized: "Apple returned no identity token")
         case .missingGoogleClientID: return PeardConfig.missingGoogleClientIDMessage
         case .message(let text): return text
         }
@@ -106,7 +106,7 @@ final class AuthCoordinator {
             URLQueryItem(name: "code_challenge_method", value: "S256"),
         ]
         guard let authorizationURL = components.url else {
-            throw AuthError.message("Couldn't build the Google sign-in URL.")
+            throw AuthError.message(String(localized: "Couldn't build the Google sign-in URL."))
         }
 
         let callbackURL: URL

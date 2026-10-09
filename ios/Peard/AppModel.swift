@@ -971,7 +971,7 @@ final class AppModel {
             // work. An installed app cannot assume the server has caught up
             // with it, and this is the one request where failing opaquely is
             // least acceptable.
-            banner = "This server can't delete accounts in-app yet. Email \(PeardLinks.supportEmail) and we'll do it for you."
+            banner = String(localized: "This server can't delete accounts in-app yet. Email \(PeardLinks.supportEmail) and we'll do it for you.")
             return false
         } catch {
             banner = APIError.userMessage(for: error)
@@ -1177,7 +1177,7 @@ extension AppModel {
     func setAppIcon(_ choice: AppIconChoice) async {
         guard choice != appIcon else { return }
         guard UIApplication.shared.supportsAlternateIcons else {
-            banner = "This device can't change the app icon."
+            banner = String(localized: "This device can't change the app icon.")
             return
         }
         do {
@@ -1187,7 +1187,7 @@ extension AppModel {
             // Back to whatever is really set, so the picker cannot end up
             // showing a choice the home screen does not have.
             appIcon = AppIconChoice(alternateName: UIApplication.shared.alternateIconName)
-            banner = "Couldn't change the icon — still using \(appIcon.title)."
+            banner = String(localized: "Couldn't change the icon — still using \(appIcon.title).")
         }
     }
 }

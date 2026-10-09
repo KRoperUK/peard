@@ -137,7 +137,7 @@ struct MomentEditSheet: View {
             TextField(
                 "",
                 text: $note,
-                prompt: Text(post.type == .photo ? "Caption…" : "Add a note…"),
+                prompt: Text(post.type == .photo ? String(localized: "Caption…") : String(localized: "Add a note…")),
                 axis: .vertical
             )
             .focused($noteFocused)
@@ -148,9 +148,9 @@ struct MomentEditSheet: View {
                 // to find out.
                 note = PostNote.capped(newValue)
             }
-            .accessibilityLabel(post.type == .photo ? "Caption" : "Note")
+            .accessibilityLabel(post.type == .photo ? String(localized: "Caption") : String(localized: "Note"))
         } header: {
-            Text(post.type == .photo ? "Caption" : "Note")
+            Text(post.type == .photo ? String(localized: "Caption") : String(localized: "Note"))
         } footer: {
             if note.count > 200 {
                 Text("\(PostNote.limit - note.count) characters left")

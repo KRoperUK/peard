@@ -68,23 +68,23 @@ final class PushCoordinator {
         let reactions = ReactionKind.allCases.map { kind in
             UNNotificationAction(
                 identifier: NotificationReaction.actionIdentifier(for: kind),
-                title: "\(kind.emoji) \(kind.accessibilityLabel)",
+                title: String(localized: "\(kind.emoji) \(kind.accessibilityLabel)"),
                 options: []
             )
         }
         let meToo = UNNotificationAction(
             identifier: NotificationAnswer.meTooIdentifier,
-            title: "Me too",
+            title: String(localized: "Me too"),
             options: [],
             icon: UNNotificationActionIcon(systemImageName: "plus.circle")
         )
         let reply = UNTextInputNotificationAction(
             identifier: NotificationAnswer.replyIdentifier,
-            title: "Reply",
+            title: String(localized: "Reply"),
             options: [],
             icon: UNNotificationActionIcon(systemImageName: "arrowshape.turn.up.left"),
-            textInputButtonTitle: "Send",
-            textInputPlaceholder: "Say something back"
+            textInputButtonTitle: String(localized: "Send"),
+            textInputPlaceholder: String(localized: "Say something back")
         )
         return [
             UNNotificationCategory(
