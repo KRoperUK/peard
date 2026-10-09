@@ -138,6 +138,7 @@ struct PeardComplications: WidgetBundle {
     var body: some Widget {
         MomentComplication()
         WaterComplication()
+        StreakComplication()
     }
 }
 
@@ -297,6 +298,144 @@ struct WaterComplication: Widget {
         }
         .configurationDisplayName("Pear'd Water")
         .description("Today's water toward your goal, on a face or in the Smart Stack.")
+        .supportedFamilies([.accessoryCircular, .accessoryRectangular, .accessoryInline, .accessoryCorner])
+    }
+}
+
+// MARK: Streak complication (#378)
+
+/// A glanceable streak complication: the connection's current "any moment" day
+/// streak, the same figure the recap shows and the "at risk" reminder (#361) is
+/// about. The water complication (#364) chose progress because the feed carried
+/// it; the feed now carries the streak too (#378), so this is the other half the
+/// issue offered.
+struct StreakComplicationEntry: TimelineEntry {
+    let date: Date
+    /// Nil when the feed carries no streak (an older server): the complication
+    /// says so rather than drawing a misleading zero.
+    let streak: WidgetFeed.Streak?
+    let state: FeedState
+
+    static let placeholder = StreakComplicationEntry(
+        date: Date(), streak: WidgetFeed.Streak(current: 5, best: 12), state: .ok)
+    static let signedOut = StreakComplicationEntry(date: Date(), streak: nil, state: .unpaired)
+}
+
+struct StreakComplicationProvider: TimelineProvider {
+    static let refreshInterval: TimeInterval = 30 * 60
+
+    func placeholder(in context: Context) -> StreakComplicationEntry { .placeholder }
+
+    func getSnapshot(in context: Context, completion: @escaping (StreakComplicationEntry) -> Void) {
+        Task { completion(await Self.load()) }
+    }
+
+    func getTimeline(in context: Context, completion: @escaping (Timeline<StreakComplicationEntry>) -> Void) {
+        Task {
+            let entry = await Self.load()
+            completion(Timeline(entries: [entry], policy: .after(Date().addingTimeInterval(Self.refreshInterval))))
+        }
+    }
+
+    private static func load() async -> StreakComplicationEntry {
+        let store = SharedStore.shared
+        guard let credentials = WatchCredentials(store: store) else { return .signedOut }
+        guard let feed = try? await APIClient(baseURL: credentials.baseURL).widgetFeed(
+            token: credentials.token,
+            pairID: store.selectedConnectionID
+        ) else { return .placeholder }
+        return StreakComplicationEntry(date: Date(), streak: feed.streak, state: feed.state)
+    }
+}
+
+struct StreakComplicationView: View {
+    @Environment(\.widgetFamily) private var family
+    let entry: StreakComplicationEntry
+
+    var body: some View {
+        content.containerBackground(.clear, for: .widget)
+    }
+
+    @ViewBuilder
+    private var content: some View {
+        switch family {
+        case .accessoryInline:
+            Text(inlineText)
+        case .accessoryCircular:
+            circular
+        case .accessoryCorner:
+            Text("🔥")
+                .font(.title3)
+                .widgetLabel(cornerLabel)
+        default:
+            rectangular
+        }
+    }
+
+    private var circular: some View {
+        VStack(spacing: 0) {
+            Text("🔥").font(.system(size: 13))
+            Text(countText)
+                .font(.system(size: 16, weight: .semibold))
+                .monospacedDigit()
+        }
+        .accessibilityLabel("Streak")
+        .accessibilityValue(accessibilityValue)
+    }
+
+    private var rectangular: some View {
+        VStack(alignment: .leading, spacing: 2) {
+            HStack(spacing: 3) {
+                Text("🔥")
+                Text("Streak").font(.headline).lineLimit(1)
+            }
+            if let streak = entry.streak, streak.current > 0 {
+                Text(dayText(streak.current)).font(.title3).monospacedDigit()
+                Text("Best \(streak.best)").font(.caption2).foregroundStyle(.secondary).lineLimit(1)
+            } else {
+                Text(emptyText).font(.caption).foregroundStyle(.secondary).lineLimit(1)
+            }
+        }
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .accessibilityElement(children: .combine)
+        .accessibilityLabel("Streak, \(accessibilityValue)")
+    }
+
+    // MARK: Copy
+
+    private var current: Int { entry.streak?.current ?? 0 }
+
+    private var countText: String { current > 0 ? "\(current)" : "—" }
+
+    private func dayText(_ days: Int) -> String {
+        days == 1 ? "1 day" : "\(days) days"
+    }
+
+    private var cornerLabel: String {
+        current > 0 ? dayText(current) : emptyText
+    }
+
+    private var inlineText: String {
+        guard current > 0 else { return "🔥 \(emptyText)" }
+        return "🔥 \(dayText(current))"
+    }
+
+    private var emptyText: String {
+        entry.state == .unpaired ? "Pear up" : "No streak yet"
+    }
+
+    private var accessibilityValue: String {
+        current > 0 ? dayText(current) : emptyText
+    }
+}
+
+struct StreakComplication: Widget {
+    var body: some WidgetConfiguration {
+        StaticConfiguration(kind: "PeardStreakComplication", provider: StreakComplicationProvider()) { entry in
+            StreakComplicationView(entry: entry)
+        }
+        .configurationDisplayName("Pear'd Streak")
+        .description("Your connection's current day streak, on a face or in the Smart Stack.")
         .supportedFamilies([.accessoryCircular, .accessoryRectangular, .accessoryInline, .accessoryCorner])
     }
 }
