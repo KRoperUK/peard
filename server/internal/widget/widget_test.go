@@ -182,6 +182,93 @@ func TestFeedDoesNotCountYourOwnMoments(t *testing.T) {
 	}
 }
 
+// feedWater issues GET /api/peard/widget/feed and returns the decoded water
+// block, so the complication (#364) can draw today's progress toward the goal.
+func (w *feedWorld) feedWater(t *testing.T) (todayML, goalML int, present bool) {
+	t.Helper()
+	req := httptest.NewRequest("GET", "/api/peard/widget/feed?token="+w.token, nil)
+	rec := httptest.NewRecorder()
+	w.mux.ServeHTTP(rec, req)
+	if rec.Code != 200 {
+		t.Fatalf("feed: got %d, body %s", rec.Code, rec.Body.String())
+	}
+	var parsed struct {
+		Water *struct {
+			TodayML int `json:"today_ml"`
+			GoalML  int `json:"goal_ml"`
+		} `json:"water"`
+	}
+	if err := json.Unmarshal(rec.Body.Bytes(), &parsed); err != nil {
+		t.Fatalf("decode feed: %v (body %s)", err, rec.Body.String())
+	}
+	if parsed.Water == nil {
+		return 0, 0, false
+	}
+	return parsed.Water.TodayML, parsed.Water.GoalML, true
+}
+
+// The feed carries today's connection water and the summed goal, so the watch's
+// water complication can draw a ring without the recap route (#364).
+func TestFeedCarriesTodaysWaterAgainstTheGoal(t *testing.T) {
+	w := newFeedWorld(t)
+	w.setWaterTarget(t, w.alice, 1500)
+	w.setWaterTarget(t, w.bob, 2500) // summed goal 4000
+	w.newWater(t, w.alice, 900)
+	w.newWater(t, w.bob, 600) // 1500 together today
+
+	todayML, goalML, present := w.feedWater(t)
+	if !present {
+		t.Fatal("feed carried no water block")
+	}
+	if todayML != 1500 {
+		t.Errorf("today_ml = %d, want 1500 (900 + 600)", todayML)
+	}
+	if goalML != 4000 {
+		t.Errorf("goal_ml = %d, want 4000 (1500 + 2500)", goalML)
+	}
+}
+
+// Nobody stored a target: the goal is one built-in amount, matching the recap's
+// streakTarget, so the complication's ring reads the same as the streak's.
+func TestFeedWaterGoalFallsBackWhenNobodyStoredOne(t *testing.T) {
+	w := newFeedWorld(t)
+	w.newWater(t, w.alice, 500)
+
+	todayML, goalML, present := w.feedWater(t)
+	if !present {
+		t.Fatal("feed carried no water block")
+	}
+	if todayML != 500 {
+		t.Errorf("today_ml = %d, want 500", todayML)
+	}
+	if goalML != 2000 {
+		t.Errorf("goal_ml = %d, want the built-in 2000 when nobody stored a target", goalML)
+	}
+}
+
+func (w *feedWorld) newWater(t *testing.T, author *core.Record, ml int) *core.Record {
+	t.Helper()
+	return w.newRecord(t, "posts", map[string]any{
+		"pair": w.pair.Id, "author": author.Id,
+		"type": "event", "event_kind": "water", "amount": ml,
+		"happened_at": time.Now().UTC().Format(types.DefaultDateLayout),
+	})
+}
+
+func (w *feedWorld) setWaterTarget(t *testing.T, user *core.Record, recommended int) {
+	t.Helper()
+	mem, err := w.app.FindFirstRecordByFilter("pair_members",
+		"pair = {:pair} && user = {:user}",
+		map[string]any{"pair": w.pair.Id, "user": user.Id})
+	if err != nil {
+		t.Fatalf("membership: %v", err)
+	}
+	mem.Set("water_recommended", recommended)
+	if err := w.app.Save(mem); err != nil {
+		t.Fatalf("save target: %v", err)
+	}
+}
+
 func TestFeedUnreadClearsOnceSeen(t *testing.T) {
 	w := newFeedWorld(t)
 	w.newPost(t, w.bob, "from Bob")

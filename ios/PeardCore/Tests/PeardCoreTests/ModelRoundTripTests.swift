@@ -217,6 +217,25 @@ final class ModelRoundTripTests: XCTestCase {
         XCTAssertNil(feed.post)
     }
 
+    // The water block feeds the watch complication (#364): today's millilitres
+    // against the goal, from which the ring's fraction is derived.
+    func testWidgetFeedDecodesTheWaterBlock() throws {
+        let json = Data(#"{"state":"ok","water":{"today_ml":1500,"goal_ml":2000}}"#.utf8)
+        let feed = try decoder.decode(WidgetFeed.self, from: json)
+        let water = try XCTUnwrap(feed.water)
+        XCTAssertEqual(water.todayML, 1500)
+        XCTAssertEqual(water.goalML, 2000)
+        XCTAssertEqual(water.progress.fraction, 0.75, accuracy: 0.0001)
+        XCTAssertFalse(water.progress.isRecommendedMet)
+    }
+
+    // A server that predates the complication sends no water block; that is nil,
+    // not a ring of zero, so the complication can say "no goal" instead.
+    func testWidgetFeedWithoutWaterDecodesAsNil() throws {
+        let feed = try decoder.decode(WidgetFeed.self, from: Data(#"{"state":"ok"}"#.utf8))
+        XCTAssertNil(feed.water)
+    }
+
     func testAuthResponseDecodesUserRecord() throws {
         let json = Data("""
         {"token":"tok","record":{"id":"u1","email":"a@b.c","display_name":"Ada","verified":true}}
