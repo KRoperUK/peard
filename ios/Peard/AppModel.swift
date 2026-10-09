@@ -417,7 +417,12 @@ final class AppModel {
         await refreshPendingSends()
         prunePendingPhotos()
 
-        if result.didChangeAnything {
+        // Reactions tapped from a notification that could not reach the server
+        // then are drained here too (#366), so a Lock-Screen tap made offline
+        // goes out on the next launch or foreground alongside queued moments.
+        let reactionsDelivered = await push.flushPendingReactions()
+
+        if result.didChangeAnything || reactionsDelivered {
             // A send that landed changes the timeline, the tallies and the widget.
             if refreshingHome { await onHomeRefreshRequested?() }
             widgetSync.reloadTimelines()
