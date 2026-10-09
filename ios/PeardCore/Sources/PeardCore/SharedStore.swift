@@ -8,6 +8,7 @@ import Foundation
 public final class SharedStore: @unchecked Sendable {
     public enum Key {
         public static let widgetToken = "widgetToken"
+        public static let widgetTokenID = "widgetTokenId"
         public static let apiBaseURL = "apiBaseUrl"
         public static let notificationAuthorizationRequested = "notificationAuthorizationRequested"
         public static let devicePushToken = "devicePushToken"
@@ -55,6 +56,13 @@ public final class SharedStore: @unchecked Sendable {
         set { set(newValue, forKey: Key.widgetToken) }
     }
 
+    /// The server's record id for `widgetToken`. Not a credential — it is what the
+    /// devices screen compares against to mark this device's own row (#367).
+    public var widgetTokenID: String? {
+        get { defaults?.string(forKey: Key.widgetTokenID) }
+        set { set(newValue, forKey: Key.widgetTokenID) }
+    }
+
     public var apiBaseURLString: String? {
         get { defaults?.string(forKey: Key.apiBaseURL) }
         set { set(newValue, forKey: Key.apiBaseURL) }
@@ -74,6 +82,7 @@ public final class SharedStore: @unchecked Sendable {
     /// Removes the token but keeps the base URL (Requirement 16.4).
     public func removeWidgetToken() {
         defaults?.removeObject(forKey: Key.widgetToken)
+        defaults?.removeObject(forKey: Key.widgetTokenID)
     }
 
     // MARK: Connections

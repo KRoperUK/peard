@@ -95,6 +95,30 @@ public extension APIClient {
         try await postIgnoringResponse(path: "/api/peard/widget/revoke", fields: ["token": token])
     }
 
+    /// `GET /api/peard/widget/tokens` — the caller's live widget tokens, newest
+    /// first, for the "Signed-in devices & widgets" screen (#367).
+    ///
+    /// The server never returns the secrets. `currentTokenID` is the id this
+    /// device was given when it minted its own token; the matching row is marked
+    /// `isCurrentDevice` so the screen can say which one is the phone in hand.
+    func widgetTokens(currentTokenID: String? = nil) async throws -> [WidgetTokenInfo] {
+        let list: WidgetTokenList = try await get(path: "/api/peard/widget/tokens")
+        guard let currentTokenID, !currentTokenID.isEmpty else { return list.tokens }
+        return list.tokens.map { info in
+            var marked = info
+            marked.isCurrentDevice = info.id == currentTokenID
+            return marked
+        }
+    }
+
+    /// `POST /api/peard/widget/revoke` by record id — what the devices screen
+    /// uses, since it holds ids and never secrets (#367). Idempotent and
+    /// ownership-checked server-side, so revoking a row that is already gone is a
+    /// success.
+    func revokeWidgetToken(id: String) async throws {
+        try await postIgnoringResponse(path: "/api/peard/widget/revoke", fields: ["id": id])
+    }
+
     /// `POST /api/peard/pairs/invite` (Requirement 10.1). Passing `pairID`
     /// makes the invite add the accepting user to that existing connection,
     /// which is how a group grows; omitting it creates a new connection.
