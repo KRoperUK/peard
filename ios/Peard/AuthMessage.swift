@@ -22,9 +22,9 @@ enum AuthMessage {
             // PocketBase does not distinguish "no such account" from "wrong
             // password", and neither should this: saying which one was wrong
             // tells anybody who asks whether an address has an account here.
-            return "That email and password don't match an account. Check them, or create an account instead."
+            return String(localized: "That email and password don't match an account. Check them, or create an account instead.")
         case 429:
-            return "Too many attempts. Wait a minute and try again."
+            return String(localized: "Too many attempts. Wait a minute and try again.")
         default:
             return fallback(error)
         }
@@ -34,20 +34,20 @@ enum AuthMessage {
     static func forSignUp(_ error: APIError) -> String {
         guard error.status == 400 else {
             return error.status == 429
-                ? "Too many attempts. Wait a minute and try again."
+                ? String(localized: "Too many attempts. Wait a minute and try again.")
                 : fallback(error)
         }
         let detail = (error.serverMessage ?? "").lowercased()
         if detail.contains("email"), detail.contains("unique") || detail.contains("already") {
-            return "There's already an account with that email. Sign in instead."
+            return String(localized: "There's already an account with that email. Sign in instead.")
         }
         if detail.contains("password") {
-            return "That password is too short — use at least 8 characters."
+            return String(localized: "That password is too short — use at least 8 characters.")
         }
         if detail.contains("email") {
-            return "That doesn't look like an email address."
+            return String(localized: "That doesn't look like an email address.")
         }
-        return "Those details weren't accepted. Check the email, and use a password of at least 8 characters."
+        return String(localized: "Those details weren't accepted. Check the email, and use a password of at least 8 characters.")
     }
 
     /// Anything that is not the server rejecting the credentials is, from the
@@ -55,7 +55,7 @@ enum AuthMessage {
     /// fix is theirs rather than ours.
     private static func fallback(_ error: APIError) -> String {
         if case .transport = error {
-            return "Couldn't reach Pear'd. Check your connection and try again."
+            return String(localized: "Couldn't reach Pear'd. Check your connection and try again.")
         }
         return error.localizedDescription
     }

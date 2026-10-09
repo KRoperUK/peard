@@ -34,7 +34,7 @@ struct EmojiField: UIViewRepresentable {
         // dismisses.
         field.returnKeyType = .done
         field.text = emoji
-        field.accessibilityLabel = "Moment emoji"
+        field.accessibilityLabel = String(localized: "Moment emoji")
         field.setContentHuggingPriority(.defaultLow, for: .horizontal)
         return field
     }

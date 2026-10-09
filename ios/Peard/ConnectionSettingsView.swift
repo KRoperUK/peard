@@ -67,7 +67,7 @@ struct ConnectionSettingsView: View {
             .navigationBarTitleDisplayMode(.inline)
             .toolbar {
                 ToolbarItem(placement: .principal) {
-                    ConnectionToolbarTitle(title: "Settings", subtitle: model.connectionTitle)
+                    ConnectionToolbarTitle(title: String(localized: "Settings"), subtitle: model.connectionTitle)
                 }
             }
             .task {
@@ -145,7 +145,7 @@ struct ConnectionSettingsView: View {
             // their own moments gone. Offering both makes the default explicit
             // instead of leaving people to guess which one it is.
             .confirmationDialog(
-                model.isGroup ? "Leave this group?" : "Un-pear?",
+                model.isGroup ? String(localized: "Leave this group?") : String(localized: "Un-pear?"),
                 isPresented: $showLeaveConfirmation,
                 titleVisibility: .visible
             ) {
@@ -159,8 +159,8 @@ struct ConnectionSettingsView: View {
             } message: {
                 Text(
                     model.isGroup
-                        ? "You'll lose this group's shared timeline. Your own moments in it stay unless you delete them."
-                        : "You'll both lose the shared timeline. Your own moments in it stay unless you delete them."
+                        ? String(localized: "You'll lose this group's shared timeline. Your own moments in it stay unless you delete them.")
+                        : String(localized: "You'll both lose the shared timeline. Your own moments in it stay unless you delete them.")
                 )
             }
             .confirmationDialog(
@@ -178,15 +178,17 @@ struct ConnectionSettingsView: View {
                 Button("Cancel", role: .cancel) {}
             } message: {
                 Text(
-                    "This erases your profile, your moments and every connection you're in, right now and for good. "
-                        + "Export your data first if you want a copy. This can't be undone."
+                    String(localized: """
+                    This erases your profile, your moments and every connection you're in, right now and for good. \
+                    Export your data first if you want a copy. This can't be undone.
+                    """)
                 )
             }
         }
     }
 
     private var removalPrompt: String {
-        memberPendingRemoval.map { "Remove \($0.name)?" } ?? "Remove them?"
+        memberPendingRemoval.map { String(localized: "Remove \($0.name)?") } ?? String(localized: "Remove them?")
     }
 
     // MARK: Photo
@@ -214,7 +216,7 @@ struct ConnectionSettingsView: View {
     private var photoSubtitle: String {
         if model.connectionHasOwnAvatar { return model.connection?.subtitle ?? "" }
         if !model.isGroup, model.connectionAvatar.hasImage {
-            return "Using \(model.partnerName)'s photo"
+            return String(localized: "Using \(model.partnerName)'s photo")
         }
         return model.connection?.subtitle ?? ""
     }
@@ -264,10 +266,10 @@ struct ConnectionSettingsView: View {
             Button {
                 showInviteSheet = true
             } label: {
-                Label(model.isGroup ? "Invite someone else" : "Add someone", systemImage: "person.badge.plus")
+                Label(model.isGroup ? String(localized: "Invite someone else") : String(localized: "Add someone"), systemImage: "person.badge.plus")
             }
         } header: {
-            Text(model.isGroup ? "\(model.connection?.memberCount ?? 0) people" : "Members")
+            Text(model.isGroup ? String(localized: "\(model.connection?.memberCount ?? 0) people") : String(localized: "Members"))
         } footer: {
             if model.canRemoveMembers && !model.otherMembers.isEmpty {
                 Text("Swipe a member to remove them. Only you can, because you started this connection.")
@@ -350,8 +352,8 @@ struct ConnectionSettingsView: View {
         } footer: {
             Text(
                 model.isGroup
-                    ? "Muted groups still appear here and in the widget — they just stop making a noise."
-                    : "Muting stops the alerts. Moments still arrive."
+                    ? String(localized: "Muted groups still appear here and in the widget — they just stop making a noise.")
+                    : String(localized: "Muting stops the alerts. Moments still arrive.")
             )
         }
     }
@@ -445,12 +447,12 @@ struct ConnectionSettingsView: View {
 
     private func statusText(for send: PendingSend) -> String {
         if send.hasGivenUp {
-            return send.lastError ?? "Couldn't send"
+            return send.lastError ?? String(localized: "Couldn't send")
         }
         if send.attempts > 0 {
-            return "Retrying — attempt \(send.attempts + 1)"
+            return String(localized: "Retrying — attempt \(send.attempts + 1)")
         }
-        return model.isOffline ? "Waiting for signal" : "Sending…"
+        return model.isOffline ? String(localized: "Waiting for signal") : String(localized: "Sending…")
     }
 
     // MARK: Your name
@@ -463,8 +465,8 @@ struct ConnectionSettingsView: View {
                     serverURL: model.serverURL,
                     title: profile.effectiveName,
                     subtitle: profile.hasAvatar
-                        ? "Everyone you're connected with sees this"
-                        : "They see your initials until you add one",
+                        ? String(localized: "Everyone you're connected with sees this")
+                        : String(localized: "They see your initials until you add one"),
                     onRemove: profile.hasAvatar ? { await app.removeProfileAvatar() } : nil,
                     onPick: { await app.updateProfileAvatar(jpeg: $0) }
                 )
@@ -547,7 +549,7 @@ struct ConnectionSettingsView: View {
                     if isSavingDiscoverability {
                         ProgressView()
                     } else {
-                        Text(app.profile?.emailIsRelay == true ? "Save" : "Save phone number")
+                        Text(app.profile?.emailIsRelay == true ? String(localized: "Save") : String(localized: "Save phone number"))
                     }
                 }
                 .disabled(isSavingDiscoverability || !discoverabilityHasChanges)
@@ -604,16 +606,22 @@ struct ConnectionSettingsView: View {
     /// hid their address chose to, and being asked for one without a reason
     /// reads as the app going back on that.
     private var discoverabilityFooter: String {
-        let base = "Pear'd compares one-way hashes of contact info, never raw emails or phone numbers, "
-            + "and only for people who've turned this on."
+        // Whole paragraphs, one per case, rather than a shared opening with a
+        // tail appended: a translator needs to see each paragraph as written.
         guard app.profile?.emailIsRelay == true else {
-            return base + " Your email is always included; adding a phone number lets people who "
-                + "only have that find you too."
+            return String(localized: """
+            Pear'd compares one-way hashes of contact info, never raw emails or phone numbers, \
+            and only for people who've turned this on. Your email is always included; adding a \
+            phone number lets people who only have that find you too.
+            """)
         }
-        return base + " You signed in with Apple and hid your email, so the address we have for you "
-            + "is a private relay one that nobody else has — matching on it can never find you. "
-            + "Give an address people actually have, and we'll match on that instead. It's hashed "
-            + "like everything else and never shown to anyone."
+        return String(localized: """
+        Pear'd compares one-way hashes of contact info, never raw emails or phone numbers, \
+        and only for people who've turned this on. You signed in with Apple and hid your email, \
+        so the address we have for you is a private relay one that nobody else has — matching on \
+        it can never find you. Give an address people actually have, and we'll match on that \
+        instead. It's hashed like everything else and never shown to anyone.
+        """)
     }
 
     /// True when either field differs from what the server last returned.
@@ -728,7 +736,7 @@ struct ConnectionSettingsView: View {
 
     private var leaveSection: some View {
         Section {
-            Button(model.isGroup ? "Leave group" : "Un-pear", role: .destructive) {
+            Button(model.isGroup ? String(localized: "Leave group") : String(localized: "Un-pear"), role: .destructive) {
                 showLeaveConfirmation = true
             }
         } footer: {

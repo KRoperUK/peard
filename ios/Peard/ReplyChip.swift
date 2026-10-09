@@ -51,8 +51,8 @@ struct ReplyChip: View {
     /// "replying to Ada's photo", "replying to your photo", or "replying to a
     /// photo" when the photo is not to hand.
     static func title(for original: Post?, signedInUserID: String, authorLabel: (Post) -> String) -> String {
-        guard let original else { return "replying to a photo" }
-        if original.author == signedInUserID { return "replying to your photo" }
-        return "replying to \(authorLabel(original))'s photo"
+        guard let original else { return String(localized: "replying to a photo") }
+        if original.author == signedInUserID { return String(localized: "replying to your photo") }
+        return String(localized: "replying to \(authorLabel(original))'s photo")
     }
 }

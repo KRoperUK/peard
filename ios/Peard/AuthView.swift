@@ -19,7 +19,7 @@ struct AuthView: View {
     private enum EmailMode: String, CaseIterable, Identifiable {
         case signIn, signUp
         var id: String { rawValue }
-        var title: String { self == .signIn ? "Sign in" : "Create account" }
+        var title: String { self == .signIn ? String(localized: "Sign in") : String(localized: "Create account") }
     }
 
     @State private var busy: Provider?
@@ -142,7 +142,7 @@ struct AuthView: View {
                 try await coordinator.signInWithGoogle(presentationAnchor: PresentationAnchor.current())
             }
         } label: {
-            label(for: .google, title: "G   Continue with Google", tint: Color(rgb: 0x333333))
+            label(for: .google, title: String(localized: "G   Continue with Google"), tint: Color(rgb: 0x333333))
         }
         .buttonStyle(.plain)
         .background(
@@ -211,7 +211,7 @@ struct AuthView: View {
                     : try await coordinator.signInWithPassword(identity: identity, password: submitted)
             }
         } label: {
-            label(for: .password, title: emailMode == .signUp ? "Create account" : "Continue", tint: .white)
+            label(for: .password, title: emailMode == .signUp ? String(localized: "Create account") : String(localized: "Continue"), tint: .white)
         }
         .buttonStyle(.plain)
         .background(PearColor.accent, in: RoundedRectangle(cornerRadius: 12))
@@ -224,6 +224,7 @@ struct AuthView: View {
         Button {
             signIn(.test) { try await DebugSupport.signInAsTestUser(api: app.api) }
         } label: {
+            // swiftlint:disable:next unlocalized_string_sink -- DEBUG-only button, not shipped
             label(for: .test, title: "🔧 Login Test User", tint: PearColor.accent)
                 .font(.footnote.bold())
         }

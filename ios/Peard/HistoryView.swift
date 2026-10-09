@@ -38,7 +38,7 @@ struct HistoryView: View {
                 .toolbar {
                     ToolbarItem(placement: .principal) {
                         ConnectionToolbarTitle(
-                            title: "Timeline",
+                            title: String(localized: "Timeline"),
                             subtitle: model.filterSummary ?? title
                         )
                     }
@@ -138,7 +138,7 @@ struct HistoryView: View {
             }
 
             Section("Who") {
-                pick("Everyone", isOn: model.filter.author == nil) {
+                pick(String(localized: "Everyone"), isOn: model.filter.author == nil) {
                     model.filter.choosing(author: nil)
                 }
                 ForEach(model.filterableMembers) { member in
@@ -149,7 +149,7 @@ struct HistoryView: View {
             }
 
             Section("What") {
-                pick("Anything", isOn: model.filter.kind == nil && !model.filter.photosOnly) {
+                pick(String(localized: "Anything"), isOn: model.filter.kind == nil && !model.filter.photosOnly) {
                     // Clears both, which is what "anything" has to mean now
                     // that they are two dimensions rather than one choice.
                     model.filter.choosing(kind: nil).choosingPhotos(false)
@@ -157,7 +157,7 @@ struct HistoryView: View {
                 // A toggle, not a choice: a moment can carry a photo, so
                 // "photos" narrows whatever else is selected rather than
                 // replacing it. "Coffee · Photos" is a real question.
-                pick("📷 Has a photo", isOn: model.filter.photosOnly) {
+                pick(String(localized: "📷 Has a photo"), isOn: model.filter.photosOnly) {
                     model.filter.choosingPhotos(!model.filter.photosOnly)
                 }
                 ForEach(model.moments) { moment in
@@ -175,7 +175,11 @@ struct HistoryView: View {
                 : "line.3.horizontal.decrease.circle")
                 .foregroundStyle(PearColor.accent)
         }
-        .accessibilityLabel(model.filter.isActive ? "Filtering by \(model.filterSummary ?? "")" : "Filter")
+        .accessibilityLabel(
+            model.filter.isActive
+                ? String(localized: "Filtering by \(model.filterSummary ?? "")")
+                : String(localized: "Filter")
+        )
     }
 
     private func pick(_ label: String, isOn: Bool, to next: @escaping () -> TimelineFilter) -> some View {
@@ -208,12 +212,12 @@ struct HistoryView: View {
     private var emptyState: some View {
         VStack(spacing: 10) {
             Text("🍐").font(.system(size: 48)).accessibilityHidden(true)
-            Text(model.filter.isActive ? "Nothing matches that" : "Nothing here yet")
+            Text(model.filter.isActive ? String(localized: "Nothing matches that") : String(localized: "Nothing here yet"))
                 .font(.headline)
                 .foregroundStyle(PearColor.textPrimary)
             Text(model.filter.isActive
-                ? "No moments for \(model.filterSummary ?? "that filter") in this connection."
-                : "Moments you and everyone else log will build up here.")
+                ? String(localized: "No moments for \(model.filterSummary ?? String(localized: "that filter")) in this connection.")
+                : String(localized: "Moments you and everyone else log will build up here."))
                 .font(.subheadline)
                 .foregroundStyle(PearColor.textSecondary)
                 .multilineTextAlignment(.center)
@@ -271,7 +275,7 @@ struct HistoryView: View {
                 .listRowSeparator(.hidden)
                 .task { await model.loadMoreIfNeeded() }
             } else if model.totalItems > 0 {
-                Text(model.totalItems == 1 ? "1 moment" : "\(model.totalItems) moments")
+                Text(model.totalItems == 1 ? String(localized: "1 moment") : String(localized: "\(model.totalItems) moments"))
                     .font(.footnote)
                     .foregroundStyle(PearColor.textTertiary)
                     .frame(maxWidth: .infinity, alignment: .center)
@@ -425,13 +429,13 @@ struct HistoryView: View {
 
     private func accessibilityLabel(for post: Post) -> String {
         var parts = [model.authorLabel(for: post), model.detail(for: post)]
-        if post.hasMedia { parts.append("photo") }
+        if post.hasMedia { parts.append(String(localized: "photo")) }
         if post.replyTo != nil { parts.append(model.replyTitle(for: post)) }
-        if post.isEdited { parts.append("edited") }
+        if post.isEdited { parts.append(String(localized: "edited")) }
         if model.isPending(post) {
-            parts.append(model.pendingIndicatorIsOffline ? "waiting to send" : "sending")
+            parts.append(model.pendingIndicatorIsOffline ? String(localized: "waiting to send") : String(localized: "sending"))
         }
-        if model.strayNewPostIDs.contains(post.id) { parts.append("new") }
+        if model.strayNewPostIDs.contains(post.id) { parts.append(String(localized: "new")) }
         if post.rewound { parts.append(RewoundChip.accessibilityLabel(loggedAt: post.created)) }
         let time = model.time(for: post)
         if !time.isEmpty { parts.append(time) }
@@ -581,7 +585,7 @@ private struct QueuedChip: View {
 
     var body: some View {
         Label(
-            offline ? "waiting" : "sending",
+            offline ? String(localized: "waiting") : String(localized: "sending"),
             systemImage: offline ? "wifi.slash" : "arrow.up.circle"
         )
         .font(.caption2)

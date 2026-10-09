@@ -18,8 +18,8 @@ struct LowDataNotice: View {
 
             // Which switch did it, so somebody knows where to undo it.
             Text(app.lowData == .on
-                ? "Low data is on: smaller photos, no background refresh."
-                : "Low Data Mode is on: smaller photos, no background refresh.")
+                ? String(localized: "Low data is on: smaller photos, no background refresh.")
+                : String(localized: "Low Data Mode is on: smaller photos, no background refresh."))
                 .font(.footnote.bold())
                 .foregroundStyle(PearColor.textSecondary)
 
@@ -74,7 +74,7 @@ struct LowDataSection: View {
     /// what decides — "Automatic" alone does not tell anybody which way it went.
     private var footer: String {
         guard app.lowData == .automatic else { return app.lowData.subtitle }
-        let now = app.isNetworkConstrained ? "On now." : "Off now."
-        return "\(app.lowData.subtitle) \(now)"
+        let now = app.isNetworkConstrained ? String(localized: "On now.") : String(localized: "Off now.")
+        return String(localized: "\(app.lowData.subtitle) \(now)")
     }
 }

@@ -101,7 +101,7 @@ struct AvatarPickerRow: View {
 
             HStack(spacing: 16) {
                 PhotosPicker(selection: $selection, matching: .images, photoLibrary: .shared()) {
-                    Text(avatar.hasImage ? "Change photo" : "Add photo")
+                    Text(avatar.hasImage ? String(localized: "Change photo") : String(localized: "Add photo"))
                         .font(.subheadline.bold())
                         .foregroundStyle(PearColor.accent)
                 }
@@ -142,7 +142,7 @@ struct AvatarPickerRow: View {
                 if let data = await AvatarImage.prepare(item) {
                     await onPick(data)
                 } else {
-                    failure = "That photo couldn't be read. Try another."
+                    failure = String(localized: "That photo couldn't be read. Try another.")
                 }
                 isWorking = false
                 selection = nil

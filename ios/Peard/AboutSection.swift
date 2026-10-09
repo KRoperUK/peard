@@ -23,8 +23,8 @@ struct AboutSection: View {
 
     var body: some View {
         Section {
-            row("App", value: appVersion)
-            row("Server", value: serverURL.host ?? serverURL.absoluteString)
+            row(String(localized: "App"), value: appVersion)
+            row(String(localized: "Server"), value: serverURL.host ?? serverURL.absoluteString)
             serverBuildRow
 
             Button {
@@ -69,9 +69,9 @@ struct AboutSection: View {
                 ProgressView()
             }
         } else if let status {
-            row("Server build", value: serverBuildLabel(status))
+            row(String(localized: "Server build"), value: serverBuildLabel(status))
         } else if let statusError {
-            row("Server build", value: statusError)
+            row(String(localized: "Server build"), value: statusError)
         }
     }
 
@@ -118,9 +118,9 @@ struct AboutSection: View {
             // A server predating the status route. Saying so is more useful than
             // an error, and is itself a version signal: anything without this
             // route is older than 1 August 2026.
-            statusError = "older than this app"
+            statusError = String(localized: "older than this app")
         } catch {
-            statusError = "unavailable"
+            statusError = String(localized: "unavailable")
         }
     }
 }

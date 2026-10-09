@@ -90,7 +90,7 @@ struct PhotoMomentSheet: View {
             // grid sits below it — a flick should get back to the grid without
             // having to find a Done key first.
             .scrollDismissesKeyboard(.interactively)
-            .navigationTitle(replyingTo == nil ? "What is it?" : "Reply with a photo")
+            .navigationTitle(replyingTo == nil ? String(localized: "What is it?") : String(localized: "Reply with a photo"))
             .navigationBarTitleDisplayMode(.inline)
             .toolbar {
                 ToolbarItem(placement: .cancellationAction) {

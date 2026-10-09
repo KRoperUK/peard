@@ -59,7 +59,7 @@ struct RecapSection: View {
                 .font(.title2.bold())
                 .foregroundStyle(PearColor.accent)
                 .monospacedDigit()
-            Text(recap.total == 1 ? "moment" : "moments")
+            Text(recap.total == 1 ? String(localized: "moment") : String(localized: "moments"))
                 .font(.subheadline)
                 .foregroundStyle(PearColor.textSecondary)
             Spacer()
@@ -104,9 +104,9 @@ struct RecapSection: View {
     private var streakText: String {
         let current = recap.streak.current
         if current == 0 {
-            return "Streak broken — best was \(recap.streak.best) days"
+            return String(localized: "Streak broken — best was \(recap.streak.best) days")
         }
-        return current == 1 ? "1 day running" : "\(current) days running"
+        return current == 1 ? String(localized: "1 day running") : String(localized: "\(current) days running")
     }
 
     /// Days in a row the connection's combined water reached the recommended
@@ -134,9 +134,9 @@ struct RecapSection: View {
 
     static func waterStreakText(_ water: MomentRecap.Streak) -> String {
         switch water.current {
-        case 0: return "Water streak ended — best was \(water.best) days hitting your goal"
-        case 1: return "1 day hitting your water goal"
-        default: return "\(water.current) days hitting your water goal"
+        case 0: return String(localized: "Water streak ended — best was \(water.best) days hitting your goal")
+        case 1: return String(localized: "1 day hitting your water goal")
+        default: return String(localized: "\(water.current) days hitting your water goal")
         }
     }
 

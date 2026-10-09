@@ -271,7 +271,7 @@ struct HomeView: View {
                         // than looking identical to one that has.
                         if model.displayedPostIsPending {
                             Label(
-                                model.isOffline ? "waiting" : "sending",
+                                model.isOffline ? String(localized: "waiting") : String(localized: "sending"),
                                 systemImage: model.isOffline ? "wifi.slash" : "arrow.up.circle"
                             )
                             .font(.caption2)
@@ -364,8 +364,8 @@ struct HomeView: View {
                         .buttonStyle(.plain)
                         .accessibilityLabel(
                             isMine
-                                ? "Take back your \(kind.accessibilityLabel)"
-                                : "React with \(kind.accessibilityLabel)"
+                                ? String(localized: "Take back your \(kind.accessibilityLabel)")
+                                : String(localized: "React with \(kind.accessibilityLabel)")
                         )
                     }
                 }
@@ -481,7 +481,7 @@ struct HomeView: View {
                         .lineLimit(2)
                 }
                 if more > 0 {
-                    Text(more == 1 ? "and 1 more moment" : "and \(more) more moments")
+                    Text(more == 1 ? String(localized: "and 1 more moment") : String(localized: "and \(more) more moments"))
                         .font(.caption)
                         .foregroundStyle(PearColor.textTertiary)
                 }
@@ -511,10 +511,12 @@ struct HomeView: View {
 
     private var breakdownAccessibilityLabel: String {
         let parts = model.topMoments.map { "\($0.label), \($0.total)" }
-        var sentence = parts.isEmpty ? "Moment breakdown" : "Most logged: " + parts.joined(separator: "; ")
+        var sentence = parts.isEmpty
+            ? String(localized: "Moment breakdown")
+            : String(localized: "Most logged: \(parts.joined(separator: "; "))")
         // The badge beside the counts says this visually; it was missing aloud.
         if let streak = model.recap?.streak, streak.current >= 2 {
-            sentence += ". \(streak.current) days running"
+            sentence += String(localized: ". \(streak.current) days running")
         }
         return sentence
     }
@@ -587,7 +589,7 @@ struct HomeView: View {
                 .buttonStyle(.plain)
                 .accessibilityLabel("Rewind")
                 .accessibilityValue(model.quickSend?.happenedAt.map {
-                    "Set to \($0.formatted(date: .omitted, time: .shortened))"
+                    String(localized: "Set to \($0.formatted(date: .omitted, time: .shortened))")
                 } ?? "")
                 .accessibilityHint("Log this moment at an earlier time, up to 24 hours ago")
 
@@ -661,8 +663,8 @@ struct HomeView: View {
             // going to happen; re-arm it so it is not silently lost.
             restorePhotoMomentIfAbandoned()
             model.alert = HomeModel.AlertContent(
-                title: "Camera access needed",
-                message: "Enable camera access in Settings to share a moment."
+                title: String(localized: "Camera access needed"),
+                message: String(localized: "Enable camera access in Settings to share a moment.")
             )
         }
     }

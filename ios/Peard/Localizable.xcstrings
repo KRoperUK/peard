@@ -1,0 +1,1455 @@
+{
+  "sourceLanguage" : "en",
+  "strings" : {
+    "" : {
+
+    },
+    "%@  %@" : {
+
+    },
+    "%@ %@" : {
+
+    },
+    "%@ %@ · %@ %@" : {
+
+    },
+    "%@ %lld" : {
+
+    },
+    "%@ %lld · %@ %lld" : {
+
+    },
+    "%@ avatar" : {
+
+    },
+    "%@ from %@" : {
+
+    },
+    "%@ is muted" : {
+
+    },
+    "%@ logged!" : {
+
+    },
+    "%@ of water" : {
+
+    },
+    "%@ ready. Add a note, or activate Send." : {
+
+    },
+    "%@ recorded" : {
+
+    },
+    "%@ saved — will send" : {
+
+    },
+    "%@ to the %@ minimum" : {
+
+    },
+    "%@ · %@" : {
+
+    },
+    "%@ · %lld" : {
+
+    },
+    "%@, %@" : {
+
+    },
+    "%@, already on Pear'd" : {
+
+    },
+    "%@. iOS shows its own confirmation when this changes." : {
+
+    },
+    "%@: %@" : {
+
+    },
+    "%@: %lld moments %@. %@." : {
+
+    },
+    "%@: %lld today, %lld this week, %lld this month, %lld all time" : {
+
+    },
+    "%@: 1 moment %@. %@." : {
+
+    },
+    "%@Last updated %@." : {
+
+    },
+    "%lld" : {
+
+    },
+    "%lld %@" : {
+
+    },
+    "%lld characters left" : {
+
+    },
+    "%lld days hitting your water goal" : {
+
+    },
+    "%lld days running" : {
+
+    },
+    "%lld moments" : {
+
+    },
+    "%lld moments across %lld kinds, %@." : {
+
+    },
+    "%lld moments across 1 kind, %@." : {
+
+    },
+    "%lld moments couldn't be sent" : {
+
+    },
+    "%lld moments in the last 7 days. %@ %lld, %@ %lld" : {
+
+    },
+    "%lld moments waiting for signal" : {
+
+    },
+    "%lld new moments" : {
+
+    },
+    "%lld people" : {
+
+    },
+    "%lld replies" : {
+
+    },
+    ". %lld days running" : {
+
+    },
+    "1 day hitting your water goal" : {
+
+    },
+    "1 day running" : {
+
+    },
+    "1 moment" : {
+
+    },
+    "1 moment across %lld kinds, %@." : {
+
+    },
+    "1 moment across 1 kind, %@." : {
+
+    },
+    "1 moment couldn't be sent" : {
+
+    },
+    "1 moment waiting for signal" : {
+
+    },
+    "1 new moment" : {
+
+    },
+    "1 reply" : {
+
+    },
+    "9+" : {
+
+    },
+    "A contact" : {
+
+    },
+    "A year ago today" : {
+
+    },
+    "About" : {
+
+    },
+    "Accept & join" : {
+
+    },
+    "Accept & pear up" : {
+
+    },
+    "Account" : {
+
+    },
+    "Add" : {
+
+    },
+    "Add %@" : {
+
+    },
+    "Add a caption (optional)…" : {
+
+    },
+    "Add a moment" : {
+
+    },
+    "Add a note (optional)…" : {
+
+    },
+    "Add a note…" : {
+
+    },
+    "Add a size" : {
+
+    },
+    "Add and send" : {
+
+    },
+    "Add photo" : {
+
+    },
+    "Add someone" : {
+
+    },
+    "Added to this connection" : {
+
+    },
+    "Agree and continue" : {
+
+    },
+    "Agree to the privacy policy and continue" : {
+
+    },
+    "All" : {
+      "comment" : "Column caption on the Tallies screen: all time. Also the segment for the all-time window."
+    },
+    "Already on Pear'd" : {
+
+    },
+    "Another connection 🍐" : {
+
+    },
+    "Anyone who enters this code joins %@." : {
+
+    },
+    "Anything" : {
+
+    },
+    "Anything still waiting to send is discarded." : {
+
+    },
+    "App" : {
+
+    },
+    "App icon" : {
+
+    },
+    "Appearance" : {
+
+    },
+    "Apple returned no identity token" : {
+
+    },
+    "Apple, Google or your own email address identifies your account. That's the first thing to leave your device, which is why we're asking now." : {
+
+    },
+    "Asks before removing it for everyone in this connection" : {
+
+    },
+    "At least 8 characters." : {
+
+    },
+    "Back" : {
+
+    },
+    "Back to when it was logged" : {
+
+    },
+    "Before you sign in" : {
+
+    },
+    "Busiest day" : {
+
+    },
+    "Busiest day, %@, %lld moments" : {
+
+    },
+    "Camera access needed" : {
+
+    },
+    "Cancel" : {
+
+    },
+    "Cancel this moment" : {
+
+    },
+    "Caption" : {
+
+    },
+    "Caption…" : {
+
+    },
+    "Change its name or emoji" : {
+
+    },
+    "Change photo" : {
+
+    },
+    "Changing this moves it in everybody's tallies too." : {
+
+    },
+    "Chooses this moment for the photo" : {
+
+    },
+    "Clears the choice" : {
+
+    },
+    "Close" : {
+
+    },
+    "Comment" : {
+
+    },
+    "Connection" : {
+
+    },
+    "Connection name" : {
+
+    },
+    "Connections" : {
+
+    },
+    "Contacts access is off. Turn it on in Settings to invite people you already know." : {
+
+    },
+    "Contacts never leave in the clear" : {
+
+    },
+    "Continue" : {
+
+    },
+    "Continue with Google" : {
+
+    },
+    "Copy diagnostics" : {
+
+    },
+    "Couldn't add that moment" : {
+
+    },
+    "Couldn't build the Google sign-in URL." : {
+
+    },
+    "Couldn't change the icon — still using %@." : {
+
+    },
+    "Couldn't reach Pear'd. Check your connection and try again." : {
+
+    },
+    "Couldn't remove it" : {
+
+    },
+    "Couldn't save that" : {
+
+    },
+    "Couldn't save that photo." : {
+
+    },
+    "Couldn't save your session to the Keychain (%@)." : {
+
+    },
+    "Couldn't send" : {
+
+    },
+    "Couldn't send that reply." : {
+
+    },
+    "Create account" : {
+
+    },
+    "Create invite code" : {
+
+    },
+    "Custom amount in %@" : {
+
+    },
+    "Daily goal" : {
+
+    },
+    "Daily minimum" : {
+
+    },
+    "Daily targets" : {
+
+    },
+    "Data and photos" : {
+
+    },
+    "Data only" : {
+
+    },
+    "Debug" : {
+
+    },
+    "Delete" : {
+
+    },
+    "Delete account" : {
+
+    },
+    "Delete moment" : {
+
+    },
+    "Delete my account" : {
+
+    },
+    "Delete this moment" : {
+
+    },
+    "Delete this moment?" : {
+
+    },
+    "Delete your account?" : {
+
+    },
+    "Deleting your account erases everything above immediately." : {
+
+    },
+    "Discard them" : {
+
+    },
+    "Discoverable" : {
+
+    },
+    "Dismiss" : {
+
+    },
+    "Done" : {
+
+    },
+    "ENTER CODE" : {
+      "comment" : "Placeholder in the invite-code field. Codes are upper case."
+    },
+    "Edit" : {
+
+    },
+    "Edit %@" : {
+
+    },
+    "Edit moment" : {
+
+    },
+    "Edit queued moment" : {
+
+    },
+    "Edited" : {
+
+    },
+    "Email" : {
+
+    },
+    "Email and password mode" : {
+
+    },
+    "Email people have for you" : {
+
+    },
+    "Enable camera access in Settings to share a moment." : {
+
+    },
+    "Every moment in %@ as a spreadsheet: when, who, what, and any note." : {
+
+    },
+    "Everyone" : {
+
+    },
+    "Everyone in the connection sees this. Anyone here can change it." : {
+
+    },
+    "Everyone in the connection sees this. Leave it empty to go by who's in it." : {
+
+    },
+    "Everyone in this connection will see %@ %@." : {
+
+    },
+    "Everyone will see %@ %@. Recorded as %@." : {
+
+    },
+    "Everyone you're connected with sees this" : {
+
+    },
+    "Expires %@." : {
+
+    },
+    "Export failed" : {
+
+    },
+    "Export moments" : {
+
+    },
+    "Export your data" : {
+
+    },
+    "Fill" : {
+      "comment" : "Photo framing option: the photo fills the square and the edges are cropped."
+    },
+    "Fill crops the edges. Fit keeps the whole photo and pads the sides." : {
+
+    },
+    "Fill the square" : {
+
+    },
+    "Filling the square" : {
+
+    },
+    "Filter" : {
+
+    },
+    "Filtering by %@" : {
+
+    },
+    "Find friends from your contacts" : {
+
+    },
+    "Finding friends is opt-in, and matches on one-way hashes computed on your device. Being findable by other people is a separate switch, off by default." : {
+
+    },
+    "Fit" : {
+      "comment" : "Photo framing option: the whole photo is kept and the sides are padded."
+    },
+    "Flatmates" : {
+
+    },
+    "For anybody who isn't in your contacts — share a code, or enter theirs." : {
+
+    },
+    "Framing" : {
+
+    },
+    "From your contacts" : {
+
+    },
+    "G   Continue with Google" : {
+      "comment" : "Sign-in button. The leading 'G' stands in for the Google logo; keep it."
+    },
+    "Gets it ready, so you can add a note before sending" : {
+
+    },
+    "Goal" : {
+
+    },
+    "Goal met" : {
+
+    },
+    "Goal met · %@" : {
+
+    },
+    "Happened" : {
+
+    },
+    "Hide until tomorrow" : {
+
+    },
+    "Home" : {
+
+    },
+    "How amounts of water are shown, in every connection. Logged amounts are kept in millilitres, so switching changes nothing already logged." : {
+
+    },
+    "How much? Pick a size, or log it without one." : {
+
+    },
+    "How the photo fills the square" : {
+
+    },
+    "How you appear to everyone you're connected with. Without a name, they see %@." : {
+
+    },
+    "Invite" : {
+
+    },
+    "Invite code %@" : {
+
+    },
+    "Invite somebody from your contacts, or share a code with them." : {
+
+    },
+    "Invite someone else" : {
+
+    },
+    "It goes from the shared timeline and stops counting towards the tallies." : {
+
+    },
+    "It goes from the shared timeline and stops counting towards the tallies. This cannot be undone." : {
+
+    },
+    "It happened just now" : {
+
+    },
+    "It hasn't been sent yet, so it is removed from this phone and will not be sent. This cannot be undone." : {
+
+    },
+    "It stops being offered in this connection. Moments already logged keep counting." : {
+
+    },
+    "Last 7 days" : {
+
+    },
+    "Leave and delete my moments" : {
+
+    },
+    "Leave group" : {
+
+    },
+    "Leave it empty to take the note back." : {
+
+    },
+    "Leave this group?" : {
+
+    },
+    "Leave, keep my moments" : {
+
+    },
+    "Let people who have you in their contacts find you" : {
+
+    },
+    "Load full photo" : {
+
+    },
+    "Log ${moment}" : {
+
+    },
+    "Log %@" : {
+
+    },
+    "Log %@. Last one %@" : {
+
+    },
+    "Log Any Moment" : {
+
+    },
+    "Log a ${kind}" : {
+
+    },
+    "Log a Moment" : {
+
+    },
+    "Log this moment at an earlier time, up to 24 hours ago" : {
+
+    },
+    "Logged at %@. It can go back up to 24 hours before that, and shows as Rewound." : {
+
+    },
+    "Logs a moment in a Pear'd connection, including the ones your connection made up." : {
+
+    },
+    "Low Data Mode is on: smaller photos, no background refresh." : {
+
+    },
+    "Low data" : {
+
+    },
+    "Low data is on: smaller photos, no background refresh." : {
+
+    },
+    "M" : {
+      "comment" : "Column caption on the Tallies screen: this month. One letter, over a count."
+    },
+    "Make your own" : {
+
+    },
+    "Me too" : {
+      "comment" : "Notification action: log the same moment again."
+    },
+    "Members" : {
+
+    },
+    "Minimum" : {
+
+    },
+    "Minimum met · %@ to the %@ goal" : {
+
+    },
+    "Moment" : {
+
+    },
+    "Moment breakdown" : {
+
+    },
+    "Moment emoji" : {
+
+    },
+    "Moment emoji, currently %@" : {
+
+    },
+    "Moment name" : {
+
+    },
+    "Moment note" : {
+
+    },
+    "Moments" : {
+
+    },
+    "Moments & tallies, shared with your favourite people." : {
+
+    },
+    "Moments already logged are relabelled too — they are still the same moment underneath." : {
+
+    },
+    "Moments are kept on this device until the server accepts them, so nothing is lost when there's no signal." : {
+
+    },
+    "Moments you and everyone else log will build up here." : {
+
+    },
+    "More" : {
+
+    },
+    "More moments" : {
+
+    },
+    "Most logged: %@" : {
+
+    },
+    "Mute this connection" : {
+
+    },
+    "Muted groups still appear here and in the widget — they just stop making a noise." : {
+
+    },
+    "Muting stops the alerts. Moments still arrive." : {
+
+    },
+    "Name" : {
+
+    },
+    "Name it" : {
+
+    },
+    "Name it — dog walk, gym, tea…" : {
+
+    },
+    "New" : {
+      "comment" : "Small badge on a timeline row or connection that has unseen activity."
+    },
+    "New connection" : {
+
+    },
+    "New since you last looked" : {
+
+    },
+    "New size in %@" : {
+
+    },
+    "No connections yet" : {
+
+    },
+    "No moments for %@ in this connection." : {
+
+    },
+    "No moments logged yet. %@" : {
+
+    },
+    "No moments yet — send a pear!" : {
+
+    },
+    "Nobody in your contacts matches “%@”." : {
+
+    },
+    "Note" : {
+
+    },
+    "Notes, captions, moments" : {
+
+    },
+    "Nothing has changed about what Pear'd sends while you were away — but the policy has, so here it is again." : {
+
+    },
+    "Nothing here yet" : {
+
+    },
+    "Nothing logged in the last week. It starts again whenever you do." : {
+
+    },
+    "Nothing logged this month yet." : {
+
+    },
+    "Nothing logged this week yet." : {
+
+    },
+    "Nothing logged today yet." : {
+
+    },
+    "Nothing matches that" : {
+
+    },
+    "Notifications" : {
+
+    },
+    "OK" : {
+      "comment" : "Dismisses an alert."
+    },
+    "Off now." : {
+
+    },
+    "Offered as chips when logging water. Up to %lld; \"Other\" is always there." : {
+
+    },
+    "On now." : {
+
+    },
+    "Only whoever added a moment can remove it." : {
+
+    },
+    "Only your connections see your moments" : {
+
+    },
+    "Open Settings" : {
+
+    },
+    "Open photo" : {
+
+    },
+    "Open the photo it replies to" : {
+
+    },
+    "Opens peard.kroper.uk in your browser" : {
+
+    },
+    "Opens the emoji keyboard" : {
+
+    },
+    "Opens the photo full screen" : {
+
+    },
+    "Opens the tallies" : {
+
+    },
+    "Or tap the emoji above for the full keyboard." : {
+
+    },
+    "Other" : {
+
+    },
+    "Pairing code" : {
+
+    },
+    "Password" : {
+
+    },
+    "Paste this into a bug report and we'll know exactly which build and server you saw it on." : {
+
+    },
+    "Pear up on Pear'd 🍐" : {
+
+    },
+    "Pear up with somebody else, or start a group" : {
+
+    },
+    "Pear up 🍐" : {
+      "comment" : "Heading when joining or starting a first connection. 'Pear' is a pun on 'pair'."
+    },
+    "Pear'd" : {
+
+    },
+    "Pear'd compares one-way hashes of contact info, never raw emails or phone numbers, and only for people who've turned this on. You signed in with Apple and hid your email, so the address we have for you is a private relay one that nobody else has — matching on it can never find you. Give an address people actually have, and we'll match on that instead. It's hashed like everything else and never shown to anyone." : {
+
+    },
+    "Pear'd compares one-way hashes of contact info, never raw emails or phone numbers, and only for people who've turned this on. Your email is always included; adding a phone number lets people who only have that find you too." : {
+
+    },
+    "Pear'd hasn't sent anything anywhere yet, and won't until you agree to this." : {
+
+    },
+    "Pear'd needs a server to share anything, so there's no way to use it without agreeing." : {
+
+    },
+    "Pear'd needs permission to add to Photos." : {
+
+    },
+    "Pear'd 🍐" : {
+      "comment" : "App name with an emoji. Keep the pear."
+    },
+    "Period" : {
+
+    },
+    "Phone number (optional)" : {
+
+    },
+    "Photo" : {
+
+    },
+    "Photo from %@" : {
+
+    },
+    "Photos" : {
+
+    },
+    "Pick a recommended moment, or invent one" : {
+
+    },
+    "Pin to front" : {
+
+    },
+    "Preparing the photo" : {
+
+    },
+    "Privacy Policy" : {
+
+    },
+    "Privacy policy" : {
+
+    },
+    "Puts the photo back the way it was taken" : {
+
+    },
+    "React with %@" : {
+
+    },
+    "Reactions: %@" : {
+
+    },
+    "Read the full privacy policy" : {
+
+    },
+    "Reading your contacts…" : {
+
+    },
+    "Recommended" : {
+
+    },
+    "Refill sizes" : {
+
+    },
+    "Remove" : {
+
+    },
+    "Remove %@" : {
+
+    },
+    "Remove %@ %@?" : {
+
+    },
+    "Remove %@?" : {
+
+    },
+    "Remove for everyone" : {
+
+    },
+    "Remove them?" : {
+
+    },
+    "Reply" : {
+      "comment" : "Notification action: reply to a moment with a note."
+    },
+    "Reply saved — will send." : {
+
+    },
+    "Reply sent." : {
+
+    },
+    "Reply with a photo" : {
+
+    },
+    "Reply with photo" : {
+
+    },
+    "Reset" : {
+
+    },
+    "Reset water settings" : {
+
+    },
+    "Retry" : {
+
+    },
+    "Retrying — attempt %lld" : {
+
+    },
+    "Rewind" : {
+
+    },
+    "Rewound" : {
+
+    },
+    "Rewound to %@" : {
+
+    },
+    "Rewound, logged later at %@" : {
+
+    },
+    "Rotate" : {
+
+    },
+    "Save" : {
+
+    },
+    "Save name" : {
+
+    },
+    "Save phone number" : {
+
+    },
+    "Save to Photos" : {
+
+    },
+    "Save your name" : {
+
+    },
+    "Saved to Photos." : {
+
+    },
+    "Say something about %@ photo…" : {
+
+    },
+    "Say something back" : {
+
+    },
+    "Search your contacts" : {
+
+    },
+    "Send" : {
+      "comment" : "Button that sends the moment or comment being composed. Also the notification reply button."
+    },
+    "Send it on its own, or pick what it's of — a moment with a photo still counts towards your tallies." : {
+
+    },
+    "Send it on its own, or pick what it's of. Either way the caption goes with it — Skip only skips the question." : {
+
+    },
+    "Sending %lld moments…" : {
+
+    },
+    "Sending 1 moment…" : {
+
+    },
+    "Sending…" : {
+
+    },
+    "Sends a comment on this photo to everyone here" : {
+
+    },
+    "Sends as %@ %@, with the photo attached. It counts towards your tallies." : {
+
+    },
+    "Sends in %lld seconds unless you add a note" : {
+
+    },
+    "Sends it now" : {
+
+    },
+    "Sends to everyone here as a reply to %@ photo." : {
+
+    },
+    "Server" : {
+
+    },
+    "Server build" : {
+
+    },
+    "Set the Google iOS client id in the build configuration first" : {
+
+    },
+    "Set to %@" : {
+
+    },
+    "Settings" : {
+
+    },
+    "Settings has a full export of your own data, and deleting your account from there erases it — no email to us, no waiting." : {
+
+    },
+    "Share a code with your partner, or enter theirs." : {
+
+    },
+    "Share a photo" : {
+
+    },
+    "Share a photo moment" : {
+
+    },
+    "Share code" : {
+
+    },
+    "Share this photo" : {
+
+    },
+    "Show everything" : {
+
+    },
+    "Show the whole photo" : {
+
+    },
+    "Sign in" : {
+
+    },
+    "Sign in with Apple" : {
+
+    },
+    "Sign out" : {
+
+    },
+    "Sign out?" : {
+
+    },
+    "Signed in as %@. Deleting your account erases everything above immediately." : {
+
+    },
+    "Signing in sends your email" : {
+
+    },
+    "Skip" : {
+
+    },
+    "Something went wrong, so it's still there. Try again." : {
+
+    },
+    "Start a second connection, or join a friend's group with their code." : {
+
+    },
+    "Starts the photo-drop Live Activity on this phone without a push. Lock the screen to see it." : {
+
+    },
+    "Streak broken — best was %lld days" : {
+
+    },
+    "Swipe a member to remove them. Only you can, because you started this connection." : {
+
+    },
+    "T" : {
+      "comment" : "Column caption on the Tallies screen: today. One letter, over a count."
+    },
+    "Take back your %@" : {
+
+    },
+    "Takes a photo to send back" : {
+
+    },
+    "Tallies" : {
+
+    },
+    "Tally period" : {
+
+    },
+    "Tap one on the home screen to start." : {
+
+    },
+    "Tap one to rename it or change its emoji — everywhere, including moments already logged. Whoever added one can remove it, which stops it being offered; past tallies keep counting." : {
+
+    },
+    "That doesn't look like an email address." : {
+
+    },
+    "That email and password don't match an account. Check them, or create an account instead." : {
+
+    },
+    "That password is too short — use at least 8 characters." : {
+
+    },
+    "That photo couldn't be read. Try another." : {
+
+    },
+    "That's all %lld sizes. Remove one to add another." : {
+
+    },
+    "The group carries on without you. If you're the last one out, it's deleted." : {
+
+    },
+    "The moment is unchanged. Check your connection and try again." : {
+
+    },
+    "The photo couldn't be prepared for upload." : {
+
+    },
+    "The photo couldn't be saved to send." : {
+
+    },
+    "The photo you just took" : {
+
+    },
+    "Their moments stay in the shared timeline." : {
+
+    },
+    "There's already an account with that email. Sign in instead." : {
+
+    },
+    "There's nothing in your contacts with an email address or phone number to invite." : {
+
+    },
+    "They see your initials until you add one" : {
+
+    },
+    "This deletes the shared timeline for both of you." : {
+
+    },
+    "This device can't change the app icon." : {
+
+    },
+    "This erases your profile and everything you've shared, right now and for good. This can't be undone." : {
+
+    },
+    "This erases your profile, your moments and every connection you're in, right now and for good. Export your data first if you want a copy. This can't be undone." : {
+
+    },
+    "This photo couldn't be loaded." : {
+
+    },
+    "This server can't delete accounts in-app yet. Email %@ and we'll do it for you." : {
+
+    },
+    "This server can't edit moments yet. Deleting and logging it again works." : {
+
+    },
+    "This server counts moments the old way, so it can't break them down by kind." : {
+
+    },
+    "This server counts on the device, so totals past 500 moments may be short." : {
+
+    },
+    "Those details weren't accepted. Check the email, and use a password of at least 8 characters." : {
+
+    },
+    "Timeline" : {
+
+    },
+    "Today" : {
+
+    },
+    "Too many attempts. Wait a minute and try again." : {
+
+    },
+    "Totals" : {
+
+    },
+    "Track water" : {
+
+    },
+    "Try again" : {
+
+    },
+    "Turns the photo a quarter turn clockwise" : {
+
+    },
+    "Un-pear" : {
+      "comment" : "Button that leaves a two-person connection."
+    },
+    "Un-pear?" : {
+      "comment" : "Title of the confirmation for leaving a two-person connection."
+    },
+    "Undated" : {
+
+    },
+    "Unpin" : {
+
+    },
+    "Up to 24 hours back. It will show as Rewound, so everyone knows it was logged later." : {
+
+    },
+    "Upload failed" : {
+
+    },
+    "Use %@" : {
+
+    },
+    "Use an invite code" : {
+
+    },
+    "Used only to match your contacts, never shown to anybody" : {
+
+    },
+    "Using %@'s photo" : {
+
+    },
+    "W" : {
+      "comment" : "Column caption on the Tallies screen: this week. One letter, over a count."
+    },
+    "Waiting for signal" : {
+
+    },
+    "Waiting on this phone until the server accepts it." : {
+
+    },
+    "Waiting to send" : {
+
+    },
+    "Water" : {
+
+    },
+    "Water is hidden for %@. Moments already logged keep their amounts." : {
+
+    },
+    "Water moments offer a size, and Tallies shows today against your targets." : {
+
+    },
+    "Water streak ended — best was %lld days hitting your goal" : {
+
+    },
+    "Water units" : {
+
+    },
+    "We've updated our privacy policy" : {
+
+    },
+    "What" : {
+
+    },
+    "What is it?" : {
+
+    },
+    "What it was" : {
+
+    },
+    "When" : {
+
+    },
+    "When it happened" : {
+
+    },
+    "Who" : {
+
+    },
+    "Whole photo, padded" : {
+
+    },
+    "Yesterday" : {
+
+    },
+    "You" : {
+      "comment" : "Label for the signed-in person in a tally or filter."
+    },
+    "You can export or delete it all" : {
+
+    },
+    "You'll both lose the shared timeline. Your own moments in it stay unless you delete them." : {
+
+    },
+    "You'll lose this group's shared timeline. Your own moments in it stay unless you delete them." : {
+
+    },
+    "You're offline. " : {
+
+    },
+    "Your connections" : {
+
+    },
+    "Your connections couldn't be loaded." : {
+
+    },
+    "Your contacts are hashed on this device before anything is sent, and never stored on the server." : {
+
+    },
+    "Your display name" : {
+
+    },
+    "Your goal %@" : {
+
+    },
+    "Your invite code is %@" : {
+
+    },
+    "Your name, photo and the moments you log are visible to people you've paired or grouped with, and nobody else. The server enforces that, not just the app." : {
+
+    },
+    "Your phone number" : {
+
+    },
+    "Your targets are shared with the people in this connection. The minimum cannot be more than the goal." : {
+
+    },
+    "and %lld more moments" : {
+
+    },
+    "and 1 more moment" : {
+
+    },
+    "best %lld" : {
+
+    },
+    "edited" : {
+
+    },
+    "moment" : {
+      "comment" : "Singular noun shown beside a count of moments."
+    },
+    "moments" : {
+      "comment" : "Plural noun shown beside a count of moments."
+    },
+    "muted" : {
+
+    },
+    "new" : {
+
+    },
+    "none %@" : {
+
+    },
+    "older than this app" : {
+
+    },
+    "owner" : {
+
+    },
+    "photo" : {
+
+    },
+    "replied" : {
+
+    },
+    "replied with a photo" : {
+
+    },
+    "replying to %@'s photo" : {
+
+    },
+    "replying to a photo" : {
+
+    },
+    "replying to your photo" : {
+
+    },
+    "sending" : {
+
+    },
+    "shared a moment" : {
+
+    },
+    "showing" : {
+
+    },
+    "that filter" : {
+
+    },
+    "unavailable" : {
+
+    },
+    "waiting" : {
+
+    },
+    "waiting to send" : {
+
+    },
+    "you" : {
+      "comment" : "Lower-case 'you' in a spoken list of who reacted, e.g. 'Heart from Sam and you'."
+    },
+    "“%@”" : {
+
+    },
+    "🍐" : {
+
+    },
+    "💡 Dev: AAAAAA seeds a pair, BBBBBB seeds a group" : {
+
+    },
+    "💧" : {
+
+    },
+    "📷" : {
+
+    },
+    "📷 Has a photo" : {
+
+    },
+    "📸 saved — will send" : {
+
+    },
+    "📸 sending…" : {
+
+    },
+    "🔥" : {
+
+    },
+    "🔧 Start a test photo drop" : {
+
+    }
+  },
+  "version" : "1.1"
+}

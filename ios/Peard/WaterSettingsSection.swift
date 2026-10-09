@@ -46,8 +46,8 @@ struct WaterSettingsSection: View {
 
     private var footer: String {
         config.isEnabled
-            ? "Water moments offer a size, and Tallies shows today against your targets."
-            : "Water is hidden for \(model.connectionTitle). Moments already logged keep their amounts."
+            ? String(localized: "Water moments offer a size, and Tallies shows today against your targets.")
+            : String(localized: "Water is hidden for \(model.connectionTitle). Moments already logged keep their amounts.")
     }
 
     // MARK: Targets
@@ -55,15 +55,15 @@ struct WaterSettingsSection: View {
     private var targetsSection: some View {
         Section {
             targetStepper(
-                "Minimum",
-                accessibility: "Daily minimum",
+                String(localized: "Minimum"),
+                accessibility: String(localized: "Daily minimum"),
                 ml: config.minimum,
                 range: WaterConfig.step...config.recommended
             ) { ml in model.updateWaterConfig { $0.setMinimum(ml) } }
 
             targetStepper(
-                "Goal",
-                accessibility: "Daily goal",
+                String(localized: "Goal"),
+                accessibility: String(localized: "Daily goal"),
                 ml: config.recommended,
                 range: config.minimum...WaterAmount.maximum
             ) { ml in model.updateWaterConfig { $0.setRecommended(ml) } }
@@ -174,8 +174,8 @@ struct WaterSettingsSection: View {
 
     private var sizesFooter: String {
         config.canAddPreset
-            ? "Offered as chips when logging water. Up to \(WaterConfig.maximumPresets); \"Other\" is always there."
-            : "That's all \(WaterConfig.maximumPresets) sizes. Remove one to add another."
+            ? String(localized: "Offered as chips when logging water. Up to \(WaterConfig.maximumPresets); \"Other\" is always there.")
+            : String(localized: "That's all \(WaterConfig.maximumPresets) sizes. Remove one to add another.")
     }
 
     private var canAdd: Bool {

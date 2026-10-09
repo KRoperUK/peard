@@ -134,7 +134,7 @@ struct MomentGrid: View {
                 Button {
                     onTogglePin(moment)
                 } label: {
-                    Label(pinned ? "Unpin" : "Pin to front", systemImage: pinned ? "pin.slash" : "pin")
+                    Label(pinned ? String(localized: "Unpin") : String(localized: "Pin to front"), systemImage: pinned ? "pin.slash" : "pin")
                 }
             }
         }
@@ -142,7 +142,7 @@ struct MomentGrid: View {
         // activated is worse than no action at all.
         .accessibilityActions {
             if let onTogglePin {
-                Button(isPinned?(moment) == true ? "Unpin" : "Pin to front") {
+                Button(isPinned?(moment) == true ? String(localized: "Unpin") : String(localized: "Pin to front")) {
                     onTogglePin(moment)
                 }
             }
@@ -151,8 +151,8 @@ struct MomentGrid: View {
         // read aloud on its own.
         .accessibilityLabel(
             ElapsedTime.spokenAge(for: lastAt[moment.kind.rawValue])
-                .map { "Log \(moment.label). Last one \($0)" }
-                ?? "Log \(moment.label)"
+                .map { String(localized: "Log \(moment.label). Last one \($0)") }
+                ?? String(localized: "Log \(moment.label)")
         )
         // Requirement 12.10.
         .disabled(isBusy)
@@ -170,13 +170,13 @@ struct MomentGrid: View {
     static func hint(purpose: Purpose, isPending: Bool, sendIsHeld: Bool) -> String {
         switch purpose {
         case .pick:
-            return isPending ? "Clears the choice" : "Chooses this moment for the photo"
+            return isPending ? String(localized: "Clears the choice") : String(localized: "Chooses this moment for the photo")
         case .send:
             // Tapping the moment already counting down sends it at once.
-            if isPending { return "Sends it now" }
+            if isPending { return String(localized: "Sends it now") }
             return sendIsHeld
-                ? "Gets it ready, so you can add a note before sending"
-                : "Sends in \(Int(QuickSend.delay)) seconds unless you add a note"
+                ? String(localized: "Gets it ready, so you can add a note before sending")
+                : String(localized: "Sends in \(Int(QuickSend.delay)) seconds unless you add a note")
         }
     }
 

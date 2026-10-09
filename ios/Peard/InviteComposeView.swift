@@ -22,7 +22,7 @@ struct InviteComposeView: View {
             if target.isPhone, MFMessageComposeViewController.canSendText() {
                 MessageComposeView(recipient: target.recipient, body: target.message, onFinish: onFinish)
             } else if !target.isPhone, MFMailComposeViewController.canSendMail() {
-                MailComposeView(recipient: target.recipient, subject: "Pear up on Pear'd 🍐", body: target.message, onFinish: onFinish)
+                MailComposeView(recipient: target.recipient, subject: String(localized: "Pear up on Pear'd 🍐"), body: target.message, onFinish: onFinish)
             } else {
                 ActivityView(activityItems: [target.message])
             }
