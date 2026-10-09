@@ -465,6 +465,10 @@ func feedHandler(app core.App) func(e *core.RequestEvent) error {
 			// What the widget's own buttons may log, resolved here so the extension
 			// does not need the connection's catalogue.
 			"moments": availableMoments(app, chosenPair),
+			// Today's water against the connection's goal, for the watch's water
+			// complication (#364). Nil when it cannot be read; the complication
+			// then falls back to the count.
+			"water": waterSummary(app, chosenPair, today),
 		}
 
 		// Who the moment is "from": in a 1:1 that is the other member, in a
@@ -707,6 +711,55 @@ func todayTallies(app core.App, pairID, userID, today string) []map[string]any {
 	}
 	return out
 }
+
+// waterSummary is the connection's water today against its goal, for a
+// glanceable water complication on the watch (#364).
+//
+// `today` is the connection's combined millilitres (everyone's, like the water
+// streak — the watch complication shows the shared progress, not one person's),
+// and `goal` is the sum of each member's recommended target, falling back to the
+// built-in amount for a member who stored none and to the built-in alone when
+// nobody has. Nil goal means water is not being tracked meaningfully; the
+// complication then shows the count rather than a ring.
+func waterSummary(app core.App, pairID, today string) map[string]any {
+	posts, err := app.FindRecordsByFilter("posts",
+		"pair = {:pair} && type = 'event' && event_kind = 'water' && happened_at >= {:today}",
+		"", 500, 0, dbx.Params{"pair": pairID, "today": today})
+	if err != nil {
+		return nil
+	}
+	ml := 0
+	for _, post := range posts {
+		ml += post.GetInt("amount")
+	}
+
+	members, merr := app.FindRecordsByFilter("pair_members", "pair = {:pair}", "", maxMembers, 0,
+		dbx.Params{"pair": pairID})
+	if merr != nil {
+		return nil
+	}
+	goal := 0
+	stored := false
+	for _, m := range members {
+		if rec := m.GetInt("water_recommended"); rec > 0 {
+			goal += rec
+			stored = true
+		} else {
+			goal += widgetDefaultWaterTarget
+		}
+	}
+	// Nobody stored a target: the goal is one built-in amount, matching the
+	// recap's streakTarget, so the complication's ring means the same thing.
+	if !stored {
+		goal = widgetDefaultWaterTarget
+	}
+
+	return map[string]any{"today_ml": ml, "goal_ml": goal}
+}
+
+// widgetDefaultWaterTarget mirrors recap.defaultWaterTarget and the app's
+// WaterAmount.defaultRecommended: the goal for a member who stored none.
+const widgetDefaultWaterTarget = 2000
 
 func todayPosts(app core.App, pairID, userID, kind, today string) []*core.Record {
 	recs, _ := app.FindRecordsByFilter("posts",
