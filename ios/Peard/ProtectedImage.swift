@@ -32,6 +32,10 @@ struct ProtectedImage<Placeholder: View, Failure: View>: View {
 
     @State private var image: UIImage?
     @State private var unavailable = false
+    /// Bumped by a tap on the failed state to re-run `load()` (#365). It is part
+    /// of the `.task` id, so changing it re-runs the fetch the same way a new
+    /// `cacheKey` does — the one explicit way back from a latched 404.
+    @State private var retryToken = 0
 
     private var cacheKey: String { serverURL.absoluteString + path }
 
@@ -40,13 +44,41 @@ struct ProtectedImage<Placeholder: View, Failure: View>: View {
             if let image {
                 Image(uiImage: image).resizable()
             } else if unavailable {
+                // The failed state is tappable: a genuine not-found latches, but
+                // the file may have arrived since (a sync that had not finished,
+                // a token that has since minted), so one tap re-attempts the
+                // load rather than leaving a dead placeholder (#365).
                 failure()
+                    .overlay(alignment: .bottomTrailing) {
+                        Image(systemName: "arrow.clockwise.circle.fill")
+                            .font(.caption)
+                            .foregroundStyle(PearColor.accent)
+                            .padding(2)
+                            .accessibilityHidden(true)
+                    }
+                    .contentShape(Rectangle())
+                    .onTapGesture { retry() }
+                    .accessibilityAddTraits(.isButton)
+                    .accessibilityLabel("Photo failed to load")
+                    .accessibilityHint("Double tap to try again")
             } else {
                 placeholder()
             }
         }
-        .task(id: cacheKey) { await load() }
+        .task(id: taskID) { await load() }
     }
+
+    /// Re-runs the fetch after a failure. `cacheKey` has not changed, so the
+    /// retry token is what makes `.task` fire again; `unavailable` is cleared so
+    /// the placeholder shows while it tries, not the failed state under a spinner.
+    private func retry() {
+        unavailable = false
+        retryToken += 1
+    }
+
+    /// What `.task` keys on: the cache key, plus the retry token so a tap
+    /// re-runs the load even though the path is unchanged.
+    private var taskID: String { cacheKey + "#\(retryToken)" }
 
     private func load() async {
         if let cached = PhotoThumbnailCache.shared.image(for: cacheKey) {
