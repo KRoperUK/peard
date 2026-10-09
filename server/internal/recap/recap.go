@@ -154,6 +154,7 @@ func Register(app core.App) {
 	app.OnServe().BindFunc(func(se *core.ServeEvent) error {
 		se.Router.GET("/api/peard/recap", handler(app)).Bind(apis.RequireAuth())
 		registerTarget(se)
+		registerMetricTarget(se)
 		return se.Next()
 	})
 }
