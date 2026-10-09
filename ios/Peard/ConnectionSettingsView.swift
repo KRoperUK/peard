@@ -57,6 +57,7 @@ struct ConnectionSettingsView: View {
                 appIconSection
                 MomentsExportSection(model: model)
                 accountSection
+                DevicesWidgetsSection(api: app.api, store: app.sharedStore)
                 AboutSection(api: app.api, serverURL: model.serverURL)
                 leaveSection
             }

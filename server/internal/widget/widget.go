@@ -5,6 +5,8 @@
 //
 //	GET  /api/peard/widget/feed?token=...[&tz=Europe/London]  (widget-token auth, no PB session)
 //	POST /api/peard/widget/token           (requires PB auth; issues a token)
+//	GET  /api/peard/widget/tokens          (requires PB auth; lists the caller's live tokens, never the secrets)
+//	POST /api/peard/widget/revoke          (requires PB auth; by token secret or by record id)
 //
 // The widget token is deliberately NOT the user's PocketBase auth token:
 // it lives in the App Group container readable by the extension, and can be
@@ -55,6 +57,7 @@ func Register(app core.App) {
 		se.Router.GET("/api/peard/widget/connections", connectionsHandler(app))
 		se.Router.POST("/api/peard/widget/moment", momentHandler(app))
 		se.Router.POST("/api/peard/widget/token", issueTokenHandler(app)).Bind(apis.RequireAuth())
+		se.Router.GET("/api/peard/widget/tokens", listTokensHandler(app)).Bind(apis.RequireAuth())
 		se.Router.POST("/api/peard/widget/revoke", revokeTokenHandler(app)).Bind(apis.RequireAuth())
 		return se.Next()
 	})
@@ -318,30 +321,84 @@ func issueTokenHandler(app core.App) func(e *core.RequestEvent) error {
 	}
 }
 
+// listTokensHandler lists the caller's own live widget tokens for the "Signed-in
+// devices & widgets" screen (#367).
+//
+// It returns the record id, label and dates and NEVER the `token` field: the
+// secret is a bearer credential, and a list screen has no business holding one.
+// The id is what the screen revokes by, and what the client matches against the
+// id it was handed at mint time to mark the device it is running on.
+//
+// Expired rows are left out as well as revoked ones — they no longer resolve, so
+// showing them would offer a "revoke" for something already dead.
+func listTokensHandler(app core.App) func(e *core.RequestEvent) error {
+	return func(e *core.RequestEvent) error {
+		rows, err := app.FindRecordsByFilter("widget_tokens",
+			"user = {:user} && revoked = false", "-created", maxWidgetTokensPerUser*3, 0,
+			dbx.Params{"user": e.Auth.Id})
+		if err != nil {
+			return e.InternalServerError("could not read your devices", err)
+		}
+
+		now := time.Now()
+		out := make([]map[string]any, 0, len(rows))
+		for _, r := range rows {
+			exp := r.GetDateTime("expires")
+			if !exp.IsZero() && exp.Time().Before(now) {
+				continue
+			}
+			// A row with no expiry (minted before #340) is null rather than the
+			// zero time's empty string, which the client's date decoder rejects.
+			var expires any
+			if !exp.IsZero() {
+				expires = exp
+			}
+			out = append(out, map[string]any{
+				"id":      r.Id,
+				"label":   r.GetString("label"),
+				"created": r.GetDateTime("created"),
+				"expires": expires,
+			})
+		}
+		return e.JSON(http.StatusOK, map[string]any{"tokens": out})
+	}
+}
+
 // revokeTokenHandler drops a widget token server-side so sign-out and the
 // widget's clear path actually invalidate the credential rather than only
 // forgetting the local copy (#340).
 //
-// Named by its secret rather than its id: the client holds the token string, not
-// the record id, and resolving by token keeps the route from being usable to
-// delete another user's row. The ownership check is belt-and-braces on top of
-// that — the token is a 256-bit secret — and makes a mismatched token a clean
-// no-op rather than touching anything.
+// Named by its secret (`token`) or its record id (`id`). Sign-out holds the
+// secret; the devices screen (#367) holds only ids, because the list never
+// carries secrets. Either way the ownership check is what keeps the route from
+// deleting another user's row: a token is a 256-bit secret, an id is guessable
+// in principle, so the id path leans on the check entirely — a mismatched or
+// unknown id is the same clean, non-disclosing no-op as a mismatched token.
 func revokeTokenHandler(app core.App) func(e *core.RequestEvent) error {
 	return func(e *core.RequestEvent) error {
 		var body struct {
 			Token string `json:"token" form:"token"`
+			ID    string `json:"id" form:"id"`
 		}
 		if err := e.BindBody(&body); err != nil {
 			return e.BadRequestError("invalid request body", err)
 		}
 		token := strings.TrimSpace(body.Token)
-		if token == "" {
-			return e.BadRequestError("token is required", nil)
+		id := strings.TrimSpace(body.ID)
+		if token == "" && id == "" {
+			return e.BadRequestError("token or id is required", nil)
 		}
 
-		rec, err := app.FindFirstRecordByFilter("widget_tokens",
-			"token = {:token}", dbx.Params{"token": token})
+		var (
+			rec *core.Record
+			err error
+		)
+		if token != "" {
+			rec, err = app.FindFirstRecordByFilter("widget_tokens",
+				"token = {:token}", dbx.Params{"token": token})
+		} else {
+			rec, err = app.FindRecordById("widget_tokens", id)
+		}
 		if err != nil || rec == nil {
 			// Already gone (or never ours): revoke is idempotent, so this is a
 			// success from the caller's point of view.

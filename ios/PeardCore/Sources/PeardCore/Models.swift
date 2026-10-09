@@ -845,6 +845,53 @@ public struct WidgetTokenIssue: Codable, Hashable, Sendable {
     }
 }
 
+/// One row of `GET /api/peard/widget/tokens`: a signed-in device or widget, as
+/// the "Signed-in devices & widgets" screen lists it (#367).
+///
+/// There is deliberately no secret here — the server never sends one. The id is
+/// what a row is revoked by.
+public struct WidgetTokenInfo: Codable, Hashable, Sendable, Identifiable {
+    public let id: String
+    public let label: String
+    public let created: Date?
+    public let expires: Date?
+    /// Not on the wire. The list route cannot know which row is the phone asking,
+    /// so the client marks it by the id it was handed when it minted its own
+    /// token; see `PeardAPI.widgetTokens(currentTokenID:)`.
+    public var isCurrentDevice: Bool
+
+    enum CodingKeys: String, CodingKey {
+        case id, label, created, expires
+    }
+
+    public init(
+        id: String,
+        label: String = "",
+        created: Date? = nil,
+        expires: Date? = nil,
+        isCurrentDevice: Bool = false
+    ) {
+        self.id = id
+        self.label = label
+        self.created = created
+        self.expires = expires
+        self.isCurrentDevice = isCurrentDevice
+    }
+
+    public init(from decoder: Decoder) throws {
+        let container = try decoder.container(keyedBy: CodingKeys.self)
+        id = try container.decode(String.self, forKey: .id)
+        label = try container.decodeIfPresent(String.self, forKey: .label) ?? ""
+        created = try container.decodeIfPresent(Date.self, forKey: .created)
+        expires = try container.decodeIfPresent(Date.self, forKey: .expires)
+        isCurrentDevice = false
+    }
+}
+
+struct WidgetTokenList: Codable, Hashable, Sendable {
+    let tokens: [WidgetTokenInfo]
+}
+
 /// Response of `GET /api/peard/widget/feed`.
 public struct WidgetFeed: Codable, Hashable, Sendable {
     public struct Partner: Codable, Hashable, Sendable {
