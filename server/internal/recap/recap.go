@@ -100,6 +100,30 @@ FROM posts
 WHERE pair = {:pair} AND type = 'event' AND happened_at >= {:since}
 ORDER BY happened_at DESC`
 
+// personalWaterDayQuery is waterDayQuery for one person: the distinct local days
+// that member's *own* water reached their target, newest first (#353).
+//
+// Where waterDayQuery sums the whole connection against the pair's combined
+// goal, this sums one author against their own. The per-person streak is the
+// one an "at-risk" reminder can be about — a nudge is to the person who is
+// behind, not to the connection.
+const personalWaterDayQuery = `
+SELECT substr(datetime(replace(happened_at, 'Z', ''), {:shift}), 1, 10) AS day
+FROM posts
+WHERE pair = {:pair} AND author = {:user} AND type = 'event' AND happened_at >= {:since}
+GROUP BY day
+HAVING SUM(COALESCE(amount, 0)) >= {:target}
+ORDER BY day DESC`
+
+// rawPersonalWaterDayQuery is rawWaterDayQuery for one person: every event's
+// timestamp and amount by that author, so the per-local-day sum (and >= target
+// test) buckets with IANA-correct day boundaries (#344, #353).
+const rawPersonalWaterDayQuery = `
+SELECT happened_at AS day, COALESCE(amount, 0) AS amount
+FROM posts
+WHERE pair = {:pair} AND author = {:user} AND type = 'event' AND happened_at >= {:since}
+ORDER BY happened_at DESC`
+
 // defaultWaterTarget is the built-in recommended daily amount in millilitres,
 // used for a member who has stored no target when the caller sends none either.
 // Mirrors the app's `WaterAmount.defaultRecommended`.
@@ -224,6 +248,8 @@ func handler(app core.App) func(e *core.RequestEvent) error {
 		current, best := streaks(app, pairID, shift, loc)
 		targets := memberTargets(app, pairID)
 		waterCurrent, waterBest := waterStreaks(app, pairID, shift, loc, streakTarget(targets, waterTarget(e)))
+		mineCurrent, mineBest := personalWaterStreaks(app, pairID, e.Auth.Id, shift, loc,
+			personalTarget(targets, e.Auth.Id, waterTarget(e)))
 
 		res := map[string]any{
 			"pair":   pairID,
@@ -235,6 +261,9 @@ func handler(app core.App) func(e *core.RequestEvent) error {
 			"streak": map[string]any{"current": current, "best": best},
 			// Consecutive days the connection's water reached the target.
 			"water_streak": map[string]any{"current": waterCurrent, "best": waterBest},
+			// Consecutive days the *caller's own* water reached their own target
+			// (#353): the streak an at-risk reminder is about.
+			"water_streak_mine": map[string]any{"current": mineCurrent, "best": mineBest},
 			// Every member's own daily targets (#335), the caller's included, so
 			// both people see each other's goals. Zero means none stored.
 			"water_targets": targets,
@@ -317,6 +346,59 @@ func ianaDays(app core.App, pairID, since string, loc *time.Location) []time.Tim
 func ianaWaterDays(app core.App, pairID, since string, loc *time.Location, target int) []time.Time {
 	var rows []waterRawRow
 	if err := app.DB().NewQuery(rawWaterDayQuery).Bind(dbx.Params{"pair": pairID, "since": since}).All(&rows); err != nil {
+		return nil
+	}
+	totals := map[string]int{}
+	keys := map[string]time.Time{}
+	for _, r := range rows {
+		day, ok := localDay(r.Day, loc)
+		if !ok {
+			continue
+		}
+		key := day.Format("2006-01-02")
+		totals[key] += r.Amount
+		keys[key] = day
+	}
+	days := make([]time.Time, 0, len(totals))
+	for key, total := range totals {
+		if total >= target {
+			days = append(days, keys[key])
+		}
+	}
+	sort.Slice(days, func(a, b int) bool { return days[a].After(days[b]) })
+	return days
+}
+
+// personalWaterStreaks is waterStreaks for one person: how many days in a row
+// that member's *own* water reached `target`, and the longest such run (#353).
+//
+// The same rule and liveness as the connection streak — the run reaches back
+// from the most recent day the member met their goal, and is live only if that
+// day is today or yesterday. A day not yet at the target does not break it, so
+// a nudge at nine in the evening is about a streak still savable, not a lost one.
+//
+// No target is no streak, as for the connection: a target of zero would make
+// every day vacuously qualify.
+func personalWaterStreaks(app core.App, pairID, userID, shift string, loc *time.Location, target int) (current, best int) {
+	if target <= 0 {
+		return 0, 0
+	}
+	since := time.Now().AddDate(0, 0, -streakHorizonDays).UTC().Format(pocketBaseLayout)
+	if loc != nil && loc != time.UTC {
+		days := ianaPersonalWaterDays(app, pairID, userID, since, loc, target)
+		return runsFromDays(days, nowInZone(loc))
+	}
+	return streaksFrom(app, personalWaterDayQuery,
+		dbx.Params{"pair": pairID, "user": userID, "shift": shift, "target": target}, shift)
+}
+
+// ianaPersonalWaterDays is ianaWaterDays for one person: the distinct local
+// days that member's own water met the target, bucketed by the IANA zone (#344,
+// #353).
+func ianaPersonalWaterDays(app core.App, pairID, userID, since string, loc *time.Location, target int) []time.Time {
+	var rows []waterRawRow
+	if err := app.DB().NewQuery(rawPersonalWaterDayQuery).
+		Bind(dbx.Params{"pair": pairID, "user": userID, "since": since}).All(&rows); err != nil {
 		return nil
 	}
 	totals := map[string]int{}
