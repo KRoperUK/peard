@@ -295,6 +295,28 @@ func streaks(app core.App, pairID, shift string, loc *time.Location) (current, b
 	return streaksFrom(app, dayQuery, dbx.Params{"pair": pairID, "shift": shift}, shift)
 }
 
+// ConnectionStreak is the connection's current and best "any moment" day
+// streak, in the given zone — the same figure the recap shows and the
+// "streak at risk" reminder (#361) is about. Exported so the widget feed can
+// carry it to the watch's streak complication (#378) without the streak SQL
+// drifting into a second copy. The zone is the caller's; the shift it derives
+// from it is only used on the UTC fast path, so a named zone takes the
+// zone-aware day bucketing like the recap does.
+func ConnectionStreak(app core.App, pairID string, loc *time.Location) (current, best int) {
+	if loc == nil {
+		loc = time.UTC
+	}
+	_, offset := time.Now().In(loc).Zone()
+	minutes := offset / 60
+	var shift string
+	if minutes >= 0 {
+		shift = "+" + strconv.Itoa(minutes) + " minutes"
+	} else {
+		shift = strconv.Itoa(minutes) + " minutes"
+	}
+	return streaks(app, pairID, shift, loc)
+}
+
 // waterStreaks is streaks for water: how many days in a row the connection's
 // combined total reached `target` millilitres, and the longest such run.
 //

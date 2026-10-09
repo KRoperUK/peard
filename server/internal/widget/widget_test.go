@@ -246,6 +246,78 @@ func TestFeedWaterGoalFallsBackWhenNobodyStoredOne(t *testing.T) {
 	}
 }
 
+// feedStreak fetches the feed and returns its streak block, so the watch's
+// streak complication (#378) can read the connection's day streak without the
+// recap route.
+func (w *feedWorld) feedStreak(t *testing.T) (current, best int, present bool) {
+	t.Helper()
+	req := httptest.NewRequest("GET", "/api/peard/widget/feed?token="+w.token, nil)
+	rec := httptest.NewRecorder()
+	w.mux.ServeHTTP(rec, req)
+	if rec.Code != 200 {
+		t.Fatalf("feed: got %d, body %s", rec.Code, rec.Body.String())
+	}
+	var parsed struct {
+		Streak *struct {
+			Current int `json:"current"`
+			Best    int `json:"best"`
+		} `json:"streak"`
+	}
+	if err := json.Unmarshal(rec.Body.Bytes(), &parsed); err != nil {
+		t.Fatalf("decode feed: %v (body %s)", err, rec.Body.String())
+	}
+	if parsed.Streak == nil {
+		return 0, 0, false
+	}
+	return parsed.Streak.Current, parsed.Streak.Best, true
+}
+
+// newMomentDaysAgo seeds a moment dated n days before now, so a streak can be
+// built across consecutive days.
+func (w *feedWorld) newMomentDaysAgo(t *testing.T, author *core.Record, daysAgo int) *core.Record {
+	t.Helper()
+	when := time.Now().UTC().AddDate(0, 0, -daysAgo)
+	return w.newRecord(t, "posts", map[string]any{
+		"pair": w.pair.Id, "author": author.Id,
+		"type": "event", "event_kind": "beer",
+		"happened_at": when.Format(types.DefaultDateLayout),
+	})
+}
+
+// The feed carries the connection's day streak, so the watch's streak
+// complication can show it without the recap route (#378). Moments today and
+// yesterday are a live streak of two.
+func TestFeedCarriesTheConnectionStreak(t *testing.T) {
+	w := newFeedWorld(t)
+	w.newMomentDaysAgo(t, w.alice, 0) // today
+	w.newMomentDaysAgo(t, w.bob, 1)   // yesterday — anybody's moment keeps it alive
+
+	current, best, present := w.feedStreak(t)
+	if !present {
+		t.Fatal("feed carried no streak block")
+	}
+	if current != 2 {
+		t.Errorf("current streak = %d, want 2 (today + yesterday)", current)
+	}
+	if best < 2 {
+		t.Errorf("best streak = %d, want at least 2", best)
+	}
+}
+
+// A connection with nothing logged has a zero streak, not a missing block, so
+// the complication can draw "no streak yet" rather than going blank.
+func TestFeedStreakIsZeroWhenNothingLogged(t *testing.T) {
+	w := newFeedWorld(t)
+
+	current, _, present := w.feedStreak(t)
+	if !present {
+		t.Fatal("feed carried no streak block")
+	}
+	if current != 0 {
+		t.Errorf("current streak = %d, want 0 for an empty connection", current)
+	}
+}
+
 func (w *feedWorld) newWater(t *testing.T, author *core.Record, ml int) *core.Record {
 	t.Helper()
 	return w.newRecord(t, "posts", map[string]any{
