@@ -2,11 +2,13 @@ module peard
 
 go 1.27
 
+toolchain go1.27.2
+
 require (
 	github.com/pocketbase/dbx v1.12.0
 	github.com/pocketbase/pocketbase v0.40.4
 	github.com/sideshow/apns2 v0.25.0
-	golang.org/x/net v0.59.0
+	golang.org/x/net v0.60.0
 )
 
 require (
