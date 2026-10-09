@@ -121,11 +121,11 @@ struct PhotoViewer: View {
     /// of news on the viewer rather than two competing for it.
     private func sendReply(note: String, image: UIImage?) async {
         guard await app.reply(to: post, note: note, image: image) else {
-            saveOutcome = "Couldn't send that reply."
+            saveOutcome = String(localized: "Couldn't send that reply.")
             return
         }
         replyCount = (replyCount ?? 0) + 1
-        saveOutcome = app.isOnline ? "Reply sent." : "Reply saved — will send."
+        saveOutcome = app.isOnline ? String(localized: "Reply sent.") : String(localized: "Reply saved — will send.")
     }
 
     // MARK: Photo
@@ -384,7 +384,7 @@ struct PhotoViewer: View {
             Spacer(minLength: 0)
 
             if let replyCount, replyCount > 0 {
-                Text(replyCount == 1 ? "1 reply" : "\(replyCount) replies")
+                Text(replyCount == 1 ? String(localized: "1 reply") : String(localized: "\(replyCount) replies"))
                     .font(.caption)
                     .foregroundStyle(.white.opacity(0.7))
                     .monospacedDigit()
@@ -403,16 +403,16 @@ struct PhotoViewer: View {
     private func saveToPhotos(_ image: UIImage) async {
         let status = await PHPhotoLibrary.requestAuthorization(for: .addOnly)
         guard status == .authorized || status == .limited else {
-            saveOutcome = "Pear'd needs permission to add to Photos."
+            saveOutcome = String(localized: "Pear'd needs permission to add to Photos.")
             return
         }
         do {
             try await PHPhotoLibrary.shared().performChanges {
                 PHAssetChangeRequest.creationRequestForAsset(from: image)
             }
-            saveOutcome = "Saved to Photos."
+            saveOutcome = String(localized: "Saved to Photos.")
         } catch {
-            saveOutcome = "Couldn't save that photo."
+            saveOutcome = String(localized: "Couldn't save that photo.")
         }
     }
 }

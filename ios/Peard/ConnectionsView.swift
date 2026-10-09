@@ -213,7 +213,7 @@ struct ConnectionsView: View {
     /// Names the reason before the age of the data, when the device knows there
     /// is no network at all.
     private var offlineLead: String {
-        app.isOnline ? "" : "You're offline. "
+        app.isOnline ? "" : String(localized: "You're offline. ")
     }
 
     @ViewBuilder
@@ -249,12 +249,12 @@ struct ConnectionsView: View {
             }
 
         case .denied:
-            note("Contacts access is off. Turn it on in Settings to invite people you already know.")
+            note(String(localized: "Contacts access is off. Turn it on in Settings to invite people you already know."))
             Button("Open Settings", action: openSystemSettings)
                 .foregroundStyle(PearColor.accent)
 
         case .noContacts:
-            note("There's nothing in your contacts with an email address or phone number to invite.")
+            note(String(localized: "There's nothing in your contacts with an email address or phone number to invite."))
 
         case .failed(let text):
             note(text)
@@ -263,7 +263,7 @@ struct ConnectionsView: View {
 
         case .ready:
             if friends.visibleRows.isEmpty {
-                note("Nobody in your contacts matches “\(friends.query)”.")
+                note(String(localized: "Nobody in your contacts matches “\(friends.query)”."))
             } else {
                 ForEach(friends.visibleRows) { row in
                     contactRow(row)
@@ -333,7 +333,7 @@ struct ConnectionsView: View {
             .disabled(friends.invitingID != nil || !row.canInvite)
         }
         .accessibilityElement(children: .combine)
-        .accessibilityLabel(row.isOnPeard ? "\(row.name), already on Pear'd" : row.name)
+        .accessibilityLabel(row.isOnPeard ? String(localized: "\(row.name), already on Pear'd") : row.name)
     }
 
     private func note(_ text: String, isError: Bool = false) -> some View {

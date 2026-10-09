@@ -95,16 +95,17 @@ struct MomentBreakdownRow: View {
     /// uses does not read "You 3 · Ari 0".
     private var splitText: String {
         switch (mine, others) {
-        case (0, 0): return "none \(window.phrase)"
-        case (let m, 0): return "\(mineLabel) \(m)"
-        case (0, let o): return "\(othersLabel) \(o)"
-        case (let m, let o): return "\(mineLabel) \(m) · \(othersLabel) \(o)"
+        case (0, 0): return String(localized: "none \(window.phrase)")
+        case (let m, 0): return String(localized: "\(mineLabel) \(m)")
+        case (0, let o): return String(localized: "\(othersLabel) \(o)")
+        case (let m, let o): return String(localized: "\(mineLabel) \(m) · \(othersLabel) \(o)")
         }
     }
 
     private var accessibilityText: String {
-        let noun = total == 1 ? "moment" : "moments"
-        return "\(kind.label): \(total) \(noun) \(window.phrase). \(splitText)."
+        total == 1
+            ? String(localized: "\(kind.label): 1 moment \(window.phrase). \(splitText).")
+            : String(localized: "\(kind.label): \(total) moments \(window.phrase). \(splitText).")
     }
 }
 
@@ -147,21 +148,28 @@ struct MomentBreakdownPicker: View {
 /// The wording both presentations share. Kept in one place so the section and the
 /// sheet cannot end up describing the same numbers differently.
 enum MomentBreakdownCopy {
-    static let unavailable = "This server counts moments the old way, so it can't break them down by kind."
+    static var unavailable: String {
+        String(localized: "This server counts moments the old way, so it can't break them down by kind.")
+    }
 
     static func empty(_ window: TallyWindow, callToAction: String) -> String {
         switch window {
-        case .day: return "Nothing logged today yet."
-        case .week: return "Nothing logged this week yet."
-        case .month: return "Nothing logged this month yet."
-        case .all: return "No moments logged yet. \(callToAction)"
+        case .day: return String(localized: "Nothing logged today yet.")
+        case .week: return String(localized: "Nothing logged this week yet.")
+        case .month: return String(localized: "Nothing logged this month yet.")
+        case .all: return String(localized: "No moments logged yet. \(callToAction)")
         }
     }
 
     static func summary(total: Int, kinds: Int, window: TallyWindow) -> String {
-        let noun = total == 1 ? "moment" : "moments"
-        let kindNoun = kinds == 1 ? "kind" : "kinds"
-        return "\(total) \(noun) across \(kinds) \(kindNoun), \(window.phrase)."
+        // Four whole sentences rather than two pluralised nouns slotted in:
+        // number agreement is a property of the sentence in most languages.
+        switch (total == 1, kinds == 1) {
+        case (true, true): return String(localized: "1 moment across 1 kind, \(window.phrase).")
+        case (true, false): return String(localized: "1 moment across \(kinds) kinds, \(window.phrase).")
+        case (false, true): return String(localized: "\(total) moments across 1 kind, \(window.phrase).")
+        case (false, false): return String(localized: "\(total) moments across \(kinds) kinds, \(window.phrase).")
+        }
     }
 }
 
@@ -179,9 +187,9 @@ extension MomentBreakdownCopy {
         func amount(_ ml: Int) -> String { WaterAmount.label(ml, unit: unit, locale: locale) }
         switch (mine, others) {
         case (0, 0): return ""
-        case (let m, 0): return "\(mineLabel) \(amount(m))"
-        case (0, let o): return "\(othersLabel) \(amount(o))"
-        case (let m, let o): return "\(mineLabel) \(amount(m)) · \(othersLabel) \(amount(o))"
+        case (let m, 0): return String(localized: "\(mineLabel) \(amount(m))")
+        case (0, let o): return String(localized: "\(othersLabel) \(amount(o))")
+        case (let m, let o): return String(localized: "\(mineLabel) \(amount(m)) · \(othersLabel) \(amount(o))")
         }
     }
 }
@@ -203,7 +211,8 @@ extension MomentBreakdownCopy {
         locale: Locale = .current
     ) -> String {
         func amount(_ ml: Int) -> String { WaterAmount.label(ml, unit: unit, locale: locale) }
-        let parts = ["Your goal \(amount(yours))"] + others.map { "\($0.label) \(amount($0.ml))" }
+        let parts = [String(localized: "Your goal \(amount(yours))")]
+            + others.map { String(localized: "\($0.label) \(amount($0.ml))") }
         return parts.joined(separator: " · ")
     }
 }
@@ -224,12 +233,12 @@ extension MomentBreakdownCopy {
             return ""
         case .underMinimum:
             let toMinimum = amount(progress.minimum - progress.ml)
-            return "\(toMinimum) to the \(minimum) minimum"
+            return String(localized: "\(toMinimum) to the \(minimum) minimum")
         case .minimumMet:
             let toGoal = amount(progress.remaining)
-            return "Minimum met · \(toGoal) to the \(recommended) goal"
+            return String(localized: "Minimum met · \(toGoal) to the \(recommended) goal")
         case .recommendedMet:
-            return "Goal met · \(recommended)"
+            return String(localized: "Goal met · \(recommended)")
         }
     }
 }
@@ -384,7 +393,7 @@ struct MomentBreakdownSection: View {
                     .font(.footnote)
                     .foregroundStyle(PearColor.textSecondary)
             } else if kinds.isEmpty {
-                Text(MomentBreakdownCopy.empty(window, callToAction: "Tap one on the home screen to start."))
+                Text(MomentBreakdownCopy.empty(window, callToAction: String(localized: "Tap one on the home screen to start.")))
                     .font(.footnote)
                     .foregroundStyle(PearColor.textSecondary)
             } else {

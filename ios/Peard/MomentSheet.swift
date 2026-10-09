@@ -59,7 +59,7 @@ struct MomentSheet: View {
             // Removal takes the moment away from every member at once, so one
             // stray tap on a row this narrow is not enough.
             .confirmationDialog(
-                removing.map { "Remove \($0.emoji) \($0.label)?" } ?? "",
+                removing.map { String(localized: "Remove \($0.emoji) \($0.label)?") } ?? "",
                 isPresented: Binding(
                     get: { removing != nil },
                     set: { if !$0 { removing = nil } }
@@ -85,7 +85,7 @@ struct MomentSheet: View {
 
     private var customSection: some View {
         VStack(alignment: .leading, spacing: 12) {
-            sectionTitle("Make your own")
+            sectionTitle(String(localized: "Make your own"))
 
             HStack(spacing: 10) {
                 // The tile *is* the field. Tapping the emoji you want to change
@@ -198,7 +198,7 @@ struct MomentSheet: View {
 
     private var suggestionsSection: some View {
         VStack(alignment: .leading, spacing: 12) {
-            sectionTitle("Recommended")
+            sectionTitle(String(localized: "Recommended"))
 
             LazyVGrid(columns: Array(repeating: GridItem(.flexible(), spacing: 8), count: 3), spacing: 8) {
                 ForEach(model.suggestedMoments) { moment in
@@ -237,7 +237,7 @@ struct MomentSheet: View {
 
     private var publishedSection: some View {
         VStack(alignment: .leading, spacing: 12) {
-            sectionTitle("Added to this connection")
+            sectionTitle(String(localized: "Added to this connection"))
 
             VStack(spacing: 0) {
                 ForEach(publishedMoments) { moment in

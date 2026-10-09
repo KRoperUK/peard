@@ -131,7 +131,7 @@ struct QueuedSendEditSheet: View {
             TextField(
                 "",
                 text: $note,
-                prompt: Text(isCaption ? "Caption…" : "Add a note…"),
+                prompt: Text(isCaption ? String(localized: "Caption…") : String(localized: "Add a note…")),
                 axis: .vertical
             )
             .lineLimit(1...5)
@@ -139,9 +139,9 @@ struct QueuedSendEditSheet: View {
             .onChange(of: note) { _, newValue in
                 note = PostNote.capped(newValue)
             }
-            .accessibilityLabel(isCaption ? "Caption" : "Note")
+            .accessibilityLabel(isCaption ? String(localized: "Caption") : String(localized: "Note"))
         } header: {
-            Text(isCaption ? "Caption" : "Note")
+            Text(isCaption ? String(localized: "Caption") : String(localized: "Note"))
         } footer: {
             if note.count > 200 {
                 Text("\(PostNote.limit - note.count) characters left")

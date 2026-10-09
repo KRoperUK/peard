@@ -177,8 +177,8 @@ struct SquarePhotoEditor: View {
         // are what can actually be operated, and they say what they do.
         .accessibilityElement()
         .accessibilityLabel("The photo you just took")
-        .accessibilityValue(edit.fit == .fill ? "Filling the square" : "Whole photo, padded")
-        .accessibilityAction(named: edit.fit == .fill ? "Show the whole photo" : "Fill the square") {
+        .accessibilityValue(edit.fit == .fill ? String(localized: "Filling the square") : String(localized: "Whole photo, padded"))
+        .accessibilityAction(named: edit.fit == .fill ? String(localized: "Show the whole photo") : String(localized: "Fill the square")) {
             edit.toggleFit()
         }
     }

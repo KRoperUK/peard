@@ -13,6 +13,9 @@ final class PushCoordinator {
     private let session: KeychainSessionStore
     private let store: SharedStore
     private let center: UNUserNotificationCenter
+    /// Durable queue for reactions tapped from a notification (#366): a tap in a
+    /// background launch with no signal is persisted and retried, not dropped.
+    private let reactionQueue: ReactionQueue
 
     /// Set by the app model so a `content-available` push can refresh the
     /// timeline, and a notification tap can focus a post.
@@ -34,6 +37,7 @@ final class PushCoordinator {
         self.session = session
         self.store = store
         self.center = center
+        self.reactionQueue = ReactionQueue(store: FilePendingReactionStore.appGroup())
     }
 
     // MARK: Notification categories
@@ -64,23 +68,23 @@ final class PushCoordinator {
         let reactions = ReactionKind.allCases.map { kind in
             UNNotificationAction(
                 identifier: NotificationReaction.actionIdentifier(for: kind),
-                title: "\(kind.emoji) \(kind.accessibilityLabel)",
+                title: String(localized: "\(kind.emoji) \(kind.accessibilityLabel)"),
                 options: []
             )
         }
         let meToo = UNNotificationAction(
             identifier: NotificationAnswer.meTooIdentifier,
-            title: "Me too",
+            title: String(localized: "Me too"),
             options: [],
             icon: UNNotificationActionIcon(systemImageName: "plus.circle")
         )
         let reply = UNTextInputNotificationAction(
             identifier: NotificationAnswer.replyIdentifier,
-            title: "Reply",
+            title: String(localized: "Reply"),
             options: [],
             icon: UNNotificationActionIcon(systemImageName: "arrowshape.turn.up.left"),
-            textInputButtonTitle: "Send",
-            textInputPlaceholder: "Say something back"
+            textInputButtonTitle: String(localized: "Send"),
+            textInputPlaceholder: String(localized: "Say something back")
         )
         return [
             UNNotificationCategory(
@@ -98,17 +102,38 @@ final class PushCoordinator {
         ]
     }
 
-    /// Records a reaction fired from a notification's quick actions. Mirrors
-    /// `HomeModel.react(kind:)` but has no view to update or error to show —
-    /// this can run with no UI on screen at all, so it is best effort.
+    /// Records a reaction fired from a notification's quick actions, durably
+    /// (#366). This can run in a background launch with no UI and often no
+    /// signal, so the reaction is persisted *before* the send is attempted and
+    /// removed only once it lands — a tap that cannot reach the server now is
+    /// retried on the next launch rather than dropped (the old path made one
+    /// `try?` and lost it). Idempotent server-side, so a retry is safe.
     func handleNotificationReaction(_ reaction: NotificationReaction) async {
         guard let userID = session.userID, !userID.isEmpty else { return }
-        do {
-            let _: Reaction = try await api.create("reactions", fields: reaction.fields(userID: userID))
-        } catch {
-            // Nowhere to surface a failure from here; the in-app reaction
-            // picker on the post itself still works.
+        let pending = PendingReaction(postID: reaction.postID, userID: userID, kind: reaction.kind)
+        await reactionQueue.enqueue(pending)
+
+        let api = self.api
+        let sent = await reaction.send(userID: userID) { fields in
+            let _: Reaction = try await api.create("reactions", fields: fields)
         }
+        if sent {
+            await reactionQueue.remove(id: pending.id)
+        }
+        // If it did not send, it stays queued; flushPendingReactions drains it
+        // on the next launch or foreground.
+    }
+
+    /// Sends any reactions a past notification tap could not deliver (#366).
+    /// Called on launch and foreground, beside the moment send queue's flush.
+    /// Returns true when something reached the server, so the caller can refresh.
+    @discardableResult
+    func flushPendingReactions() async -> Bool {
+        let api = self.api
+        let delivered = await reactionQueue.drain { fields in
+            let _: Reaction = try await api.create("reactions", fields: fields)
+        }
+        return delivered > 0
     }
 
     // MARK: Authorization

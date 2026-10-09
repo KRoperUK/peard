@@ -146,3 +146,20 @@ func streakTarget(targets []memberTarget, fallback int) int {
 	}
 	return total
 }
+
+// personalTarget is the daily amount one member's own water has to reach for a
+// day to count toward their personal water streak (#353).
+//
+// Their stored recommended amount if they set one; otherwise `fallback` — the
+// caller's app-local number, else the built-in default — so a member who never
+// opened the targets screen is still judged by a real goal rather than zero
+// (which would mean "no streak"). Unlike streakTarget this is one person's, not
+// the connection's sum.
+func personalTarget(targets []memberTarget, userID string, fallback int) int {
+	for _, t := range targets {
+		if t.User == userID && t.Recommended > 0 {
+			return t.Recommended
+		}
+	}
+	return fallback
+}

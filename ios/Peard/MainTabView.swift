@@ -174,14 +174,14 @@ private struct TalliesTab: View {
                 if let recap = model.recap {
                     RecapSection(
                         recap: recap,
-                        mineLabel: "You",
+                        mineLabel: String(localized: "You"),
                         othersLabel: model.othersLabel,
                         waterEnabled: model.waterConfig.isEnabled
                     )
                 }
 
                 Section {
-                    tallyRow(label: "You", tallies: model.myTallies)
+                    tallyRow(label: String(localized: "You"), tallies: model.myTallies)
                     tallyRow(label: model.othersLabel, tallies: model.partnerTallies)
                 } header: {
                     Text("Totals")
@@ -196,13 +196,13 @@ private struct TalliesTab: View {
                     config: model.waterConfig,
                     unit: model.waterUnit,
                     otherGoals: model.otherWaterGoals,
-                    mineLabel: "You",
+                    mineLabel: String(localized: "You"),
                     othersLabel: model.othersLabel
                 )
 
                 MomentBreakdownSection(
                     tallies: model.momentTallies,
-                    mineLabel: "You",
+                    mineLabel: String(localized: "You"),
                     othersLabel: model.othersLabel,
                     isServerSide: model.talliesAreServerSide,
                     window: $window
@@ -214,7 +214,7 @@ private struct TalliesTab: View {
             .navigationBarTitleDisplayMode(.inline)
             .toolbar {
                 ToolbarItem(placement: .principal) {
-                    ConnectionToolbarTitle(title: "Tallies", subtitle: model.connectionTitle)
+                    ConnectionToolbarTitle(title: String(localized: "Tallies"), subtitle: model.connectionTitle)
                 }
             }
             .refreshable {
@@ -233,10 +233,10 @@ private struct TalliesTab: View {
                 .lineLimit(1)
             Spacer(minLength: 4)
             Group {
-                period("T", tallies.day)
-                period("W", tallies.week)
-                period("M", tallies.month)
-                period("All", tallies.all)
+                period(String(localized: "T"), tallies.day)
+                period(String(localized: "W"), tallies.week)
+                period(String(localized: "M"), tallies.month)
+                period(String(localized: "All"), tallies.all)
             }
         }
         .accessibilityElement(children: .combine)

@@ -138,6 +138,7 @@ func Register(app core.App) {
 	})
 
 	registerWeeklyRecap(app)
+	registerAtRisk(app)
 }
 
 func newNotifier(logger *slog.Logger) *notifier {

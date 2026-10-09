@@ -23,6 +23,14 @@ struct RecapSection: View {
         return water.current > 0 || water.best > 1
     }
 
+    /// The caller's own water streak (#353), shown on the same bar as the
+    /// connection's: live, or a best of more than a day. Distinct from
+    /// showsWaterStreak, which is the connection's combined run.
+    var showsPersonalWaterStreak: Bool {
+        guard waterEnabled, let mine = recap.waterStreakMine else { return false }
+        return mine.current > 0 || mine.best > 1
+    }
+
     var body: some View {
         Section {
             if recap.isEmpty {
@@ -36,6 +44,9 @@ struct RecapSection: View {
                 }
                 if showsWaterStreak, let water = recap.waterStreak {
                     waterStreakRow(water)
+                }
+                if showsPersonalWaterStreak, let mine = recap.waterStreakMine {
+                    personalWaterStreakRow(mine)
                 }
                 if let busiest = recap.busiest, busiest.count > 1 {
                     busiestRow(busiest)
@@ -59,7 +70,7 @@ struct RecapSection: View {
                 .font(.title2.bold())
                 .foregroundStyle(PearColor.accent)
                 .monospacedDigit()
-            Text(recap.total == 1 ? "moment" : "moments")
+            Text(recap.total == 1 ? String(localized: "moment") : String(localized: "moments"))
                 .font(.subheadline)
                 .foregroundStyle(PearColor.textSecondary)
             Spacer()
@@ -104,9 +115,9 @@ struct RecapSection: View {
     private var streakText: String {
         let current = recap.streak.current
         if current == 0 {
-            return "Streak broken — best was \(recap.streak.best) days"
+            return String(localized: "Streak broken — best was \(recap.streak.best) days")
         }
-        return current == 1 ? "1 day running" : "\(current) days running"
+        return current == 1 ? String(localized: "1 day running") : String(localized: "\(current) days running")
     }
 
     /// Days in a row the connection's combined water reached the recommended
@@ -134,9 +145,40 @@ struct RecapSection: View {
 
     static func waterStreakText(_ water: MomentRecap.Streak) -> String {
         switch water.current {
-        case 0: return "Water streak ended — best was \(water.best) days hitting your goal"
-        case 1: return "1 day hitting your water goal"
-        default: return "\(water.current) days hitting your water goal"
+        case 0: return String(localized: "Water streak ended — best was \(water.best) days hitting your goal")
+        case 1: return String(localized: "1 day hitting your water goal")
+        default: return String(localized: "\(water.current) days hitting your water goal")
+        }
+    }
+
+    /// The caller's own water streak (#353), as distinct from the connection's
+    /// combined one above it. "On your own" keeps the two rows apart when both
+    /// show — one is the pair's shared run, this is only this person's.
+    private func personalWaterStreakRow(_ mine: MomentRecap.Streak) -> some View {
+        HStack {
+            Label {
+                Text(Self.personalWaterStreakText(mine))
+            } icon: {
+                Text("🥤")
+            }
+            .font(.subheadline)
+            .foregroundStyle(PearColor.textPrimary)
+            Spacer()
+            if mine.best > mine.current {
+                Text("best \(mine.best)")
+                    .font(.caption)
+                    .foregroundStyle(PearColor.textTertiary)
+                    .monospacedDigit()
+            }
+        }
+        .accessibilityElement(children: .combine)
+    }
+
+    static func personalWaterStreakText(_ mine: MomentRecap.Streak) -> String {
+        switch mine.current {
+        case 0: return String(localized: "Your own water streak ended — best was \(mine.best) days")
+        case 1: return String(localized: "1 day hitting your own goal")
+        default: return String(localized: "\(mine.current) days hitting your own goal")
         }
     }
 

@@ -27,6 +27,21 @@ If you change what goes over the wire, update
 change can only be checked on a real device, add it to
 [`docs/device-checklist.md`](docs/device-checklist.md).
 
+### Words a person reads
+
+User-facing copy in the app target (`ios/Peard`) goes through the String
+Catalog, `ios/Peard/Localizable.xcstrings`. English is the base language and the
+English text itself is the key. SwiftUI's literal initialisers (`Text("…")`,
+`Button("…")`, `.navigationTitle("…")`) are looked up in the catalog already.
+Copy held as a plain `String` — an alert, a banner, a VoiceOver label, a branch
+of a ternary — needs `String(localized: "…")`. Write one whole sentence per
+string, with `\(…)` for the variable parts, never fragments joined together.
+
+`make lint` fails on the cases that would slip past the catalog (the
+`unlocalized_*` rules in `.swiftlint.yml`). Building in the Xcode IDE adds new keys
+to the catalog (command-line `xcodebuild` does not); commit the change. The widget, watch and other extensions, and
+`PeardCore`, are not extracted yet.
+
 ## Commit messages
 
 Commits follow [Conventional Commits](https://www.conventionalcommits.org/),

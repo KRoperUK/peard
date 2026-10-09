@@ -62,3 +62,42 @@ large_tuple:
 function_parameter_count:
   warning: 8
   error: 12
+
+# Localisation guard for the app target (#351). User-facing copy lives in
+# ios/Peard/Localizable.xcstrings, English being the base language.
+#
+# SwiftUI's literal initialisers — Text("…"), Button("…"), Label("…", …),
+# .navigationTitle("…") — already take a LocalizedStringKey, so a plain literal
+# there IS localised and is deliberately not flagged. What silently is not:
+# a literal that becomes a plain String before it reaches the view. These rules
+# catch those, which is how English would otherwise leak past the catalog.
+# Fix by wrapping in String(localized: "…"); if a site really is not user
+# copy, say so with `// swiftlint:disable:next unlocalized_<rule>`.
+custom_rules:
+  unlocalized_ternary:
+    name: "Unlocalised ternary literal"
+    message: >-
+      A ternary of string literals is a plain String, so SwiftUI does not look
+      it up in the catalog. Wrap each branch in String(localized: "…").
+    regex: '(?m)^(?![ \t]*//)(?:[^\n]*?\b(?:Text|Label|Button|Section|Toggle|Picker|navigationTitle|accessibilityLabel|accessibilityHint|accessibilityValue|accessibilityAction|alert|confirmationDialog)\b[^\n]*?\?\s*"(?![a-z]+(?:\.[a-z0-9]+)+")[^"\n]*[A-Za-z]{2}[^"\n]*"\s*:\s*"|[ \t]*[?:]\s*"(?![a-z]+(?:\.[a-z0-9]+)+")[^"\n]*[A-Za-z]{3})'
+    included: 'ios/Peard/.*\.swift'
+    excluded: 'ios/Peard/(DebugSupport|MomentShortcuts|PeardShortcuts)\.swift'
+    severity: error
+  unlocalized_string_sink:
+    name: "Unlocalised user-facing String"
+    message: >-
+      User-facing copy that is held as a String must go through
+      String(localized: "…") so it reaches the catalog. SwiftUI literal
+      initialisers (Text("…") etc.) already do and need no change.
+    regex: '(?m)^(?![ \t]*//)[^\n]*?(?:\b(?:banner|saveOutcome|failure|toast|errorMessage|statusError|exportError|self\.error)\s*=\s*"[^"\n]*[A-Za-z]{3}|\b(?:AlertContent\(|title:|message:|body:|subject:|textInputPlaceholder:|textInputButtonTitle:|mineLabel:|othersLabel:|callToAction:|accessibility:)\s*"[^"\n]*[A-Za-z]{3}|\breturn\s+"[A-Z][a-z]+[ \x27\x{2019}][^"\n]*"|\bshowToast\(\s*"[^"\n]*[A-Za-z]{3})'
+    included: 'ios/Peard/.*\.swift'
+    excluded: 'ios/Peard/(DebugSupport|MomentShortcuts|PeardShortcuts)\.swift'
+    severity: error
+  unlocalized_verbatim_text:
+    name: "Text(verbatim:) with copy"
+    message: >-
+      Text(verbatim:) opts a literal out of localisation. Use it for data and
+      symbols, not for words a person reads.
+    regex: 'Text\(verbatim:\s*"[^"\n]*[A-Za-z]{3}'
+    included: 'ios/Peard/.*\.swift'
+    severity: error

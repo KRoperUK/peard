@@ -22,6 +22,7 @@ final class WidgetSync {
         do {
             let issue = try await api.issueWidgetToken()
             store.writeWidgetCredentials(token: issue.token, baseURL: baseURL)
+            store.widgetTokenID = issue.id
             WatchSync.shared.update(WatchCredentials(store: store))
             reloadTimelines()
         } catch {

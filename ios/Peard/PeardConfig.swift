@@ -42,5 +42,7 @@ struct PeardConfig: Sendable {
 
     /// Message shown when Google sign-in is attempted without a client id
     /// (Requirement 3.4).
-    static let missingGoogleClientIDMessage = "Set the Google iOS client id in the build configuration first"
+    static var missingGoogleClientIDMessage: String {
+        String(localized: "Set the Google iOS client id in the build configuration first")
+    }
 }

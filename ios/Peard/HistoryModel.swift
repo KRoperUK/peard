@@ -94,7 +94,7 @@ final class HistoryModel {
     }
 
     func memberLabel(_ member: Connection.Member) -> String {
-        member.user == signedInUserID ? "You" : member.name
+        member.user == signedInUserID ? String(localized: "You") : member.name
     }
 
     /// What the active filter is called, for the chip under the title.
@@ -110,10 +110,10 @@ final class HistoryModel {
             parts.append(MomentCatalogue.label(for: kind, customKinds: customKinds))
         }
         if filter.photosOnly {
-            parts.append("Photos")
+            parts.append(String(localized: "Photos"))
         }
         if !filter.search.isEmpty {
-            parts.append("“\(filter.search)”")
+            parts.append(String(localized: "“\(filter.search)”"))
         }
         return parts.joined(separator: " · ")
     }
@@ -161,7 +161,7 @@ final class HistoryModel {
     /// which says nothing about who they came from.
     func spokenReactions(for post: Post) -> String? {
         Self.spokenReactions(reactionsByPost[post.id] ?? []) { user in
-            if user == signedInUserID { return "you" }
+            if user == signedInUserID { return String(localized: "you") }
             // The full name rather than the row's shortened one: the ellipsis
             // is there to fit the width, and is meaningless read aloud.
             return connection?.name(forUser: user) ?? PartnerLabel.unknown
@@ -182,9 +182,9 @@ final class HistoryModel {
         }
         guard !kinds.isEmpty else { return nil }
         let phrases = kinds.map { kind in
-            "\(kind.accessibilityLabel) from \((people[kind.rawValue] ?? []).formatted(.list(type: .and)))"
+            String(localized: "\(kind.accessibilityLabel) from \((people[kind.rawValue] ?? []).formatted(.list(type: .and)))")
         }
-        return "Reactions: " + phrases.joined(separator: "; ")
+        return String(localized: "Reactions: \(phrases.joined(separator: "; "))")
     }
 
     /// Requirement 14.1 — reactions are offered on other people's moments only.
@@ -490,9 +490,9 @@ final class HistoryModel {
     var pendingIndicatorIsOffline: Bool { isOffline() }
 
     func heading(for day: Day) -> String {
-        guard day.date != .distantPast else { return "Undated" }
-        if calendar.isDateInToday(day.date) { return "Today" }
-        if calendar.isDateInYesterday(day.date) { return "Yesterday" }
+        guard day.date != .distantPast else { return String(localized: "Undated") }
+        if calendar.isDateInToday(day.date) { return String(localized: "Today") }
+        if calendar.isDateInYesterday(day.date) { return String(localized: "Yesterday") }
 
         let formatter = DateFormatter()
         formatter.calendar = calendar
@@ -520,10 +520,10 @@ final class HistoryModel {
     func detail(for post: Post) -> String {
         if let note = post.displayNote { return note }
         switch post.type {
-        case .photo: return "photo"
-        case .note: return "replied"
+        case .photo: return String(localized: "photo")
+        case .note: return String(localized: "replied")
         case .event: return MomentCatalogue.label(for: post.eventKind, customKinds: customKinds)
-        case .unknown: return "shared a moment"
+        case .unknown: return String(localized: "shared a moment")
         }
     }
 
@@ -665,7 +665,7 @@ final class HistoryModel {
             // has caught up with it — that assumption is what shipped account
             // deletion against a server that could not do it — and "Not found"
             // tells somebody trying to fix a typo nothing at all.
-            self.error = "This server can't edit moments yet. Deleting and logging it again works."
+            self.error = String(localized: "This server can't edit moments yet. Deleting and logging it again works.")
             playHaptic(.failed)
             return false
         } catch {

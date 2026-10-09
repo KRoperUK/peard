@@ -156,7 +156,7 @@ enum SessionStoreError: LocalizedError, Equatable {
         switch self {
         case .keychain(let status):
             let detail = SecCopyErrorMessageString(status, nil) as String? ?? "status \(status)"
-            return "Couldn't save your session to the Keychain (\(detail))."
+            return String(localized: "Couldn't save your session to the Keychain (\(detail)).")
         }
     }
 }

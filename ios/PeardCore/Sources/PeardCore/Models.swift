@@ -845,6 +845,53 @@ public struct WidgetTokenIssue: Codable, Hashable, Sendable {
     }
 }
 
+/// One row of `GET /api/peard/widget/tokens`: a signed-in device or widget, as
+/// the "Signed-in devices & widgets" screen lists it (#367).
+///
+/// There is deliberately no secret here — the server never sends one. The id is
+/// what a row is revoked by.
+public struct WidgetTokenInfo: Codable, Hashable, Sendable, Identifiable {
+    public let id: String
+    public let label: String
+    public let created: Date?
+    public let expires: Date?
+    /// Not on the wire. The list route cannot know which row is the phone asking,
+    /// so the client marks it by the id it was handed when it minted its own
+    /// token; see `PeardAPI.widgetTokens(currentTokenID:)`.
+    public var isCurrentDevice: Bool
+
+    enum CodingKeys: String, CodingKey {
+        case id, label, created, expires
+    }
+
+    public init(
+        id: String,
+        label: String = "",
+        created: Date? = nil,
+        expires: Date? = nil,
+        isCurrentDevice: Bool = false
+    ) {
+        self.id = id
+        self.label = label
+        self.created = created
+        self.expires = expires
+        self.isCurrentDevice = isCurrentDevice
+    }
+
+    public init(from decoder: Decoder) throws {
+        let container = try decoder.container(keyedBy: CodingKeys.self)
+        id = try container.decode(String.self, forKey: .id)
+        label = try container.decodeIfPresent(String.self, forKey: .label) ?? ""
+        created = try container.decodeIfPresent(Date.self, forKey: .created)
+        expires = try container.decodeIfPresent(Date.self, forKey: .expires)
+        isCurrentDevice = false
+    }
+}
+
+struct WidgetTokenList: Codable, Hashable, Sendable {
+    let tokens: [WidgetTokenInfo]
+}
+
 /// Response of `GET /api/peard/widget/feed`.
 public struct WidgetFeed: Codable, Hashable, Sendable {
     public struct Partner: Codable, Hashable, Sendable {
@@ -1032,6 +1079,32 @@ public struct WidgetFeed: Codable, Hashable, Sendable {
     /// Moments other people have posted in this connection since you last opened
     /// it. Absent on a server that predates read state, which decodes as zero.
     public let unreadCount: Int
+    /// Today's connection water against its goal, for the watch's water
+    /// complication (#364). Absent on a server that predates it.
+    public let water: Water?
+
+    /// Today's connection water and the goal it is measured against (#364), both
+    /// in millilitres. The watch complication draws a ring of `today / goal`.
+    public struct Water: Codable, Hashable, Sendable {
+        public let todayML: Int
+        public let goalML: Int
+
+        enum CodingKeys: String, CodingKey {
+            case todayML = "today_ml"
+            case goalML = "goal_ml"
+        }
+
+        public init(todayML: Int, goalML: Int) {
+            self.todayML = todayML
+            self.goalML = goalML
+        }
+
+        /// Progress toward the goal, 0...1, built on the same `WaterProgress`
+        /// the app uses so the ring means the same thing everywhere.
+        public var progress: WaterProgress {
+            WaterProgress(ml: todayML, minimum: 0, recommended: max(goalML, 1))
+        }
+    }
 
     public init(
         state: FeedState,
@@ -1041,7 +1114,8 @@ public struct WidgetFeed: Codable, Hashable, Sendable {
         tallies: [Tally]? = nil,
         post: FeedPost? = nil,
         moments: [AvailableMoment]? = nil,
-        unreadCount: Int = 0
+        unreadCount: Int = 0,
+        water: Water? = nil
     ) {
         self.state = state
         self.partner = partner
@@ -1051,6 +1125,7 @@ public struct WidgetFeed: Codable, Hashable, Sendable {
         self.post = post
         self.moments = moments
         self.unreadCount = unreadCount
+        self.water = water
     }
 
     /// True when the moment on the widget is one the user has not seen in the
@@ -1063,7 +1138,7 @@ public struct WidgetFeed: Codable, Hashable, Sendable {
     // fail the decode of the *entire* feed. That is the whole widget going blank
     // to add a number to it.
     enum CodingKeys: String, CodingKey {
-        case state, partner, connection, counts, tallies, post, moments
+        case state, partner, connection, counts, tallies, post, moments, water
         case unreadCount = "unread"
     }
 
@@ -1078,6 +1153,8 @@ public struct WidgetFeed: Codable, Hashable, Sendable {
         moments = try container.decodeIfPresent([AvailableMoment].self, forKey: .moments)
         // Absent on a server predating read state: nothing new, not an error.
         unreadCount = max(try container.decodeIfPresent(Int.self, forKey: .unreadCount) ?? 0, 0)
+        // Absent (or null) on a server predating the water complication (#364).
+        water = try? container.decodeIfPresent(Water.self, forKey: .water)
     }
 
     /// The moments to offer as buttons, falling back to the built-ins so a widget
@@ -1546,6 +1623,11 @@ public struct MomentRecap: Codable, Hashable, Sendable {
     /// amount (#323). Nil from a server that predates it, which is not the same
     /// as a streak of zero: the screen shows nothing rather than "broken".
     public let waterStreak: Streak?
+    /// Days in a row the *caller's own* water reached their own target (#353).
+    /// Nil from a server that predates it, like waterStreak — the person's own
+    /// streak, the one the "streak at risk" reminder is about, as distinct from
+    /// the connection's combined one.
+    public let waterStreakMine: Streak?
     /// Every member's stored daily water targets (#335), the caller's included.
     /// Nil from a server that predates them — not the same as nobody having set
     /// one, which is a list of members whose targets are unset.
@@ -1559,6 +1641,7 @@ public struct MomentRecap: Codable, Hashable, Sendable {
         busiest: BusiestDay? = nil,
         streak: Streak = Streak(),
         waterStreak: Streak? = nil,
+        waterStreakMine: Streak? = nil,
         waterTargets: [MemberWaterTarget]? = nil
     ) {
         self.total = total
@@ -1568,12 +1651,14 @@ public struct MomentRecap: Codable, Hashable, Sendable {
         self.busiest = busiest
         self.streak = streak
         self.waterStreak = waterStreak
+        self.waterStreakMine = waterStreakMine
         self.waterTargets = waterTargets
     }
 
     private enum CodingKeys: String, CodingKey {
         case total, mine, others, kinds, busiest, streak
         case waterStreak = "water_streak"
+        case waterStreakMine = "water_streak_mine"
         case waterTargets = "water_targets"
     }
 
@@ -1592,6 +1677,7 @@ public struct MomentRecap: Codable, Hashable, Sendable {
         busiest = try? container.decodeIfPresent(BusiestDay.self, forKey: .busiest)
         streak = try container.decodeIfPresent(Streak.self, forKey: .streak) ?? Streak()
         waterStreak = try? container.decodeIfPresent(Streak.self, forKey: .waterStreak)
+        waterStreakMine = try? container.decodeIfPresent(Streak.self, forKey: .waterStreakMine)
         waterTargets = (try? container.decodeIfPresent([Lenient<MemberWaterTarget>].self, forKey: .waterTargets))?
             .compactMap(\.value)
     }
