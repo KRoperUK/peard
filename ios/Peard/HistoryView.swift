@@ -377,7 +377,19 @@ struct HistoryView: View {
 
             Spacer(minLength: 4)
 
-            timeLabel(for: post)
+            VStack(alignment: .trailing, spacing: 4) {
+                timeLabel(for: post)
+                // An always-visible tap target for reacting, not only the swipe
+                // and long-press the row already offers (#363). Those are the
+                // iOS conventions a practised thumb reaches for, but they are
+                // not discoverable — a tester asked for reactions on non-photo
+                // moments (#358) that were in fact already there, just hidden
+                // behind a gesture. The button reveals the same three choices
+                // and runs the same toggle, so there is one reaction path.
+                if model.canReact(to: post) {
+                    reactButton(for: post)
+                }
+            }
         }
         .padding(.vertical, 4)
         .listRowBackground(PearColor.background)
@@ -421,6 +433,35 @@ struct HistoryView: View {
                 .foregroundStyle(PearColor.textTertiary)
                 .monospacedDigit()
         }
+    }
+
+    /// A visible, tappable way to react, in addition to the row's swipe and
+    /// long-press (#363). A `Menu` rather than three inline buttons so a row
+    /// stays a single line regardless of its content: tapping it reveals the
+    /// same three choices the context menu does, with a tick on the ones
+    /// already used, and runs the same `toggleReaction` — one reaction path, not
+    /// a second. Only on others' moments, matching `canReact`.
+    private func reactButton(for post: Post) -> some View {
+        Menu {
+            ForEach(ReactionKind.allCases, id: \.rawValue) { kind in
+                Button {
+                    Task { await model.toggleReaction(to: post, kind: kind) }
+                } label: {
+                    if model.hasReacted(to: post, kind: kind) {
+                        Label("\(kind.emoji)  \(kind.accessibilityLabel)", systemImage: "checkmark")
+                    } else {
+                        Text("\(kind.emoji)  \(kind.accessibilityLabel)")
+                    }
+                }
+            }
+        } label: {
+            Image(systemName: "face.smiling")
+                .font(.caption)
+                .foregroundStyle(PearColor.accent)
+                .padding(5)
+                .background(PearColor.surface, in: Circle())
+        }
+        .accessibilityLabel("React to this moment")
     }
 
     private func accessibilityLabel(for post: Post) -> String {
