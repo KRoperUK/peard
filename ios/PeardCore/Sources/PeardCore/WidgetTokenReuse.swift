@@ -5,8 +5,9 @@ import Foundation
 /// simulator (#381). `APIClient` conforms via its `PeardAPI` extension.
 public protocol WidgetTokenService: Sendable {
     /// `POST /api/peard/widget/token` — mints a fresh token row and returns its
-    /// id and secret.
-    func issueWidgetToken() async throws -> WidgetTokenIssue
+    /// id and secret. `label` names this device's row in the devices list
+    /// (#379); nil leaves the server's generic label.
+    func issueWidgetToken(label: String?) async throws -> WidgetTokenIssue
     /// `GET /api/peard/widget/tokens` — the caller's live token rows (never the
     /// secrets). `currentTokenID` only marks `isCurrentDevice`; it does not
     /// filter.
@@ -38,9 +39,13 @@ public enum WidgetTokenReuse {
     ///   list (revoked/expired), mint.
     /// - A mint failure rethrows, matching the opportunistic caller that
     ///   swallows it.
+    /// - `label` names the device on a freshly minted row (#379); it is only
+    ///   used on the mint path, so reusing a live token leaves the existing
+    ///   row's label untouched.
     public static func resolve(
         heldToken: String?,
         heldID: String?,
+        label: String? = nil,
         service: WidgetTokenService
     ) async throws -> Outcome {
         if let token = heldToken, !token.isEmpty, let id = heldID, !id.isEmpty {
@@ -48,7 +53,7 @@ public enum WidgetTokenReuse {
                 return .reused
             }
         }
-        let issue = try await service.issueWidgetToken()
+        let issue = try await service.issueWidgetToken(label: label)
         return .minted(id: issue.id ?? "", token: issue.token)
     }
 

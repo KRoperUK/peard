@@ -158,7 +158,14 @@ final class AppModel {
         let api = APIClient(baseURL: config.serverURL, tokenProvider: sessionStore, session: session)
         self.api = api
         self.fileTokens = FileTokenStore(api: api)
-        self.widgetSync = WidgetSync(api: api, store: sharedStore, baseURL: config.serverURL)
+        self.widgetSync = WidgetSync(
+            api: api, store: sharedStore, baseURL: config.serverURL,
+            // The device class (iPhone / iPad) names this row in the devices
+            // list (#379); the row's created date tells two of a kind apart.
+            // `model` needs no entitlement and is not the user-set device name,
+            // so it carries no personal data.
+            deviceLabel: UIDevice.current.model
+        )
         self.push = PushCoordinator(api: api, session: sessionStore, store: sharedStore)
         self.liveActivities = LiveActivityCoordinator(api: api, session: sessionStore, store: sharedStore)
         self.sendQueue = sendQueue ?? SendQueue(store: FilePendingSendStore.appGroup())

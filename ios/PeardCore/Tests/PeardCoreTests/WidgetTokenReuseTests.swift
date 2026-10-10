@@ -12,9 +12,11 @@ final class WidgetTokenReuseTests: XCTestCase {
 
         private(set) var mintCalls = 0
         private(set) var listCalls = 0
+        private(set) var mintedLabel: String??
 
-        func issueWidgetToken() async throws -> WidgetTokenIssue {
+        func issueWidgetToken(label: String?) async throws -> WidgetTokenIssue {
             mintCalls += 1
+            mintedLabel = label
             if let mintError { throw mintError }
             return mintResult
         }
@@ -63,6 +65,17 @@ final class WidgetTokenReuseTests: XCTestCase {
         XCTAssertEqual(outcome, .minted(id: "new-id", token: "new-secret"))
         XCTAssertEqual(service.mintCalls, 1)
         XCTAssertEqual(service.listCalls, 0, "no held id means no liveness check")
+    }
+
+    // The device label (#379) is threaded to the mint, so a fresh row is named.
+    func testDeviceLabelIsPassedToTheMint() async throws {
+        let service = FakeService()
+
+        _ = try await WidgetTokenReuse.resolve(
+            heldToken: nil, heldID: nil, label: "iPad", service: service
+        )
+
+        XCTAssertEqual(service.mintedLabel, "iPad")
     }
 
     func testEmptyStringsCountAsNothingHeld() async throws {
