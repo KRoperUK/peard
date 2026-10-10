@@ -1085,6 +1085,53 @@ public struct WidgetFeed: Codable, Hashable, Sendable {
     /// The connection's "any moment" day streak, for the watch's streak
     /// complication (#378). Absent on a server that predates it.
     public let streak: Streak?
+    /// Every daily-progress metric the connection is tracking (#386) — water,
+    /// steps, exercise, and the like — each with today's amount and the goal.
+    /// Empty on a server that predates it; water also keeps its own `water`
+    /// block for the existing water complication.
+    public let metrics: [MetricSummary]
+
+    /// One tracked metric in the feed (#386): the connection's combined amount
+    /// today against the summed goal, resolved to a `MetricDefinition` for how it
+    /// is drawn and a `MetricProgress` for the ring.
+    public struct MetricSummary: Codable, Hashable, Sendable, Identifiable {
+        public let slug: String
+        public let label: String
+        public let emoji: String
+        public let unitRaw: String
+        public let today: Int
+        public let goal: Int
+
+        public var id: String { slug }
+
+        enum CodingKeys: String, CodingKey {
+            case slug, label, emoji, today, goal
+            case unitRaw = "unit"
+        }
+
+        public init(slug: String, label: String, emoji: String, unitRaw: String, today: Int, goal: Int) {
+            self.slug = slug
+            self.label = label
+            self.emoji = emoji
+            self.unitRaw = unitRaw
+            self.today = today
+            self.goal = goal
+        }
+
+        public var unit: MetricUnit { MetricUnit(storedValue: unitRaw) }
+
+        /// The definition this metric is drawn by: the built-in when the slug is
+        /// one, else a plain-count definition carrying the feed's label/emoji.
+        public var definition: MetricDefinition {
+            MetricCatalogue.resolve(
+                EventKind(rawValue: slug), label: label, emoji: emoji, unit: unit, goal: goal)
+        }
+
+        /// Today's amount measured against the connection's summed goal.
+        public var progress: MetricProgress {
+            MetricProgress(amount: today, minimum: 0, goal: goal)
+        }
+    }
 
     /// The connection's current and best day streak (#378) — the same figure the
     /// recap shows and the "at risk" reminder (#361) is about.
@@ -1131,7 +1178,8 @@ public struct WidgetFeed: Codable, Hashable, Sendable {
         moments: [AvailableMoment]? = nil,
         unreadCount: Int = 0,
         water: Water? = nil,
-        streak: Streak? = nil
+        streak: Streak? = nil,
+        metrics: [MetricSummary] = []
     ) {
         self.state = state
         self.partner = partner
@@ -1143,6 +1191,7 @@ public struct WidgetFeed: Codable, Hashable, Sendable {
         self.unreadCount = unreadCount
         self.water = water
         self.streak = streak
+        self.metrics = metrics
     }
 
     /// True when the moment on the widget is one the user has not seen in the
@@ -1155,7 +1204,7 @@ public struct WidgetFeed: Codable, Hashable, Sendable {
     // fail the decode of the *entire* feed. That is the whole widget going blank
     // to add a number to it.
     enum CodingKeys: String, CodingKey {
-        case state, partner, connection, counts, tallies, post, moments, water, streak
+        case state, partner, connection, counts, tallies, post, moments, water, streak, metrics
         case unreadCount = "unread"
     }
 
@@ -1174,6 +1223,9 @@ public struct WidgetFeed: Codable, Hashable, Sendable {
         water = try? container.decodeIfPresent(Water.self, forKey: .water)
         // Absent (or null) on a server predating the streak complication (#378).
         streak = try? container.decodeIfPresent(Streak.self, forKey: .streak)
+        // Absent on a server predating generalised metrics (#386); an empty list
+        // is the safe default — water keeps its own `water` block regardless.
+        metrics = (try? container.decodeIfPresent([MetricSummary].self, forKey: .metrics)) ?? []
     }
 
     /// The moments to offer as buttons, falling back to the built-ins so a widget
