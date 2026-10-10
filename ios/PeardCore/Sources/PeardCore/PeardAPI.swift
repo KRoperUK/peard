@@ -80,8 +80,15 @@ public extension APIClient {
     }
 
     /// `POST /api/peard/widget/token` (Requirement 16.1).
-    func issueWidgetToken() async throws -> WidgetTokenIssue {
-        try await post(path: "/api/peard/widget/token")
+    ///
+    /// `label` names the device in the "Signed-in devices & widgets" list (#379)
+    /// so several rows are told apart; omitted, the server falls back to its
+    /// generic label. It is a display hint, never a credential.
+    func issueWidgetToken(label: String? = nil) async throws -> WidgetTokenIssue {
+        if let label, !label.isEmpty {
+            return try await post(path: "/api/peard/widget/token", fields: ["label": label])
+        }
+        return try await post(path: "/api/peard/widget/token")
     }
 
     /// `POST /api/peard/widget/revoke` — drops a widget token server-side (#340).

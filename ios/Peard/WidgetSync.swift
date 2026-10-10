@@ -9,11 +9,15 @@ final class WidgetSync {
     private let api: APIClient
     private let store: SharedStore
     private let baseURL: URL
+    /// Names this device's row in the devices list (#379). Nil leaves the
+    /// server's generic label.
+    private let deviceLabel: String?
 
-    init(api: APIClient, store: SharedStore, baseURL: URL) {
+    init(api: APIClient, store: SharedStore, baseURL: URL, deviceLabel: String? = nil) {
         self.api = api
         self.store = store
         self.baseURL = baseURL
+        self.deviceLabel = deviceLabel
     }
 
     /// Best-effort by design: a failure leaves the container untouched and the
@@ -29,6 +33,7 @@ final class WidgetSync {
             let outcome = try await WidgetTokenReuse.resolve(
                 heldToken: store.widgetToken,
                 heldID: store.widgetTokenID,
+                label: deviceLabel,
                 service: api
             )
             if case let .minted(id, token) = outcome {

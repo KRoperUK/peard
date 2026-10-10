@@ -90,6 +90,68 @@ func TestMintedTokenHasAnExpiry(t *testing.T) {
 	}
 }
 
+// labelOf returns the stored label for a minted token secret.
+func (w *feedWorld) labelOf(t *testing.T, token string) string {
+	t.Helper()
+	rec, err := w.app.FindFirstRecordByFilter("widget_tokens", "token = {:t}", dbx.Params{"t": token})
+	if err != nil {
+		t.Fatalf("find token: %v", err)
+	}
+	return rec.GetString("label")
+}
+
+// mintWithBody mints with a raw JSON body, so a label (or its absence) can be
+// exercised.
+func (w *feedWorld) mintWithBody(t *testing.T, userID, body string) string {
+	t.Helper()
+	status, resp := w.do(t, http.MethodPost, "/api/peard/widget/token", w.authToken(t, userID), body)
+	if status != http.StatusOK {
+		t.Fatalf("mint: %d %s", status, resp)
+	}
+	var res struct {
+		Token string `json:"token"`
+	}
+	if err := json.Unmarshal([]byte(resp), &res); err != nil {
+		t.Fatalf("decode mint: %v (%s)", err, resp)
+	}
+	return res.Token
+}
+
+// A client-sent device label names the row in the devices list (#379).
+func TestMintStoresTheDeviceLabel(t *testing.T) {
+	w := newFeedWorld(t)
+	token := w.mintWithBody(t, w.alice.Id, `{"label":"iPad"}`)
+	if got := w.labelOf(t, token); got != "iPad" {
+		t.Errorf("label = %q, want %q", got, "iPad")
+	}
+}
+
+// An older client sends no label; the server falls back to its generic one so
+// the row is never blank.
+func TestMintFallsBackToAGenericLabel(t *testing.T) {
+	w := newFeedWorld(t)
+	token := w.mintWithBody(t, w.alice.Id, "{}")
+	if got := w.labelOf(t, token); got != "ios-widget" {
+		t.Errorf("label = %q, want the fallback %q", got, "ios-widget")
+	}
+	// Whitespace is the same as nothing.
+	token2 := w.mintWithBody(t, w.alice.Id, `{"label":"   "}`)
+	if got := w.labelOf(t, token2); got != "ios-widget" {
+		t.Errorf("whitespace label = %q, want the fallback", got)
+	}
+}
+
+// A label is a display hint, never trusted: an overlong one is capped so it
+// cannot bloat the row.
+func TestMintCapsAnOverlongLabel(t *testing.T) {
+	w := newFeedWorld(t)
+	long := strings.Repeat("x", 200)
+	token := w.mintWithBody(t, w.alice.Id, `{"label":"`+long+`"}`)
+	if got := len(w.labelOf(t, token)); got != 60 {
+		t.Errorf("label length = %d, want it capped at 60", got)
+	}
+}
+
 // Minting prunes the user's already-expired rows, so dead tokens do not pile up.
 func TestMintPrunesExpiredTokens(t *testing.T) {
 	w := newFeedWorld(t)

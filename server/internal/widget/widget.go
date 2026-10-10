@@ -302,6 +302,21 @@ func issueTokenHandler(app core.App) func(e *core.RequestEvent) error {
 		}
 		token := hex.EncodeToString(b)
 
+		// An optional device label names this row in the devices list (#379) so
+		// several are told apart. A display hint, never trusted: trim it, cap its
+		// length, and fall back to the generic label when absent (older clients)
+		// or empty. BindBody failing is not fatal — a labelless mint still works.
+		var body struct {
+			Label string `json:"label" form:"label"`
+		}
+		_ = e.BindBody(&body)
+		label := strings.TrimSpace(body.Label)
+		if label == "" {
+			label = "ios-widget"
+		} else if len(label) > 60 {
+			label = label[:60]
+		}
+
 		col, err := app.FindCollectionByNameOrId("widget_tokens")
 		if err != nil {
 			return e.InternalServerError("widget_tokens collection missing", err)
@@ -316,7 +331,7 @@ func issueTokenHandler(app core.App) func(e *core.RequestEvent) error {
 		rec := core.NewRecord(col)
 		rec.Set("user", e.Auth.Id)
 		rec.Set("token", token)
-		rec.Set("label", "ios-widget")
+		rec.Set("label", label)
 		rec.Set("expires", time.Now().Add(widgetTokenTTL).UTC().Format(types.DefaultDateLayout))
 		if err := app.Save(rec); err != nil {
 			return e.InternalServerError("failed to store token", err)
