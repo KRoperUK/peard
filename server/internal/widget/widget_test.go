@@ -318,6 +318,107 @@ func TestFeedStreakIsZeroWhenNothingLogged(t *testing.T) {
 	}
 }
 
+// feedMetrics issues the feed and returns its `metrics` array (#386).
+func (w *feedWorld) feedMetrics(t *testing.T) []map[string]any {
+	t.Helper()
+	req := httptest.NewRequest("GET", "/api/peard/widget/feed?token="+w.token, nil)
+	rec := httptest.NewRecorder()
+	w.mux.ServeHTTP(rec, req)
+	if rec.Code != 200 {
+		t.Fatalf("feed: got %d, body %s", rec.Code, rec.Body.String())
+	}
+	var parsed struct {
+		Metrics []map[string]any `json:"metrics"`
+	}
+	if err := json.Unmarshal(rec.Body.Bytes(), &parsed); err != nil {
+		t.Fatalf("decode feed: %v (body %s)", err, rec.Body.String())
+	}
+	return parsed.Metrics
+}
+
+// metricBlock returns the summary for one slug, or nil if absent.
+func metricBlock(metrics []map[string]any, slug string) map[string]any {
+	for _, m := range metrics {
+		if m["slug"] == slug {
+			return m
+		}
+	}
+	return nil
+}
+
+// newMetricPost seeds an amount-bearing post of a metric kind today.
+func (w *feedWorld) newMetricPost(t *testing.T, author *core.Record, kind string, amount int) {
+	t.Helper()
+	w.newRecord(t, "posts", map[string]any{
+		"pair": w.pair.Id, "author": author.Id,
+		"type": "event", "event_kind": kind, "amount": amount,
+		"happened_at": time.Now().UTC().Format(types.DefaultDateLayout),
+	})
+}
+
+// setMetricTarget stores a member's goal for a metric in metric_targets.
+func (w *feedWorld) setMetricTarget(t *testing.T, user *core.Record, metric string, goal int) {
+	t.Helper()
+	w.newRecord(t, "metric_targets", map[string]any{
+		"pair": w.pair.Id, "user": user.Id, "metric": metric, "minimum": 0, "goal": goal,
+	})
+}
+
+// A connection logging steps today shows a steps metric block with the summed
+// goal — the generalisation of the water block to any metric (#386).
+func TestFeedCarriesTrackedMetrics(t *testing.T) {
+	w := newFeedWorld(t)
+	w.newMetricPost(t, w.alice, "steps", 4000)
+	w.newMetricPost(t, w.bob, "steps", 3000) // 7000 together
+	w.setMetricTarget(t, w.alice, "steps", 8000)
+	w.setMetricTarget(t, w.bob, "steps", 12000) // summed goal 20000
+
+	steps := metricBlock(w.feedMetrics(t), "steps")
+	if steps == nil {
+		t.Fatal("feed carried no steps metric block")
+	}
+	if got := int(steps["today"].(float64)); got != 7000 {
+		t.Errorf("steps today = %d, want 7000", got)
+	}
+	if got := int(steps["goal"].(float64)); got != 20000 {
+		t.Errorf("steps goal = %d, want 20000 (8000 + 12000)", got)
+	}
+	if steps["unit"] != "count" {
+		t.Errorf("steps unit = %v, want count", steps["unit"])
+	}
+}
+
+// A metric nobody tracks is left out, so the client never draws an empty ring.
+func TestFeedOmitsUntrackedMetrics(t *testing.T) {
+	w := newFeedWorld(t)
+	w.newMetricPost(t, w.alice, "steps", 5000)
+
+	metrics := w.feedMetrics(t)
+	if metricBlock(metrics, "steps") == nil {
+		t.Error("steps was logged but is absent from the feed")
+	}
+	if metricBlock(metrics, "exercise") != nil {
+		t.Error("exercise is tracked by nobody but appears in the feed")
+	}
+}
+
+// A member with no stored goal contributes the metric's default, as
+// waterSummary falls back.
+func TestFeedMetricGoalFallsBackToDefault(t *testing.T) {
+	w := newFeedWorld(t)
+	w.newMetricPost(t, w.alice, "steps", 1000)
+	w.setMetricTarget(t, w.alice, "steps", 8000) // bob set none
+
+	steps := metricBlock(w.feedMetrics(t), "steps")
+	if steps == nil {
+		t.Fatal("no steps block")
+	}
+	// alice 8000 + bob default 10000 = 18000.
+	if got := int(steps["goal"].(float64)); got != 18000 {
+		t.Errorf("steps goal = %d, want 18000 (8000 + default 10000)", got)
+	}
+}
+
 func (w *feedWorld) newWater(t *testing.T, author *core.Record, ml int) *core.Record {
 	t.Helper()
 	return w.newRecord(t, "posts", map[string]any{

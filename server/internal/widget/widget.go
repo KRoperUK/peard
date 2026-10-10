@@ -531,6 +531,11 @@ func feedHandler(app core.App) func(e *core.RequestEvent) error {
 			// complication (#364). Nil when it cannot be read; the complication
 			// then falls back to the count.
 			"water": waterSummary(app, chosenPair, today),
+			// Every built-in metric the connection is actually using, each with
+			// today's amount and the summed goal (#386) — the generalisation of
+			// the water block to steps, exercise and the like. Additive: the
+			// `water` block above is unchanged for older clients.
+			"metrics": metricSummaries(app, chosenPair, today),
 			// The connection's "any moment" day streak, for the watch's streak
 			// complication (#378) — the same figure the recap shows and the
 			// "at risk" reminder (#361) is about.
@@ -826,6 +831,107 @@ func waterSummary(app core.App, pairID, today string) map[string]any {
 // widgetDefaultWaterTarget mirrors recap.defaultWaterTarget and the app's
 // WaterAmount.defaultRecommended: the goal for a member who stored none.
 const widgetDefaultWaterTarget = 2000
+
+// metricSpec is a built-in trackable metric as the server knows it, mirroring
+// the client's MetricCatalogue (#386): the slug it shares with event_kind, how
+// it is drawn, its unit, and the per-member default goal a connection uses until
+// somebody sets one.
+type metricSpec struct {
+	Slug        string
+	Label       string
+	Emoji       string
+	Unit        string
+	DefaultGoal int
+}
+
+// builtinMetrics are the metrics the feed can summarise, water first (it is the
+// hero). Kept in step with the client's MetricCatalogue.
+var builtinMetrics = []metricSpec{
+	{Slug: "water", Label: "Water", Emoji: "💧", Unit: "millilitres", DefaultGoal: widgetDefaultWaterTarget},
+	{Slug: "steps", Label: "Steps", Emoji: "👟", Unit: "count", DefaultGoal: 10000},
+	{Slug: "exercise", Label: "Exercise", Emoji: "🏃", Unit: "minutes", DefaultGoal: 30},
+}
+
+// metricSummaries is the connection's amount-today-against-goal for every
+// built-in metric it is actually using, so the watch and app can draw a ring per
+// metric (#386) — the generalisation of waterSummary to any metric.
+//
+// A metric is "in use" when the connection has either a stored metric_targets
+// row for it or an amount-bearing post of its kind; a metric nobody tracks is
+// left out rather than shown as an empty ring. `today` is the connection's
+// combined amount (everyone's, like the water streak); `goal` is the sum of each
+// member's stored goal, falling back to the metric's default for a member who
+// stored none and to one default when nobody has — exactly waterSummary's rule.
+//
+// Water keeps its own dedicated `water` block in the feed unchanged; this is
+// additive, so an older client reading only `water` sees no difference.
+func metricSummaries(app core.App, pairID, today string) []map[string]any {
+	members, merr := app.FindRecordsByFilter("pair_members", "pair = {:pair}", "", maxMembers, 0,
+		dbx.Params{"pair": pairID})
+	if merr != nil {
+		return nil
+	}
+
+	out := make([]map[string]any, 0, len(builtinMetrics))
+	for _, spec := range builtinMetrics {
+		posts, err := app.FindRecordsByFilter("posts",
+			"pair = {:pair} && type = 'event' && event_kind = {:kind} && happened_at >= {:today}",
+			"", 500, 0, dbx.Params{"pair": pairID, "kind": spec.Slug, "today": today})
+		if err != nil {
+			continue
+		}
+		amount := 0
+		for _, p := range posts {
+			amount += p.GetInt("amount")
+		}
+
+		rows, terr := app.FindRecordsByFilter("metric_targets",
+			"pair = {:pair} && metric = {:kind}", "", maxMembers, 0,
+			dbx.Params{"pair": pairID, "kind": spec.Slug})
+		if terr != nil {
+			rows = nil
+		}
+		goalByUser := map[string]int{}
+		for _, r := range rows {
+			if g := r.GetInt("goal"); g > 0 {
+				goalByUser[r.GetString("user")] = g
+			}
+		}
+
+		// A metric nobody tracks (no amount today AND no stored goal) is not
+		// shown — an empty ring reads as "zero of a goal" nobody set.
+		if amount == 0 && len(goalByUser) == 0 {
+			continue
+		}
+
+		goal := 0
+		stored := false
+		for _, mrec := range members {
+			if g, ok := goalByUser[mrec.GetString("user")]; ok {
+				goal += g
+				stored = true
+			} else {
+				goal += spec.DefaultGoal
+			}
+		}
+		if !stored {
+			goal = spec.DefaultGoal
+		}
+
+		out = append(out, map[string]any{
+			"slug":  spec.Slug,
+			"label": spec.Label,
+			"emoji": spec.Emoji,
+			"unit":  spec.Unit,
+			"today": amount,
+			"goal":  goal,
+		})
+	}
+	if len(out) == 0 {
+		return nil
+	}
+	return out
+}
 
 func todayPosts(app core.App, pairID, userID, kind, today string) []*core.Record {
 	recs, _ := app.FindRecordsByFilter("posts",
