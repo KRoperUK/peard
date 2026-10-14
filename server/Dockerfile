@@ -26,7 +26,7 @@
 # Digest-pinned (the repo's convention): the tag is kept in the comment so
 # Dependabot can still see and bump it, but the build resolves the exact image
 # by digest so a retag upstream cannot change what we build.
-FROM golang:1.27.1-alpine@sha256:8a5910f31396cd4d89662f56c68b3ae31d374308270a1c3bd96672ee5ed43414 AS commit
+FROM golang:1.27.2-alpine@sha256:f92b6ef800e499660581efdabdf25d9d817a9d124eaf900924f0504e7e27e12d AS commit
 
 WORKDIR /repo
 
@@ -49,7 +49,7 @@ RUN git config --global --add safe.directory /repo; \
     cat /commit.txt
 
 # --- build ------------------------------------------------------------------
-FROM golang:1.27.1-alpine@sha256:8a5910f31396cd4d89662f56c68b3ae31d374308270a1c3bd96672ee5ed43414 AS build
+FROM golang:1.27.2-alpine@sha256:f92b6ef800e499660581efdabdf25d9d817a9d124eaf900924f0504e7e27e12d AS build
 
 WORKDIR /src
 
