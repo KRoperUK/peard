@@ -1,3 +1,4 @@
+import AppIntents
 import PeardCore
 import SwiftUI
 import WidgetKit
@@ -139,6 +140,7 @@ struct PeardComplications: WidgetBundle {
         MomentComplication()
         WaterComplication()
         StreakComplication()
+        MetricComplication()
     }
 }
 
@@ -436,6 +438,216 @@ struct StreakComplication: Widget {
         }
         .configurationDisplayName("Pear'd Streak")
         .description("Your connection's current day streak, on a face or in the Smart Stack.")
+        .supportedFamilies([.accessoryCircular, .accessoryRectangular, .accessoryInline, .accessoryCorner])
+    }
+}
+
+// MARK: Metric complication (#392)
+
+/// A configurable complication: any metric the connection tracks, chosen in the
+/// complication's own edit sheet, drawn as the same ring the water complication
+/// draws.
+///
+/// Unlike water and streak — each a fixed view of one number — this is a
+/// template the user points at whichever metric they care about, which is why it
+/// needs `AppIntentConfiguration` rather than `StaticConfiguration`. The list
+/// comes from `feed.metrics`, so it only ever offers metrics the connection is
+/// actually tracking, and a configuration naming one that has since gone falls
+/// back to saying so rather than drawing an empty ring that reads as "zero of a
+/// goal".
+struct ChooseMetricIntent: WidgetConfigurationIntent {
+    static var title: LocalizedStringResource = "Choose a metric"
+    static var description = IntentDescription(
+        "Pick which tracked metric this complication shows — water, steps, exercise, or a connection's own."
+    )
+
+    @Parameter(title: "Metric")
+    var metric: MetricEntity?
+
+    init() {}
+
+    init(metric: MetricEntity?) {
+        self.metric = metric
+    }
+}
+
+struct MetricComplicationEntry: TimelineEntry {
+    let date: Date
+    /// The chosen metric as the feed reports it now, or nil when it is no longer
+    /// tracked, the feed carries no metrics (an older server), or nothing has
+    /// been chosen. The view says so rather than drawing a zero ring.
+    let metric: WidgetFeed.MetricSummary?
+    let state: FeedState
+
+    static let placeholder = MetricComplicationEntry(
+        date: Date(),
+        metric: WidgetFeed.MetricSummary(
+            slug: "water",
+            label: "Water",
+            emoji: "💧",
+            unitRaw: MetricUnit.millilitres.rawValue,
+            today: 1200,
+            goal: 2000
+        ),
+        state: .ok
+    )
+    static let signedOut = MetricComplicationEntry(date: Date(), metric: nil, state: .unpaired)
+}
+
+struct MetricComplicationProvider: AppIntentTimelineProvider {
+    static let refreshInterval: TimeInterval = 30 * 60
+
+    func placeholder(in context: Context) -> MetricComplicationEntry { .placeholder }
+
+    func snapshot(for configuration: ChooseMetricIntent, in context: Context) async -> MetricComplicationEntry {
+        await Self.load(slug: configuration.metric?.id)
+    }
+
+    func timeline(for configuration: ChooseMetricIntent, in context: Context) async -> Timeline<MetricComplicationEntry> {
+        let entry = await Self.load(slug: configuration.metric?.id)
+        return Timeline(entries: [entry], policy: .after(Date().addingTimeInterval(Self.refreshInterval)))
+    }
+
+    /// Required on watchOS, unlike the iOS widget's provider — the Smart Stack
+    /// gallery has no way to configure a complication before it is added, so it
+    /// offers these pre-configured ones instead.
+    ///
+    /// One per built-in metric. It cannot fetch the feed here (this is
+    /// synchronous and the gallery is offline), so these are the metrics most
+    /// likely to be tracked; one a connection is not tracking simply falls back
+    /// to "No metric" like any other departed selection.
+    func recommendations() -> [AppIntentRecommendation<ChooseMetricIntent>] {
+        MetricCatalogue.builtins.map { definition in
+            AppIntentRecommendation(
+                intent: ChooseMetricIntent(metric: MetricEntity(
+                    id: definition.slug.rawValue,
+                    title: definition.label,
+                    emoji: definition.emoji
+                )),
+                description: Text("\(definition.emoji) \(definition.label)")
+            )
+        }
+    }
+
+    private static func load(slug: String?) async -> MetricComplicationEntry {
+        let store = SharedStore.shared
+        guard let credentials = WatchCredentials(store: store) else { return .signedOut }
+        guard let feed = try? await APIClient(baseURL: credentials.baseURL).widgetFeed(
+            token: credentials.token,
+            pairID: store.selectedConnectionID
+        ) else { return .placeholder }
+        // Looked up afresh on every timeline, so a metric that has left the feed
+        // renders as untracked from now on without the stored configuration
+        // changing — the entity carries only the slug, never the amount.
+        let chosen = slug.flatMap { wanted in feed.metrics.first { $0.slug == wanted } }
+        return MetricComplicationEntry(date: Date(), metric: chosen, state: feed.state)
+    }
+}
+
+struct MetricComplicationView: View {
+    @Environment(\.widgetFamily) private var family
+    let entry: MetricComplicationEntry
+
+    private var emoji: String { entry.metric?.emoji ?? MomentCatalogue.fallbackEmoji }
+    private var label: String { entry.metric?.label ?? "Metric" }
+    private var fraction: Double { entry.metric?.progress.fraction ?? 0 }
+
+    var body: some View {
+        content.containerBackground(.clear, for: .widget)
+    }
+
+    @ViewBuilder
+    private var content: some View {
+        switch family {
+        case .accessoryInline:
+            Text(inlineText)
+        case .accessoryCircular:
+            circular
+        case .accessoryCorner:
+            Text(emoji)
+                .font(.title3)
+                .widgetLabel(cornerLabel)
+        default:
+            rectangular
+        }
+    }
+
+    private var circular: some View {
+        Gauge(value: fraction) {
+            Text(emoji).font(.system(size: 14))
+        } currentValueLabel: {
+            Text(percentText)
+                .font(.system(size: 11, weight: .semibold))
+                .monospacedDigit()
+        }
+        .gaugeStyle(.accessoryCircularCapacity)
+        .accessibilityLabel(label)
+        .accessibilityValue(accessibilityValue)
+    }
+
+    private var rectangular: some View {
+        VStack(alignment: .leading, spacing: 2) {
+            HStack(spacing: 3) {
+                Text(emoji)
+                Text("\(label) today").font(.headline).lineLimit(1)
+            }
+            if entry.metric != nil {
+                Gauge(value: fraction) { EmptyView() }
+                    .gaugeStyle(.accessoryLinearCapacity)
+                Text(rectangularDetail).font(.caption2).foregroundStyle(.secondary).lineLimit(1)
+            } else {
+                Text(emptyText).font(.caption).foregroundStyle(.secondary).lineLimit(1)
+            }
+        }
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .accessibilityElement(children: .combine)
+        .accessibilityLabel("\(label) today, \(accessibilityValue)")
+    }
+
+    // MARK: Copy
+
+    private var percentText: String {
+        guard entry.metric != nil else { return "—" }
+        return "\(Int((fraction * 100).rounded()))%"
+    }
+
+    private var cornerLabel: String {
+        guard let metric = entry.metric else { return emptyText }
+        return metric.progress.isGoalMet ? "goal met" : percentText
+    }
+
+    private var inlineText: String {
+        guard let metric = entry.metric else { return "\(emoji) \(emptyText)" }
+        if metric.progress.isGoalMet { return "\(emoji) \(label) goal met" }
+        return "\(emoji) \(label) \(percentText)"
+    }
+
+    private var rectangularDetail: String {
+        guard let metric = entry.metric else { return emptyText }
+        return metric.progress.isGoalMet ? "Goal met" : "\(percentText) of today's goal"
+    }
+
+    private var emptyText: String {
+        entry.state == .unpaired ? "Pear up" : "No metric"
+    }
+
+    private var accessibilityValue: String {
+        guard let metric = entry.metric else { return emptyText }
+        return metric.progress.isGoalMet ? "goal met" : "\(percentText) of goal"
+    }
+}
+
+struct MetricComplication: Widget {
+    var body: some WidgetConfiguration {
+        AppIntentConfiguration(
+            kind: "PeardMetricComplication",
+            intent: ChooseMetricIntent.self,
+            provider: MetricComplicationProvider()
+        ) { entry in
+            MetricComplicationView(entry: entry)
+        }
+        .configurationDisplayName("Pear'd Metric")
+        .description("A tracked metric — water, steps, exercise — toward its goal, on a face or in the Smart Stack.")
         .supportedFamilies([.accessoryCircular, .accessoryRectangular, .accessoryInline, .accessoryCorner])
     }
 }

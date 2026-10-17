@@ -72,4 +72,20 @@ public enum MomentIntentSource {
         else { return [] }
         return try await APIClient(baseURL: baseURL).widgetConnections(token: token, withMoments: withMoments)
     }
+
+    /// The metrics the selected connection is tracking, for the complication's
+    /// picker (#392). Empty when signed out, or against a server that predates
+    /// the generalised feed — either way the picker offers nothing, which is the
+    /// honest answer rather than a list made up from the built-ins.
+    public static func trackedMetrics(store: SharedStore = .shared) async throws -> [WidgetFeed.MetricSummary] {
+        guard
+            let token = store.widgetToken, !token.isEmpty,
+            let baseURL = store.apiBaseURL
+        else { return [] }
+        let feed = try await APIClient(baseURL: baseURL).widgetFeed(
+            token: token,
+            pairID: store.selectedConnectionID
+        )
+        return feed.metrics
+    }
 }
