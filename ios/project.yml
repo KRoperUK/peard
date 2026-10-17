@@ -361,6 +361,14 @@ targets:
         buildPhase: none
     dependencies:
       - package: PeardCore
+      # Explicit, even though PeardComplications.swift imports AppIntents. Swift
+      # resolves the module from the SDK without a link, but
+      # `appintentsmetadataprocessor` only runs when the target has an
+      # AppIntents.framework dependency — and without it the appex ships no
+      # Metadata.appintents bundle, so the metric complication's configuration
+      # intent is invisible to the system. The build stays green either way,
+      # which is what makes it worth stating here.
+      - sdk: AppIntents.framework
     settings:
       base:
         CODE_SIGN_ENTITLEMENTS: PeardWatchWidgets/PeardWatchWidgets.entitlements

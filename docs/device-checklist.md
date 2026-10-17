@@ -11,7 +11,7 @@ device** means no simulator could have answered it.
 
 ## Part 1 — Unverified UI (about five minutes)
 
-Seven things shipped that nobody has seen on a device. Each is a glance.
+Eight things shipped that nobody has seen on a device. Each is a glance.
 
 Number 7 has been seen in the simulator — the framing, the letterbox and the
 rotation all render correctly there. What the simulator could not do is *take a
@@ -27,6 +27,7 @@ capture-to-send path has only ever run from the photo library.
 | 5 | Home screen, **small** widget with a recent photo | The photo fills the tile and the caption bar over it is readable |
 | 6 | Share a photo | The "What is it?" sheet appears. Pick Coffee → it lands as a coffee **and** shows the picture. Skip → a plain photo, as before |
 | 7 | On that sheet, after taking a picture | Square preview, Fill/Fit, a rotate button and a caption box. Drag to reframe, pinch to zoom. Send → what you framed is what arrives, caption and all |
+| 8 | Watch face → customise → add a complication → **Pear'd Metric** | The picker lists the connection's tracked metrics (💧 Water, 👟 Steps…). Choose one → the ring shows *that* metric's progress, not water's. Reconfigure to another and the ring follows. Stop tracking the chosen one → it says "No metric" rather than drawing a stale figure |
 
 If any of these is wrong, it is almost certainly a layout or a name, not a
 design — tell me which number and I can fix it without a round trip.
