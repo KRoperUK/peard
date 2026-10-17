@@ -253,6 +253,49 @@ final class ModelRoundTripTests: XCTestCase {
         XCTAssertNil(feed.streak)
     }
 
+    // The metrics array feeds generalised daily-progress tracking (#386): each
+    // entry resolves to a MetricDefinition and a MetricProgress.
+    func testWidgetFeedDecodesTheMetricsArray() throws {
+        let json = Data(#"""
+        {"state":"ok","metrics":[
+          {"slug":"water","label":"Water","emoji":"💧","unit":"millilitres","today":1500,"goal":2000},
+          {"slug":"steps","label":"Steps","emoji":"👟","unit":"count","today":6000,"goal":10000}
+        ]}
+        """#.utf8)
+        let feed = try decoder.decode(WidgetFeed.self, from: json)
+        XCTAssertEqual(feed.metrics.count, 2)
+
+        let steps = try XCTUnwrap(feed.metrics.first { $0.slug == "steps" })
+        XCTAssertEqual(steps.today, 6000)
+        XCTAssertEqual(steps.goal, 10000)
+        XCTAssertEqual(steps.unit, .count)
+        XCTAssertEqual(steps.definition, MetricCatalogue.steps)
+        XCTAssertEqual(steps.progress.fraction, 0.6, accuracy: 0.0001)
+        XCTAssertFalse(steps.progress.isGoalMet)
+    }
+
+    // A custom metric the client has no built-in for still resolves, drawn with
+    // the feed's own label and emoji.
+    func testWidgetFeedMetricFallsBackForCustomSlug() throws {
+        let json = Data(#"""
+        {"state":"ok","metrics":[
+          {"slug":"pushups","label":"Push-ups","emoji":"💪","unit":"count","today":40,"goal":100}
+        ]}
+        """#.utf8)
+        let feed = try decoder.decode(WidgetFeed.self, from: json)
+        let custom = try XCTUnwrap(feed.metrics.first)
+        XCTAssertEqual(custom.definition.label, "Push-ups")
+        XCTAssertEqual(custom.definition.emoji, "💪")
+        XCTAssertEqual(custom.progress.goal, 100)
+    }
+
+    // A server predating metrics sends none; that is an empty list, not a decode
+    // failure that blanks the whole feed.
+    func testWidgetFeedWithoutMetricsDecodesAsEmpty() throws {
+        let feed = try decoder.decode(WidgetFeed.self, from: Data(#"{"state":"ok"}"#.utf8))
+        XCTAssertTrue(feed.metrics.isEmpty)
+    }
+
     func testAuthResponseDecodesUserRecord() throws {
         let json = Data("""
         {"token":"tok","record":{"id":"u1","email":"a@b.c","display_name":"Ada","verified":true}}
