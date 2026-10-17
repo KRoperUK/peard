@@ -298,6 +298,11 @@ final class HomeModel {
     /// The unit water is drawn in: the user's, not this connection's (#324).
     var waterUnit: WaterUnit { app.waterUnit }
 
+    /// How long the quick-send window stays open, the user's choice (#398).
+    /// Read when a moment is tapped, so the VoiceOver hint and the countdown
+    /// agree on one number.
+    var sendWindowSeconds: TimeInterval { app.sendWindow.seconds }
+
     /// The chips the quick-send window offers: this connection's sizes while the
     /// pending moment is water, or `nil` — no picker at all — for any other
     /// moment, and for water when the connection has turned it off.
@@ -424,6 +429,9 @@ final class HomeModel {
         }
         app.onHomeForegrounded = { [weak self] in
             await self?.refreshContent()
+        }
+        app.onHomeBackgrounded = { [weak self] in
+            await self?.commitPendingSendOnBackground()
         }
         // This runs every time the Home tab appears, not once. A tab switch is
         // not news: the poll, the foreground hook and the silent push are what
@@ -679,13 +687,15 @@ final class HomeModel {
 
     private func begin(moment: Moment) {
         noteText = ""
-        // Three seconds is plenty to look at a note field and tap it, and not
-        // nearly enough to swipe to it with VoiceOver or step to it with Switch
-        // Control — the send used to go before the field was reached (issue #5).
-        // So with either running it starts held, as typing a note holds it, and
-        // goes when Send is activated. Everybody else keeps the countdown.
+        // The window is the user's choice (#398), five seconds by default —
+        // long enough to look at the note field and start writing, which three
+        // was not. It is still not enough to swipe to the field with VoiceOver
+        // or step to it with Switch Control: the send used to go before the
+        // field was reached (issue #5). So with either running it starts held,
+        // as typing a note holds it, and goes when Send is activated. Everybody
+        // else keeps the countdown.
         let held = assistiveTechnologyIsRunning()
-        let send = QuickSend(moment: moment, isHeld: held)
+        let send = QuickSend(moment: moment, isHeld: held, window: app.sendWindow.seconds)
         quickSend = send
         quickSendCaption = send.caption()
         quickSendProgress = 1
@@ -807,6 +817,17 @@ final class HomeModel {
         await commitQuickSend()
     }
 
+    /// Sends a moment that was tapped but is still counting down, so going to
+    /// the background logs it rather than leaving it stranded (#398).
+    ///
+    /// Only an unheld send. One held for a note, a chosen amount or under
+    /// VoiceOver waits for the Send button on purpose — that is the whole point
+    /// of holding it — so backgrounding must not override the user's hold.
+    func commitPendingSendOnBackground() async {
+        guard let send = quickSend, !send.isHeld else { return }
+        await commitQuickSend()
+    }
+
     /// Requirement 12.3 – 12.5, 12.7.
     ///
     /// The moment goes onto the durable queue first, then the queue is flushed.
@@ -819,7 +840,10 @@ final class HomeModel {
         countdownTask?.cancel()
         countdownTask = nil
         let moment = send.moment
-        let note = noteText
+        // Normalised here as well as capped in the field: a note of nothing but
+        // whitespace is no note, and the server's limit is enforced whichever
+        // path reached this point.
+        let note = PostNote.normalised(noteText)
         quickSend = nil
         noteText = ""
         busy = .moment(moment.kind)

@@ -21,6 +21,7 @@ public final class SharedStore: @unchecked Sendable {
         public static let pinnedMoments = "pinnedMoments"
         public static let waterConfigs = "waterConfigs"
         public static let waterUnit = "waterUnit"
+        public static let sendWindow = "sendWindow"
         public static let watchLastMoments = "watchLastMoments"
         public static let cachedMoments = "cachedMoments"
         public static let cachedAvatars = "cachedAvatars"
@@ -146,6 +147,18 @@ public final class SharedStore: @unchecked Sendable {
     /// The same, against a given locale; the testable form of the getter.
     public func waterUnit(locale: Locale) -> WaterUnit {
         WaterUnit(storedValue: defaults?.string(forKey: Key.waterUnit), locale: locale)
+    }
+
+    // MARK: Send window
+
+    /// How long a tapped moment waits before it sends itself (#398), in seconds
+    /// as raw text; see `SendWindow`.
+    ///
+    /// The user's, so one value for every connection, like the water unit.
+    /// Nothing stored means the default, which is five seconds.
+    public var sendWindow: SendWindow {
+        get { SendWindow(storedValue: defaults?.string(forKey: Key.sendWindow)) }
+        set { set(newValue.rawValue, forKey: Key.sendWindow) }
     }
 
     // MARK: Pinned moments

@@ -159,11 +159,11 @@ final class MomentsTests: XCTestCase {
         let start = Date(timeIntervalSince1970: 1_000)
         let send = QuickSend(moment: MomentCatalogue.builtin[0], startedAt: start)
 
-        XCTAssertEqual(send.secondsRemaining(now: start), 3)
-        XCTAssertEqual(send.secondsRemaining(now: start.addingTimeInterval(0.5)), 3)
-        XCTAssertEqual(send.secondsRemaining(now: start.addingTimeInterval(1.2)), 2)
-        XCTAssertEqual(send.secondsRemaining(now: start.addingTimeInterval(2.2)), 1)
-        XCTAssertEqual(send.secondsRemaining(now: start.addingTimeInterval(3.0)), 0)
+        XCTAssertEqual(send.secondsRemaining(now: start), 5)
+        XCTAssertEqual(send.secondsRemaining(now: start.addingTimeInterval(0.5)), 5)
+        XCTAssertEqual(send.secondsRemaining(now: start.addingTimeInterval(1.2)), 4)
+        XCTAssertEqual(send.secondsRemaining(now: start.addingTimeInterval(4.2)), 1)
+        XCTAssertEqual(send.secondsRemaining(now: start.addingTimeInterval(5.0)), 0)
         XCTAssertEqual(send.secondsRemaining(now: start.addingTimeInterval(9.0)), 0)
     }
 
@@ -172,8 +172,32 @@ final class MomentsTests: XCTestCase {
         let send = QuickSend(moment: MomentCatalogue.builtin[0], startedAt: start)
 
         XCTAssertFalse(send.shouldSend(now: start))
-        XCTAssertFalse(send.shouldSend(now: start.addingTimeInterval(2.99)))
-        XCTAssertTrue(send.shouldSend(now: start.addingTimeInterval(3.0)))
+        XCTAssertFalse(send.shouldSend(now: start.addingTimeInterval(4.99)))
+        XCTAssertTrue(send.shouldSend(now: start.addingTimeInterval(5.0)))
+    }
+
+    /// The window is the user's choice now (#398), so its arithmetic has to hold
+    /// for a length other than the default.
+    func testAConfiguredWindowReplacesTheDefault() {
+        let start = Date(timeIntervalSince1970: 1_000)
+        let send = QuickSend(moment: MomentCatalogue.builtin[0], startedAt: start, window: 10)
+
+        XCTAssertEqual(send.secondsRemaining(now: start), 10)
+        XCTAssertEqual(send.caption(now: start), "Sending in 10…")
+        XCTAssertFalse(send.shouldSend(now: start.addingTimeInterval(9.99)))
+        XCTAssertTrue(send.shouldSend(now: start.addingTimeInterval(10.0)))
+        XCTAssertEqual(send.progressRemaining(now: start.addingTimeInterval(5)), 0.5, accuracy: 0.001)
+    }
+
+    /// A window of zero would send the instant the moment was tapped, which is
+    /// no window at all, so it is floored at one second.
+    func testAWindowIsNeverShorterThanASecond() {
+        let send = QuickSend(moment: MomentCatalogue.builtin[0], window: 0)
+
+        XCTAssertEqual(send.window, 1)
+        XCTAssertEqual(send.secondsRemaining(now: send.startedAt), 1)
+        XCTAssertFalse(send.shouldSend(now: send.startedAt))
+        XCTAssertTrue(send.shouldSend(now: send.startedAt.addingTimeInterval(1)))
     }
 
     func testTypingANoteHoldsTheSendIndefinitely() {
@@ -181,7 +205,7 @@ final class MomentsTests: XCTestCase {
         let held = QuickSend(moment: MomentCatalogue.builtin[0], startedAt: start, isHeld: true)
 
         XCTAssertFalse(held.shouldSend(now: start.addingTimeInterval(60)))
-        XCTAssertEqual(held.secondsRemaining(now: start.addingTimeInterval(60)), 3)
+        XCTAssertEqual(held.secondsRemaining(now: start.addingTimeInterval(60)), 5)
         XCTAssertEqual(held.progressRemaining(now: start.addingTimeInterval(60)), 1)
         XCTAssertEqual(held.caption(now: start.addingTimeInterval(60)), "Tap send when ready")
     }
@@ -191,17 +215,17 @@ final class MomentsTests: XCTestCase {
         let send = QuickSend(moment: MomentCatalogue.builtin[0], startedAt: start)
 
         XCTAssertEqual(send.progressRemaining(now: start), 1, accuracy: 0.001)
-        XCTAssertEqual(send.progressRemaining(now: start.addingTimeInterval(1.5)), 0.5, accuracy: 0.001)
-        XCTAssertEqual(send.progressRemaining(now: start.addingTimeInterval(3)), 0, accuracy: 0.001)
-        XCTAssertEqual(send.progressRemaining(now: start.addingTimeInterval(4)), 0, accuracy: 0.001)
+        XCTAssertEqual(send.progressRemaining(now: start.addingTimeInterval(2.5)), 0.5, accuracy: 0.001)
+        XCTAssertEqual(send.progressRemaining(now: start.addingTimeInterval(5)), 0, accuracy: 0.001)
+        XCTAssertEqual(send.progressRemaining(now: start.addingTimeInterval(6)), 0, accuracy: 0.001)
     }
 
     func testCaptionCountsDownThenReportsSending() {
         let start = Date(timeIntervalSince1970: 1_000)
         let send = QuickSend(moment: MomentCatalogue.builtin[0], startedAt: start)
 
-        XCTAssertEqual(send.caption(now: start), "Sending in 3…")
-        XCTAssertEqual(send.caption(now: start.addingTimeInterval(2.2)), "Sending in 1…")
-        XCTAssertEqual(send.caption(now: start.addingTimeInterval(3.1)), "Sending…")
+        XCTAssertEqual(send.caption(now: start), "Sending in 5…")
+        XCTAssertEqual(send.caption(now: start.addingTimeInterval(3.2)), "Sending in 2…")
+        XCTAssertEqual(send.caption(now: start.addingTimeInterval(5.1)), "Sending…")
     }
 }

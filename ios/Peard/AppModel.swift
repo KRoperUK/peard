@@ -69,6 +69,13 @@ final class AppModel {
     var waterUnit: WaterUnit {
         didSet { sharedStore.waterUnit = waterUnit }
     }
+
+    /// How long a tapped moment waits before it sends itself (#398). Mirrored
+    /// like the rest, and read when a moment is tapped rather than on every tick,
+    /// so a change applies to the next send and never moves one in flight.
+    var sendWindow: SendWindow {
+        didSet { sharedStore.sendWindow = sendWindow }
+    }
     let widgetSync: WidgetSync
     let push: PushCoordinator
     let liveActivities: LiveActivityCoordinator
@@ -155,6 +162,7 @@ final class AppModel {
         self.appearance = sharedStore.appearance
         self.lowData = sharedStore.lowData
         self.waterUnit = sharedStore.waterUnit
+        self.sendWindow = sharedStore.sendWindow
         let api = APIClient(baseURL: config.serverURL, tokenProvider: sessionStore, session: session)
         self.api = api
         self.fileTokens = FileTokenStore(api: api)
@@ -204,6 +212,11 @@ final class AppModel {
     /// content — and only its content: `applicationDidBecomeActive` has already
     /// refreshed the connections and started the flush by the time it runs.
     var onHomeForegrounded: (@MainActor () async -> Void)?
+
+    /// Set by the home screen so a moment still counting down is sent rather
+    /// than abandoned when the app goes to the background (#398). Without it,
+    /// the countdown task is suspended with everything else and the tap is lost.
+    var onHomeBackgrounded: (@MainActor () async -> Void)?
 
     /// Requirement 18.6 — refresh posts, refresh the App Group container, and
     /// reload widget timelines. Also drains the send queue: a silent push is a
@@ -1144,6 +1157,20 @@ final class AppModel {
         // flush that delivers something asks for a full home refresh itself,
         // so content read here before a queued moment lands is corrected then.
         await onHomeForegrounded?()
+    }
+
+    // MARK: Background
+
+    /// Called from `PeardApp`'s `scenePhase` observer when the app goes to the
+    /// background (#398).
+    ///
+    /// The one job is to hand a still-counting-down moment to the home screen,
+    /// which commits it to the durable queue before the app is suspended — so
+    /// "tap a moment, then switch away" logs it rather than losing it. A send
+    /// already held for a note is deliberately left alone: somebody who typed
+    /// something meant to tap Send themselves.
+    func applicationDidEnterBackground() async {
+        await onHomeBackgrounded?()
     }
 }
 

@@ -55,12 +55,20 @@ struct PeardApp: App {
         // cold launch and the notification-authorization status went stale the
         // moment somebody changed it in Settings.
         .onChange(of: scenePhase) { previous, phase in
-            guard phase == .active, previous != .active else { return }
-            Task { await model.applicationDidBecomeActive() }
-            // Rebuilt on every foreground: the labels come from
-            // MomentCatalogue, and the menu is otherwise whatever it was when
-            // the app was installed.
-            QuickActions.install()
+            switch phase {
+            case .active where previous != .active:
+                Task { await model.applicationDidBecomeActive() }
+                // Rebuilt on every foreground: the labels come from
+                // MomentCatalogue, and the menu is otherwise whatever it was when
+                // the app was installed.
+                QuickActions.install()
+            case .background:
+                // A moment tapped but still counting down goes now, rather than
+                // being frozen mid-countdown by the background and lost (#398).
+                Task { await model.applicationDidEnterBackground() }
+            default:
+                break
+            }
         }
     }
 }

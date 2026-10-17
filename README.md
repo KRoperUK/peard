@@ -19,8 +19,8 @@ That is enforced by collection rules on the server, not by the app, and
 **Moments** are the one-tap things worth saying: `beer`, `loo` and `coffee` are
 built in, and any connection can invent its own — pick from a recommended list or
 type a label and choose an emoji. Tapping a moment sends it on its own after
-**three seconds**; the window is there only so you can add a note, and typing one
-holds the send until you tap it yourself. The ⏪ button beside the note rewinds it to any time in the
+**five seconds** (adjustable in Settings); the window is there only so you can add
+a note, and typing one holds the send until you tap it yourself. The ⏪ button beside the note rewinds it to any time in the
 last 24 hours, for the round you forgot to log: it sits in the timeline and the
 tallies where it happened, with a **Rewound** chip so nobody mistakes it for
 something said in the moment. A moment logged with no signal is kept
@@ -727,7 +727,7 @@ Three things that cost time finding out:
 - **XcodeBuildMCP's taps did not reach the app on Xcode 27.** They report
   success and nothing happens — by element reference and by coordinate alike.
   Xcode's device-interaction tools worked on the same simulator.
-- **The 3-second send window is shorter than one agent round trip.** Tapping a
+- **The send window is shorter than one agent round trip.** Tapping a
   moment and then the ⏪ button as two separate steps sends the moment before
   the second tap lands, and the tiles move up under the next one. Issue both
   taps in a single interaction command.
