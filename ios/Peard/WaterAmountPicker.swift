@@ -16,6 +16,10 @@ struct WaterAmountPicker: View {
     let amount: Int?
     let presets: [WaterAmount.Preset]
     var unit: WaterUnit = .millilitres
+    /// Called when the custom field is focused, before a figure has parsed. The
+    /// caller holds the send on it: a countdown that fired while somebody was
+    /// still typing the amount sent the wrong one (#397).
+    var onBeginEditing: (() -> Void)?
     let onSelect: (Int?) -> Void
 
     @State private var custom = ""
@@ -93,6 +97,12 @@ struct WaterAmountPicker: View {
                     let (digits, ml) = Self.entry(text, unit: unit)
                     if digits != text { custom = digits }
                     onSelect(ml)
+                }
+                .onChange(of: customFocused) { _, focused in
+                    // Only on the way in: losing focus leaves the send held, as
+                    // a typed note does, so it cannot fire out from under
+                    // somebody who is mid-thought.
+                    if focused { onBeginEditing?() }
                 }
             Text(unit.symbol)
                 .font(.footnote)

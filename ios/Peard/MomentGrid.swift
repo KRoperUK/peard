@@ -38,6 +38,11 @@ struct MomentGrid: View {
     /// What a tap does here, which is what the VoiceOver hint has to say.
     var purpose: Purpose = .send
 
+    /// How long the countdown runs, for the hint that says so (#398). The user's
+    /// window, passed in rather than read from `QuickSend`, so the hint and the
+    /// countdown that actually runs agree.
+    var sendWindow: TimeInterval = QuickSend.defaultDelay
+
     /// Home sends; the photo sheet only picks what a picture is of.
     enum Purpose {
         case send
@@ -159,7 +164,8 @@ struct MomentGrid: View {
         .accessibilityHint(Self.hint(
             purpose: purpose,
             isPending: isPending,
-            sendIsHeld: voiceOverEnabled || switchControlEnabled
+            sendIsHeld: voiceOverEnabled || switchControlEnabled,
+            sendWindow: sendWindow
         ))
     }
 
@@ -167,7 +173,12 @@ struct MomentGrid: View {
     /// VoiceOver or Switch Control — with either, the send starts held until
     /// Send is activated (issue #5) — and in the photo sheet a tap only picks
     /// the moment, or clears it if it was already the choice.
-    static func hint(purpose: Purpose, isPending: Bool, sendIsHeld: Bool) -> String {
+    static func hint(
+        purpose: Purpose,
+        isPending: Bool,
+        sendIsHeld: Bool,
+        sendWindow: TimeInterval = QuickSend.defaultDelay
+    ) -> String {
         switch purpose {
         case .pick:
             return isPending ? String(localized: "Clears the choice") : String(localized: "Chooses this moment for the photo")
@@ -176,7 +187,7 @@ struct MomentGrid: View {
             if isPending { return String(localized: "Sends it now") }
             return sendIsHeld
                 ? String(localized: "Gets it ready, so you can add a note before sending")
-                : String(localized: "Sends in \(Int(QuickSend.delay)) seconds unless you add a note")
+                : String(localized: "Sends in \(Int(sendWindow.rounded())) seconds unless you add a note")
         }
     }
 

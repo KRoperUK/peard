@@ -83,7 +83,13 @@ struct HomeView: View {
         .onChange(of: model.quickSend?.moment.kind) { _, kind in
             noteFocused = kind != nil
         }
-        .onChange(of: model.noteText) { _, _ in
+        .onChange(of: model.noteText) { _, newValue in
+            // Stop at the server's limit as it is typed, rather than letting the
+            // send be refused for something the field could have prevented
+            // (#399). The reassignment re-fires this with the capped value, so
+            // the hold below is still applied — once.
+            let capped = PostNote.capped(newValue)
+            if capped != newValue { model.noteText = capped }
             model.noteDidChange()
         }
         .fullScreenCover(item: $viewingPhoto) { post in
@@ -202,7 +208,8 @@ struct HomeView: View {
                 onTap: { model.tap(moment: $0) },
                 onMore: { showMomentSheet = true },
                 isPinned: { model.isPinned($0) },
-                onTogglePin: { model.togglePin($0) }
+                onTogglePin: { model.togglePin($0) },
+                sendWindow: model.sendWindowSeconds
             )
 
             // Tapping is how moments are logged; saying so to Siri is the other
@@ -521,6 +528,33 @@ struct HomeView: View {
         return sentence
     }
 
+    /// The note field, on a row of its own so it has the full width to grow into
+    /// as somebody writes (#399).
+    ///
+    /// A single line scrolled the text out of sight once it passed the width of
+    /// the field, so a long note could not be re-read before sending. Now it
+    /// wraps, up to five lines, and the Send, Rewind and Cancel controls sit on
+    /// the row below so they stay reachable while it is expanded. The counter
+    /// appears only near the limit, as in the edit and caption sheets: one under
+    /// every note is noise, and it is the cap that needs warning.
+    private var noteField: some View {
+        VStack(alignment: .leading, spacing: 4) {
+            TextField("", text: $model.noteText, prompt: Text("Add a note (optional)…"), axis: .vertical)
+                .focused($noteFocused)
+                .lineLimit(1...5)
+                .padding(12)
+                .background(PearColor.surface, in: RoundedRectangle(cornerRadius: 12))
+                .accessibilityLabel("Moment note")
+
+            if model.noteText.count > 200 {
+                Text("\(PostNote.limit - model.noteText.count) characters left")
+                    .font(.caption2)
+                    .foregroundStyle(model.noteText.count >= PostNote.limit ? PearColor.error : PearColor.textTertiary)
+                    .frame(maxWidth: .infinity, alignment: .trailing)
+            }
+        }
+    }
+
     /// The undo/annotate window. It says what is about to happen and by when, so
     /// the automatic send is never a surprise.
     private var quickSendRow: some View {
@@ -563,20 +597,22 @@ struct HomeView: View {
             }
 
             if let send = model.quickSend, let presets = model.quickSendWaterPresets {
-                WaterAmountPicker(amount: send.amount, presets: presets, unit: model.waterUnit) {
+                WaterAmountPicker(
+                    amount: send.amount,
+                    presets: presets,
+                    unit: model.waterUnit,
+                    // Reaching for the custom field stops the clock, before a
+                    // figure has parsed: the send used to fire while somebody
+                    // was still typing the amount (#397).
+                    onBeginEditing: { model.holdQuickSend() }
+                ) {
                     model.setQuickSendAmount($0)
                 }
             }
 
-            HStack(spacing: 8) {
-                TextField("", text: $model.noteText, prompt: Text("Add a note (optional)…"))
-                    .focused($noteFocused)
-                    .submitLabel(.send)
-                    .onSubmit { Task { await model.sendNow() } }
-                    .padding(12)
-                    .background(PearColor.surface, in: RoundedRectangle(cornerRadius: 12))
-                    .accessibilityLabel("Moment note")
+            noteField
 
+            HStack(spacing: 8) {
                 Button {
                     model.holdQuickSend()
                     showRewind = true
@@ -592,6 +628,8 @@ struct HomeView: View {
                     String(localized: "Set to \($0.formatted(date: .omitted, time: .shortened))")
                 } ?? "")
                 .accessibilityHint("Log this moment at an earlier time, up to 24 hours ago")
+
+                Spacer(minLength: 0)
 
                 Button("Send") {
                     Task { await model.sendNow() }

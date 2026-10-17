@@ -11,7 +11,7 @@ final class VoiceOverWordingTests: XCTestCase {
     func testHomeHintMentionsTheCountdownOnlyWhenTheSendIsNotHeld() {
         XCTAssertEqual(
             MomentGrid.hint(purpose: .send, isPending: false, sendIsHeld: false),
-            "Sends in \(Int(QuickSend.delay)) seconds unless you add a note"
+            "Sends in \(Int(QuickSend.defaultDelay)) seconds unless you add a note"
         )
         let held = MomentGrid.hint(purpose: .send, isPending: false, sendIsHeld: true)
         XCTAssertFalse(held.contains("seconds"), held)
