@@ -544,6 +544,9 @@
     "How amounts of water are shown, in every connection. Logged amounts are kept in millilitres, so switching changes nothing already logged." : {
 
     },
+    "How long a moment waits before it sends itself, so you can add a note. Typing a note holds the send until you tap Send." : {
+
+    },
     "How much? Pick a size, or log it without one." : {
 
     },
@@ -1004,6 +1007,9 @@
 
     },
     "Send it on its own, or pick what it's of. Either way the caption goes with it — Skip only skips the question." : {
+
+    },
+    "Send window" : {
 
     },
     "Sending %lld moments…" : {

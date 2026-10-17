@@ -82,20 +82,34 @@ jobs:
         working-directory: server
         run: go vet ./...
 
+      # The suite is split in two so the race detector runs only where it can
+      # find anything. -race instruments every memory access and, on this suite,
+      # roughly triples the wall clock; it only has a race to report where there
+      # are goroutines, and this server's goroutines all live in three packages —
+      # the push/fan-out layer (`deliver.go`), the counters in `health`, and the
+      # backup scheduler. Every other package is ordinary single-goroutine test
+      # code, so instrumenting it bought nothing and cost most of the ~15 minutes.
+      #
+      # Nothing is skipped: the raced packages are named here and excluded below,
+      # so they run under -race exactly as before, and everything else runs the
+      # same tests with the instrumentation off.
       - name: Test
         working-directory: server
-        # -race over the push/fan-out layer, which is goroutine-heavy — a data
-        # race there would otherwise only ever surface in production. The race
-        # detector needs cgo, so the plain CGO_ENABLED=0 image build is
-        # unaffected; this is test-only.
-        #
-        # Explicit -timeout: race instrumentation plus the suite's real
-        # per-test work (the push/APNs and posts suites each run many ~5s
-        # cases) can push the slowest package past Go's default 10m
-        # per-package timeout on a shared runner. 30m is comfortably clear of
-        # the ~5.5m the slowest package takes while still failing a genuinely
-        # hung test.
-        run: go test -race -timeout 30m ./...
+        # Explicit -timeout: the suite's real per-test work (the push/APNs and
+        # posts suites each run many ~5s cases) can push the slowest package past
+        # Go's default 10m per-package timeout on a shared runner.
+        run: |
+          set -euo pipefail
+          packages=$(go list ./... | grep -vE '^peard/internal/(push|health|backups)$')
+          go test -timeout 30m $packages
+
+      - name: Test (race)
+        working-directory: server
+        # The goroutine-heavy layer again, instrumented: a data race in the push
+        # fan-out, or in the counters it updates, would otherwise only ever
+        # surface in production. The race detector needs cgo, so the plain
+        # CGO_ENABLED=0 image build is unaffected; this is test-only.
+        run: go test -race -timeout 30m ./internal/push/... ./internal/health/... ./internal/backups/...
 
       - name: Check gofmt
         working-directory: server

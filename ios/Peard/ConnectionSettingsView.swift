@@ -51,6 +51,7 @@ struct ConnectionSettingsView: View {
                 yourNameSection
                 discoverabilitySection
                 appearanceSection
+                SendWindowSection()
                 WaterUnitSection(app: app)
                 WaterSettingsSection(model: model)
                 LowDataSection()

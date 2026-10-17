@@ -65,7 +65,7 @@ final class QuickSendFlowTests: XCTestCase {
         model.tap(moment: beer)
 
         XCTAssertEqual(model.quickSend?.moment.kind, .beer)
-        XCTAssertEqual(model.quickSendCaption, "Sending in 3…")
+        XCTAssertEqual(model.quickSendCaption, "Sending in 5…")
         XCTAssertEqual(model.quickSendProgress, 1)
     }
 
@@ -76,17 +76,57 @@ final class QuickSendFlowTests: XCTestCase {
         XCTAssertEqual(model.noteText, "")
     }
 
-    /// The window is three seconds, and the caption counts down rather than
-    /// sitting still — otherwise there is no way to tell how long is left.
+    /// The caption counts down rather than sitting still — otherwise there is no
+    /// way to tell how long is left.
     func testCaptionCountsDownAsTheWindowRuns() {
         model.tap(moment: beer)
         guard let send = model.quickSend else { return XCTFail("no pending send") }
         let started = send.startedAt
 
-        XCTAssertEqual(send.caption(now: started), "Sending in 3…")
-        XCTAssertEqual(send.caption(now: started.addingTimeInterval(1.2)), "Sending in 2…")
-        XCTAssertEqual(send.caption(now: started.addingTimeInterval(2.5)), "Sending in 1…")
-        XCTAssertEqual(send.caption(now: started.addingTimeInterval(3.0)), "Sending…")
+        XCTAssertEqual(send.caption(now: started), "Sending in 5…")
+        XCTAssertEqual(send.caption(now: started.addingTimeInterval(1.2)), "Sending in 4…")
+        XCTAssertEqual(send.caption(now: started.addingTimeInterval(3.6)), "Sending in 2…")
+        XCTAssertEqual(send.caption(now: started.addingTimeInterval(5.0)), "Sending…")
+    }
+
+    // MARK: The send window (#398)
+
+    /// The window is the user's choice, and the countdown a tap starts uses it.
+    func testTheChosenSendWindowDecidesTheCountdown() {
+        let original = app.sendWindow
+        defer { app.sendWindow = original }
+        app.sendWindow = .ten
+
+        model.tap(moment: beer)
+
+        XCTAssertEqual(model.quickSend?.window, 10)
+        XCTAssertEqual(model.quickSendCaption, "Sending in 10…")
+    }
+
+    /// A moment still counting down when the app is minimised is sent rather than
+    /// left stranded — the countdown task is suspended with everything else.
+    func testGoingToTheBackgroundSendsAMomentStillCountingDown() async {
+        model.tap(moment: beer)
+
+        await model.commitPendingSendOnBackground()
+
+        XCTAssertNil(model.quickSend)
+        let queued = await queue.pending
+        XCTAssertEqual(queued.map(\.kind), [.beer])
+    }
+
+    /// A held send is the user's own doing — a note is half-written — so
+    /// backgrounding must not override the hold.
+    func testGoingToTheBackgroundLeavesAHeldMomentAlone() async {
+        model.tap(moment: beer)
+        model.noteText = "at the pub"
+        model.noteDidChange()
+
+        await model.commitPendingSendOnBackground()
+
+        XCTAssertEqual(model.quickSend?.moment.kind, .beer)
+        let queued = await queue.count
+        XCTAssertEqual(queued, 0, "a held moment must wait for the Send button")
     }
 
     // MARK: Holding on a note
@@ -166,7 +206,7 @@ final class QuickSendFlowTests: XCTestCase {
     }
 
     /// Tapping a different moment commits what was pending and starts again, so
-    /// moments can be logged back to back without waiting three seconds each.
+    /// moments can be logged back to back without waiting out the window each.
     func testTappingADifferentMomentCommitsTheFirstAndStartsTheSecond() async {
         model.tap(moment: beer)
         model.tap(moment: coffee)
@@ -339,7 +379,7 @@ final class QuickSendFlowTests: XCTestCase {
     // MARK: VoiceOver (issue #5)
 
     /// With VoiceOver the note field is a swipe or three away; the moment must
-    /// wait for it rather than send itself after three seconds.
+    /// wait for it rather than send itself when the window runs out.
     func testWithVoiceOverRunningTheSendWaits() {
         model.assistiveTechnologyIsRunning = { true }
 
@@ -366,7 +406,7 @@ final class QuickSendFlowTests: XCTestCase {
         model.tap(moment: beer)
 
         XCTAssertEqual(model.quickSend?.isHeld, false)
-        XCTAssertEqual(model.quickSendCaption, "Sending in 3…")
+        XCTAssertEqual(model.quickSendCaption, "Sending in 5…")
     }
 
     // MARK: Photos (issue #2)
