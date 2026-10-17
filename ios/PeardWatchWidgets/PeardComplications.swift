@@ -465,6 +465,10 @@ struct ChooseMetricIntent: WidgetConfigurationIntent {
     var metric: MetricEntity?
 
     init() {}
+
+    init(metric: MetricEntity?) {
+        self.metric = metric
+    }
 }
 
 struct MetricComplicationEntry: TimelineEntry {
@@ -502,6 +506,27 @@ struct MetricComplicationProvider: AppIntentTimelineProvider {
     func timeline(for configuration: ChooseMetricIntent, in context: Context) async -> Timeline<MetricComplicationEntry> {
         let entry = await Self.load(slug: configuration.metric?.id)
         return Timeline(entries: [entry], policy: .after(Date().addingTimeInterval(Self.refreshInterval)))
+    }
+
+    /// Required on watchOS, unlike the iOS widget's provider — the Smart Stack
+    /// gallery has no way to configure a complication before it is added, so it
+    /// offers these pre-configured ones instead.
+    ///
+    /// One per built-in metric. It cannot fetch the feed here (this is
+    /// synchronous and the gallery is offline), so these are the metrics most
+    /// likely to be tracked; one a connection is not tracking simply falls back
+    /// to "No metric" like any other departed selection.
+    func recommendations() -> [AppIntentRecommendation<ChooseMetricIntent>] {
+        MetricCatalogue.builtins.map { definition in
+            AppIntentRecommendation(
+                intent: ChooseMetricIntent(metric: MetricEntity(
+                    id: definition.slug.rawValue,
+                    title: definition.label,
+                    emoji: definition.emoji
+                )),
+                description: Text("\(definition.emoji) \(definition.label)")
+            )
+        }
     }
 
     private static func load(slug: String?) async -> MetricComplicationEntry {
