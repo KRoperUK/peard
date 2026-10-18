@@ -15,7 +15,12 @@ final class PushCoordinator {
     private let center: UNUserNotificationCenter
     /// Durable queue for reactions tapped from a notification (#366): a tap in a
     /// background launch with no signal is persisted and retried, not dropped.
-    private let reactionQueue: ReactionQueue
+    ///
+    /// Settable so a test can drain one backed by a store of its own — the App
+    /// Group container is shared with the device, and a test that seeded a
+    /// pending reaction into it would be writing to (and draining) the real
+    /// queue (#384).
+    var reactionQueue: ReactionQueue
 
     /// Set by the app model so a `content-available` push can refresh the
     /// timeline, and a notification tap can focus a post.
