@@ -90,11 +90,14 @@ func TestAnAmountCannotBeNegative(t *testing.T) {
 func TestAnAmountHasACeiling(t *testing.T) {
 	w := newWorld(t)
 
-	if status, body := w.createRaw(t, w.aliceTok, `,"event_kind":"water","amount":5000`); status != http.StatusOK {
-		t.Errorf("5000 ml: %d %s, want it accepted", status, body)
+	// The ceiling is no longer water's five litres: a daily-progress metric
+	// counts in the thousands, and 8,000 steps used to be refused at the wire
+	// (#390).
+	if status, body := w.createRaw(t, w.aliceTok, `,"event_kind":"water","amount":8000`); status != http.StatusOK {
+		t.Errorf("8000: %d %s, want it accepted", status, body)
 	}
-	if status, body := w.createRaw(t, w.aliceTok, `,"event_kind":"water","amount":5001`); status != http.StatusBadRequest {
-		t.Errorf("5001 ml: %d %s, want 400", status, body)
+	if status, body := w.createRaw(t, w.aliceTok, `,"event_kind":"water","amount":1000001`); status != http.StatusBadRequest {
+		t.Errorf("1000001: %d %s, want 400", status, body)
 	}
 }
 

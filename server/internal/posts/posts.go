@@ -52,10 +52,14 @@ const noteType = "note"
 
 const emptyReply = "a reply needs something in it"
 
-// The most one moment may carry, in millilitres. Matches the `amount` field's
-// Max. Five litres in one go is a typo or a joke, and either would sit in the
-// day's total all day.
-const maxAmount = 5000
+// The most one moment may carry, in its metric's canonical unit. Matches the
+// `amount` field's Max.
+//
+// Amount is no longer water's alone (#386): steps and exercise minutes are
+// counts in the thousands, so the wire ceiling is a sanity bound rather than
+// water's five litres. Each metric's real maximum lives in the client's
+// `MetricDefinition`, and water's is still five litres.
+const maxAmount = 1_000_000
 
 // Matches the `event_kind` field's Max.
 const maxKindLength = 40
@@ -273,7 +277,7 @@ func CheckAmount(post *core.Record) string {
 	case amount < 0:
 		return "an amount cannot be negative"
 	case amount > maxAmount:
-		return "an amount can be at most 5000 ml"
+		return "an amount is too large"
 	case post.GetString("type") != "event":
 		return "only a moment can carry an amount"
 	}
