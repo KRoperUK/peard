@@ -43,6 +43,9 @@
     "%@ saved — will send" : {
 
     },
+    "%@ to the %@ goal" : {
+
+    },
     "%@ to the %@ minimum" : {
 
     },
@@ -1217,6 +1220,9 @@
 
     },
     "Today" : {
+
+    },
+    "Today, against the goal everybody in this connection has set." : {
 
     },
     "Too many attempts. Wait a minute and try again." : {
