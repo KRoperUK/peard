@@ -107,6 +107,43 @@ final class MemberWaterTargetTests: XCTestCase {
         XCTAssertNil(sent["user"], "the server takes the user from the session; there is no naming somebody else")
     }
 
+    // MARK: Per-metric targets (#390)
+
+    /// The generalised route: the same shape as the water one, with the metric
+    /// named. This is what turns a built-in template like Steps into a tracked
+    /// metric the feed then reports.
+    func testSettingAMetricTargetPostsTheMetricAndGoalAsJSON() async throws {
+        StubURLProtocol.respond(json: #"{"ok":true,"metric":"steps","minimum":0,"goal":8000}"#)
+
+        try await client.setMetricTarget(pairID: "pair1", metric: "steps", minimum: 0, goal: 8000)
+
+        let request = try XCTUnwrap(StubURLProtocol.lastRequest)
+        XCTAssertEqual(request.httpMethod, "POST")
+        XCTAssertEqual(request.url?.path, "/api/peard/metric/target")
+        let body = try XCTUnwrap(StubURLProtocol.lastBody)
+        let sent = try XCTUnwrap(JSONSerialization.jsonObject(with: body) as? [String: Any])
+        XCTAssertEqual(sent["pair"] as? String, "pair1")
+        XCTAssertEqual(sent["metric"] as? String, "steps")
+        XCTAssertEqual(sent["minimum"] as? Int, 0)
+        XCTAssertEqual(sent["goal"] as? Int, 8000, "the server binds an integer; a quoted number is a 400")
+        XCTAssertNil(sent["user"], "the server takes the user from the session")
+    }
+
+    /// Both zero is how a metric stops being tracked: the server stores that as
+    /// "cleared", so the row leaves the feed rather than reading as a goal of
+    /// nothing.
+    func testClearingAMetricTargetSendsZeros() async throws {
+        StubURLProtocol.respond(json: #"{"ok":true}"#)
+
+        try await client.setMetricTarget(pairID: "pair1", metric: "exercise", minimum: 0, goal: 0)
+
+        let body = try XCTUnwrap(StubURLProtocol.lastBody)
+        let sent = try XCTUnwrap(JSONSerialization.jsonObject(with: body) as? [String: Any])
+        XCTAssertEqual(sent["metric"] as? String, "exercise")
+        XCTAssertEqual(sent["minimum"] as? Int, 0)
+        XCTAssertEqual(sent["goal"] as? Int, 0)
+    }
+
     // MARK: Taking the server's copy
 
     func testSetTargetsHoldsTheInvariantsWhateverTheOrder() {
