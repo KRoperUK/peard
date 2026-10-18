@@ -44,7 +44,7 @@ final class AppModel {
     /// own record of what is actually set, and keeping a second copy in
     /// UserDefaults is how the two come to disagree after a restore or a
     /// reinstall.
-    private(set) var appIcon: AppIconChoice = .init(alternateName: nil)
+    var appIcon: AppIconChoice = .init(alternateName: nil)
 
     /// Light, dark, or whatever the phone is doing.
     ///
@@ -93,7 +93,7 @@ final class AppModel {
 
     // MARK: State
 
-    private(set) var phase: Phase = .loading
+    var phase: Phase = .loading
     /// Every connection the signed-in user belongs to, oldest first.
     ///
     /// The observer keeps the springboard badge honest. Doing it here rather
@@ -101,38 +101,38 @@ final class AppModel {
     /// six places — membership resolution, refresh, the local unread clear,
     /// sign-out, account deletion and the 401 path — and a badge that is only
     /// right at five of them is a badge nobody can trust.
-    private(set) var connections: [Connection] = [] {
+    var connections: [Connection] = [] {
         didSet { syncBadge() }
     }
     /// Drives the retry control shown when membership resolution failed
     /// (Requirement 9.6).
-    private(set) var membershipFailed = false
+    var membershipFailed = false
     /// When `connections` was last fetched from the server, so a list restored
     /// from the cache can say how old it is (#300).
-    private(set) var connectionsUpdatedAt: Date?
+    var connectionsUpdatedAt: Date?
     /// True while the list on screen came from the cache rather than the server,
     /// which is what makes it worth saying so.
-    private(set) var connectionsFromCache = false
+    var connectionsFromCache = false
     /// Post to scroll to after a notification tap (Requirement 18.7).
     var focusedPostID: String?
     /// Non-blocking message shown under the current screen.
     var banner: String?
     /// Mirror of the queue's contents, so views can draw pending moments without
     /// awaiting an actor on every redraw.
-    private(set) var pendingSends: [PendingSend] = []
+    var pendingSends: [PendingSend] = []
     /// False while there is no usable network path.
-    private(set) var isOnline = true
+    var isOnline = true
     /// True while iOS Low Data Mode is on for the network in use.
-    private(set) var isNetworkConstrained = false
+    var isNetworkConstrained = false
     /// Hidden for the rest of the session once dismissed. Not remembered past
     /// that: the notice is the only sign of why photos look soft, and somebody
     /// who forgot they turned it on deserves to be told again next launch.
     var lowDataNoticeDismissed = false
     /// The caller's own record, loaded lazily by the settings screen.
-    private(set) var profile: UserProfile?
+    var profile: UserProfile?
 
-    private var hasRequestedPushThisSession = false
-    private var flushTask: Task<Void, Never>?
+    var hasRequestedPushThisSession = false
+    var flushTask: Task<Void, Never>?
     /// An invite code from a link that arrived mid-launch, held until the launch
     /// has finished routing — see `handle(url:)` and `applyPendingPairCode()`.
     ///
@@ -144,7 +144,7 @@ final class AppModel {
     /// Readable so the tests can assert it is *held* rather than applied: with
     /// no session there is nothing to redeem an invite against, so the correct
     /// behaviour is to land on sign-in with the code still in hand.
-    private(set) var pendingPairCode: String?
+    var pendingPairCode: String?
 
     init(
         config: PeardConfig = .current,
@@ -222,7 +222,7 @@ final class AppModel {
     /// reload widget timelines. Also drains the send queue: a silent push is a
     /// free wake-up, and the device demonstrably has connectivity to have received
     /// it at all.
-    private func performBackgroundRefresh() async {
+    func performBackgroundRefresh() async {
         await flushSendQueueAndWait(refreshingHome: false)
         await onHomeRefreshRequested?()
         await widgetSync.sync()
@@ -269,7 +269,7 @@ final class AppModel {
     /// Last, so it wins over whatever membership resolution decided — which is
     /// the point: somebody who taps an invite link wants the pairing screen with
     /// the code in it, not the home screen they would have got anyway.
-    private func applyPendingPairCode() {
+    func applyPendingPairCode() {
         guard let code = pendingPairCode else { return }
         pendingPairCode = nil
         phase = .pair(prefilledCode: code)
@@ -299,445 +299,6 @@ final class AppModel {
         await bootstrap()
     }
 
-    // MARK: Send queue
-
-    /// Reads the queue into observable state and starts watching the network, so a
-    /// moment logged with no signal leaves as soon as there is one.
-    ///
-    /// Internal rather than private so the app-target tests can drive the real
-    /// path instead of a test-only hook.
-    func attachSendQueue() async {
-        await refreshPendingSends()
-        isOnline = reachability.isOnline
-        isNetworkConstrained = reachability.isConstrained
-        reachability.onConstrainedChange { [weak self] constrained in
-            Task { @MainActor in self?.isNetworkConstrained = constrained }
-        }
-        reachability.onChange { [weak self] online in
-            Task { @MainActor in
-                guard let self else { return }
-                self.isOnline = online
-                // Only on the way back up: going offline has nothing to send.
-                if online { self.flushSendQueue() }
-            }
-        }
-        reachability.start()
-    }
-
-    /// Copies the queue's contents into `pendingSends`.
-    ///
-    /// Called after every operation that can change the queue rather than through a
-    /// callback registered at startup. The callback version meant the UI showed
-    /// nothing at all if the registration had not happened yet — an ordering
-    /// dependency with no visible symptom, which is the worst kind.
-    private func refreshPendingSends() async {
-        pendingSends = await sendQueue.pending
-    }
-
-    /// Adds a moment to the queue. The queue persists it before anything is sent,
-    /// so the moment survives the app being killed mid-request.
-    func enqueue(_ send: PendingSend) async {
-        await sendQueue.enqueue(send)
-        await refreshPendingSends()
-    }
-
-    /// Answers a photo from the photo viewer (issue #304): words, or a photo
-    /// of your own captioned with them. Here rather than on a screen's model
-    /// because the viewer opens from both Home and the timeline, and the queue
-    /// is the app's either way.
-    ///
-    /// Queued, then flushed, like any moment. Returns false only when nothing
-    /// was queued — no words and no photo, or a photo that could not be kept
-    /// to send; a reply that is merely waiting for signal has worked.
-    @discardableResult
-    func reply(to photo: Post, note: String, image: UIImage? = nil) async -> Bool {
-        let data = image?.jpegData(compressionQuality: PhotoSquare.jpegQuality)
-        if image != nil, data?.isEmpty ?? true { return false }
-        guard let send = PendingSend.reply(to: photo, authorID: signedInUserID, note: note, withPhoto: data != nil),
-              !send.authorID.isEmpty
-        else { return false }
-        if let data {
-            do {
-                try pendingPhotos.save(data, for: send.id)
-            } catch {
-                return false
-            }
-        }
-        await enqueue(send)
-        await flushSendQueueAndWait()
-        return true
-    }
-
-    /// "Me too" or a reply from a moment's notification (issue #154): queued,
-    /// then sent. Awaited rather than left to a background flush, because iOS
-    /// may suspend the app again as soon as the action's handler returns.
-    ///
-    /// Not sent while the privacy gate is up; the queue holds it until the
-    /// launch that follows agreement flushes.
-    func answerFromNotification(_ moment: InboxedMoment) async {
-        guard let send = moment.pendingSend(authorID: signedInUserID, fallbackPairID: nil),
-              !send.authorID.isEmpty
-        else { return }
-        await enqueue(send)
-        guard hasAgreedToPrivacyPolicy else { return }
-        await flushSendQueueAndWait()
-    }
-
-    /// Kicks off a flush, coalescing with one already in flight. Non-blocking so
-    /// callers on the main actor (a tap, a foreground) are never held up by it.
-    ///
-    /// Coalescing means returning while one is running, not cancelling it and
-    /// starting again: bootstrap, reachability and foregrounding can all fire at
-    /// once, and each cancel withdrew a request mid-flight while the replacement
-    /// found the queue still flushing and did nothing (issue #58). The running
-    /// flush picks up anything enqueued behind it, since it walks the queue
-    /// rather than a copy.
-    func flushSendQueue() {
-        guard sessionStore.hasSession, flushTask == nil else { return }
-        flushTask = Task { [weak self] in
-            await self?.performFlush()
-            self?.flushTask = nil
-        }
-    }
-
-    /// Awaits a flush. Used where the caller wants the result before redrawing.
-    ///
-    /// `refreshingHome: false` is for a caller about to re-read the home
-    /// screen itself. A flush that delivers something asks for a full home
-    /// refresh, and a caller that then did its own fetched everything twice —
-    /// the pull-to-refresh, the poll and the silent push all did, every time a
-    /// queued moment went out with them (issue #302's audit).
-    @discardableResult
-    func flushSendQueueAndWait(refreshingHome: Bool = true) async -> FlushResult {
-        guard sessionStore.hasSession else { return FlushResult() }
-        return await performFlush(refreshingHome: refreshingHome)
-    }
-
-    @discardableResult
-    private func performFlush(refreshingHome: Bool = true) async -> FlushResult {
-        await absorbMomentInbox()
-        let api = self.api
-        let photos = self.pendingPhotos
-        let result = await sendQueue.flush { send in
-            guard send.hasPhoto else {
-                let _: Post = try await api.create("posts", fields: send.postFields)
-                return
-            }
-            // A 400, so the queue treats it as permanent: no retry can bring
-            // back a file that is gone, and retrying forever would hide it.
-            guard let data = photos.load(for: send.id) else {
-                throw APIError.server(status: 400, message: MissingPendingPhoto().errorDescription)
-            }
-            let _: Post = try await api.createMultipart(
-                "posts",
-                fields: send.postFields,
-                file: MultipartFile(field: "media", filename: "pear.jpg", mimeType: "image/jpeg", data: data)
-            )
-        }
-        await refreshPendingSends()
-        prunePendingPhotos()
-
-        // Reactions tapped from a notification that could not reach the server
-        // then are drained here too (#366), so a Lock-Screen tap made offline
-        // goes out on the next launch or foreground alongside queued moments.
-        let reactionsDelivered = await push.flushPendingReactions()
-
-        if result.didChangeAnything || reactionsDelivered {
-            // A send that landed changes the timeline, the tallies and the widget.
-            if refreshingHome { await onHomeRefreshRequested?() }
-            widgetSync.reloadTimelines()
-        }
-        return result
-    }
-
-    /// Takes what the extensions could not send into the queue.
-    ///
-    /// Done at the top of every flush rather than only at launch and on
-    /// foreground, which are the two that matter: those both flush, and so do
-    /// the network coming back and a background push — each a moment the
-    /// extensions' leftovers could go out too. A moment that named no
-    /// connection goes to the one the app last showed, which survives an
-    /// offline launch where the connection list does not. Photos from the
-    /// share extension move into `pendingPhotos` on the way, so the flush that
-    /// follows uploads them like any photo shared in the app.
-    private func absorbMomentInbox() async {
-        guard let userID = sessionStore.userID else { return }
-        let added = await sendQueue.absorb(
-            momentInbox,
-            authorID: userID,
-            fallbackPairID: sharedStore.selectedConnectionID,
-            photos: pendingPhotos
-        )
-        if added > 0 { await refreshPendingSends() }
-    }
-
-    /// Clears the failure history of abandoned sends so they are tried again.
-    func retryStalledSends() async {
-        await sendQueue.reviveStalled()
-        await refreshPendingSends()
-        await flushSendQueueAndWait()
-    }
-
-    /// Discards everything queued. Offered when a send has given up, because the
-    /// alternative — a moment that can never be delivered sitting there forever —
-    /// is worse than losing it deliberately.
-    func discardPendingSends() async {
-        await sendQueue.removeAll()
-        await refreshPendingSends()
-        prunePendingPhotos()
-    }
-
-    /// Changes what a queued send says before it goes: its note and, for a
-    /// moment, which one it is (#313).
-    ///
-    /// Done against the queue, not the server — a queued send has no server
-    /// record yet, so `HistoryModel.edit` would be asking the API to change a
-    /// `pending:` id that does not exist. The emoji and label follow the kind
-    /// so the pending row, which draws from them without consulting the
-    /// catalogue, stays truthful; a send whose kind did not change keeps its
-    /// own, which for a photo or a reply is deliberately blank.
-    ///
-    /// A send that had given up is revived: somebody who edits it is plainly
-    /// not done with it, and leaving it stalled would make the fix pointless.
-    /// One still retrying keeps its place and its backoff history is cleared
-    /// too, since the thing that failed is no longer the thing being sent.
-    func editPendingSend(id: String, note: String, kind: EventKind) async {
-        guard let send = pendingSends.first(where: { $0.id == id }) else { return }
-        let note = PostNote.normalised(note)
-        var emoji = send.emoji
-        var label = send.label
-        if kind != send.kind {
-            let customKinds = sharedStore.cachedMomentKinds(forConnection: send.pairID)
-            emoji = MomentCatalogue.emoji(for: kind, customKinds: customKinds)
-            label = MomentCatalogue.label(for: kind, customKinds: customKinds)
-        }
-        await sendQueue.update(id: id) {
-            $0.edited(note: note, kind: kind, emoji: emoji, label: label).revived
-        }
-        await refreshPendingSends()
-        await flushSendQueueAndWait()
-    }
-
-    /// Removes one queued send, and its photo if it has one. The send never
-    /// reached the server, so there is nothing to delete there (#313).
-    func deletePendingSend(id: String) async {
-        await sendQueue.remove(id: id)
-        await refreshPendingSends()
-        prunePendingPhotos()
-    }
-
-    /// Deletes the photo files of sends that are no longer queued — sent,
-    /// dropped as undeliverable, aged out, or discarded.
-    private func prunePendingPhotos() {
-        pendingPhotos.removeAll(except: Set(pendingSends.map(\.id)))
-    }
-
-    /// Pending sends for one connection, newest last.
-    func pendingSends(forConnection pairID: String) -> [PendingSend] {
-        pendingSends.filter { $0.pairID == pairID }
-    }
-
-    // MARK: Session
-
-    /// Persists a session and routes from the resulting membership
-    /// (Requirement 9.7). Throws when the session cannot be persisted, so the
-    /// caller can show the failure (clarification Q2).
-    func establish(_ session: Session) async throws {
-        try sessionStore.save(token: session.token, userID: session.userID)
-        await widgetSync.sync()
-        await resolveMembership()
-        applyPendingPairCode()
-    }
-
-    /// Requirement 9.3 – 9.6. A user may belong to several connections, so this
-    /// loads all of them and lands on the remembered one.
-    func resolveMembership() async {
-        guard sessionStore.hasSession, sessionStore.userID != nil else {
-            phase = .auth
-            return
-        }
-        membershipFailed = false
-        do {
-            connections = try await api.connections()
-            rememberConnections()
-            guard let selected = resolvedSelection() else {
-                phase = .connections
-                return
-            }
-            sharedStore.selectedConnectionID = selected.id
-            phase = .home(pairID: selected.id)
-            await requestPushIfFirstHomeOfSession()
-        } catch let error as APIError {
-            if case .unauthorized = error {
-                await clearSessionAndReturnToAuth()
-                return
-            }
-            // Transport or server failure: land on the connections screen with
-            // a retry control (Requirement 9.6).
-            landAfterFailedMembership(error)
-        } catch {
-            landAfterFailedMembership(error)
-        }
-    }
-
-    /// Where a launch goes when the connection list could not be fetched.
-    ///
-    /// The offline case is the one that matters: the tester in #300 was in
-    /// airplane mode, and the app told them they had no connections. It has not
-    /// asked anybody; it has failed to ask the server. So fall back to the list
-    /// we last knew, land on the connection that was last on screen, and let
-    /// `connectionsFromCache` and `connectionsUpdatedAt` say how old it is.
-    /// With no remembered connection it stays on the list rather than guessing.
-    private func landAfterFailedMembership(_ error: Error) {
-        membershipFailed = true
-        banner = error.localizedDescription
-        if restoreCachedConnections(),
-           let remembered = sharedStore.selectedConnectionID,
-           connections.contains(where: { $0.id == remembered }) {
-            phase = .home(pairID: remembered)
-            return
-        }
-        phase = .connections
-    }
-
-    /// Records a freshly fetched list as the one to fall back on, and marks it
-    /// as current rather than cached.
-    private func rememberConnections() {
-        let now = Date()
-        connectionsUpdatedAt = now
-        connectionsFromCache = false
-        connectionCache.saveConnections(connections, at: now)
-    }
-
-    /// Fills an empty list from the cache. Returns whether anything was restored,
-    /// and leaves the list alone when it already has something: an in-memory list
-    /// fetched a minute ago beats a file written yesterday.
-    @discardableResult
-    private func restoreCachedConnections() -> Bool {
-        guard connections.isEmpty,
-              let cached = connectionCache.loadConnections(),
-              !cached.connections.isEmpty else { return false }
-        connections = cached.connections
-        connectionsUpdatedAt = cached.savedAt
-        connectionsFromCache = true
-        return true
-    }
-
-    /// Forgets the cached list, on sign-out and account deletion. Leaving it
-    /// behind would show the next person to use the device the last person's
-    /// connections.
-    private func forgetCachedConnections() {
-        connectionCache.clear()
-        connectionsUpdatedAt = nil
-        connectionsFromCache = false
-    }
-
-    /// The connection the home screen should show: the remembered one while it
-    /// still exists, otherwise the first.
-    private func resolvedSelection() -> Connection? {
-        if let remembered = sharedStore.selectedConnectionID,
-           let match = connections.first(where: { $0.id == remembered }) {
-            return match
-        }
-        return connections.first
-    }
-
-    /// The connection currently on screen.
-    var selectedConnection: Connection? {
-        guard case .home(let pairID) = phase else { return nil }
-        return connections.first { $0.id == pairID }
-    }
-
-    /// Switches the home screen to another connection and remembers it.
-    func select(connectionID: String) {
-        guard connections.contains(where: { $0.id == connectionID }) else { return }
-        sharedStore.selectedConnectionID = connectionID
-        focusedPostID = nil
-        banner = nil
-        phase = .home(pairID: connectionID)
-    }
-
-    /// Opens the connections screen to add another one — contacts first, with
-    /// codes a tap further on for the people not in your address book.
-    func startAddingConnection() {
-        banner = nil
-        phase = .connections
-    }
-
-    /// Opens the invite-code screen, which is now something somebody chooses
-    /// rather than the wall they land against.
-    func startPairing() {
-        banner = nil
-        phase = .pair(prefilledCode: nil)
-    }
-
-    /// Back out of the code screen to the connections list.
-    func showConnections() {
-        banner = nil
-        phase = .connections
-    }
-
-    /// True when the pairing screen was reached from an existing connection, so
-    /// it can offer a way back.
-    var canReturnHome: Bool { !connections.isEmpty }
-
-    /// Returns to the last selected connection after adding was abandoned.
-    func returnHome() {
-        guard let selected = resolvedSelection() else { return }
-        phase = .home(pairID: selected.id)
-    }
-
-    /// Re-reads the connection list without changing which one is on screen,
-    /// unless the current one has gone.
-    func refreshConnections() async {
-        guard let userID = sessionStore.userID, !userID.isEmpty else { return }
-        do {
-            connections = try await api.connections()
-            rememberConnections()
-        } catch {
-            if await handleIfUnauthorized(error) { return }
-            // Offline, or the server is down: keep what we have, and fall back to
-            // the cache if a cold start left us with nothing.
-            restoreCachedConnections()
-            return
-        }
-        if case .home(let pairID) = phase, connections.contains(where: { $0.id == pairID }) {
-            return
-        }
-        if let selected = resolvedSelection() {
-            sharedStore.selectedConnectionID = selected.id
-            phase = .home(pairID: selected.id)
-        } else {
-            sharedStore.selectedConnectionID = nil
-            // Not while they are typing a code in. This runs on every return to
-            // the foreground, and "you still have no connections" is not news
-            // worth taking somebody off the screen they are using to fix it —
-            // least of all with a half-entered code in the field.
-            if case .pair = phase { return }
-            phase = .connections
-        }
-    }
-
-    /// Requirement 15.2, 15.3 — leaves one connection, keeping the others.
-    ///
-    /// `deletingMoments` is the leave-time choice: off, the shared timeline keeps
-    /// what the caller logged; on, their own moments in this one connection go
-    /// with them. Scoped to this connection only — erasing everything everywhere
-    /// is account deletion, which is a different button in a different place.
-    func leave(connectionID: String, deletingMoments: Bool = false) async {
-        do {
-            try await api.leave(pairID: connectionID, deleteMoments: deletingMoments)
-        } catch {
-            if await handleIfUnauthorized(error) { return }
-            banner = APIError.userMessage(for: error)
-        }
-        if sharedStore.selectedConnectionID == connectionID {
-            sharedStore.selectedConnectionID = nil
-        }
-        await refreshConnections()
-        await widgetSync.sync()
-    }
-
     // MARK: Read state
 
     /// Where the timeline draws its "new since you last looked" line, per
@@ -750,7 +311,7 @@ final class AppModel {
     /// the first visit means the line stays put while they move between tabs,
     /// and is gone on the next launch, which is exactly what "since you last
     /// looked" should mean.
-    private var unreadWatermarks: [String: Date] = [:]
+    var unreadWatermarks: [String: Date] = [:]
 
     /// The cut-off the timeline should mark as new, or nil when there was
     /// nothing new when this connection was opened.
@@ -790,7 +351,7 @@ final class AppModel {
     /// holds the rule so it can be tested without a live server.
     var badgeCount: Int { connections.totalUnreadForBadge }
 
-    private func syncBadge() {
+    func syncBadge() {
         Task { [push, badgeCount] in await push.setBadgeCount(badgeCount) }
     }
 
@@ -799,7 +360,7 @@ final class AppModel {
     /// `Connection` is a value type with `let` fields, so this rebuilds the one
     /// that changed rather than mutating it — cheaper than re-fetching the list
     /// and, unlike a re-fetch, it cannot briefly show the old number again.
-    private func clearUnreadLocally(pairID: String) {
+    func clearUnreadLocally(pairID: String) {
         connections = connections.map { connection in
             guard connection.id == pairID, connection.hasUnread else { return connection }
             return Connection(
@@ -816,268 +377,16 @@ final class AppModel {
         }
     }
 
-    // MARK: Connection settings
-
-    /// Silences or unsilences one connection's notifications.
-    ///
-    /// Per connection rather than per user: with 20 connections of up to 12 people
-    /// each, the useful control is "this group is too noisy", not "stop
-    /// notifying me".
-    func setMuted(connectionID: String, muted: Bool) async {
-        do {
-            try await api.setMuted(pairID: connectionID, muted: muted)
-        } catch {
-            if await handleIfUnauthorized(error) { return }
-            banner = APIError.userMessage(for: error)
-            return
-        }
-        await refreshConnections()
-    }
-
-    /// Removes somebody else from a connection. Owners only, enforced server-side.
-    func removeMember(connectionID: String, userID: String) async {
-        do {
-            try await api.removeMember(pairID: connectionID, userID: userID)
-        } catch {
-            if await handleIfUnauthorized(error) { return }
-            banner = APIError.userMessage(for: error)
-            return
-        }
-        await refreshConnections()
-        await widgetSync.sync()
-    }
-
-    // MARK: Profile
-
-    /// Loads the caller's own record. Its `display_name` is what every other
-    /// member sees in the switcher, the timeline and the push copy.
-    func loadProfile() async {
-        do {
-            profile = try await api.profile()
-        } catch {
-            if await handleIfUnauthorized(error) { return }
-            banner = APIError.userMessage(for: error)
-        }
-    }
-
-    /// Sets the name other members see. An empty name is a deliberate reset back
-    /// to the email-local-part fallback, not an error.
-    func updateDisplayName(_ name: String) async {
-        do {
-            profile = try await api.updateDisplayName(name)
-        } catch {
-            if await handleIfUnauthorized(error) { return }
-            banner = APIError.userMessage(for: error)
-            return
-        }
-        // Every connection carries the caller's own name in its member list.
-        await refreshConnections()
-        await widgetSync.sync()
-    }
-
-    /// Opts in or out of contact search — see
-    /// `APIClient.updateDiscoverability(discoverable:phone:)`. Searching your
-    /// own contacts needs none of this; it only governs whether this account
-    /// can appear in someone *else's* results.
-    func updateDiscoverability(discoverable: Bool, phone: String, contactEmail: String = "") async {
-        do {
-            let status = try await api.updateDiscoverability(
-                discoverable: discoverable,
-                phone: phone,
-                contactEmail: contactEmail
-            )
-            profile = profile.map {
-                UserProfile(
-                    id: $0.id,
-                    displayName: $0.displayName,
-                    email: $0.email,
-                    avatarFilename: $0.avatarFilename,
-                    discoverable: status.discoverable,
-                    phone: status.phone,
-                    // The server normalises what it stores, so the echo is
-                    // taken rather than what was typed — otherwise the "has
-                    // changes" check compares a trimmed value against an
-                    // untrimmed one and the Save button never goes quiet.
-                    contactEmail: status.contactEmail,
-                    emailIsRelay: $0.emailIsRelay
-                )
-            }
-        } catch {
-            if await handleIfUnauthorized(error) { return }
-            banner = APIError.userMessage(for: error)
-        }
-    }
-
-    /// Sets the caller's own photo. Everybody they share a connection with sees
-    /// it, so the connection list is re-read: it carries each member's avatar,
-    /// including the caller's own.
-    func updateProfileAvatar(jpeg data: Data) async {
-        do {
-            profile = try await api.uploadProfileAvatar(jpeg: data)
-        } catch {
-            if await handleIfUnauthorized(error) { return }
-            banner = APIError.userMessage(for: error)
-            return
-        }
-        await refreshConnections()
-    }
-
-    /// Removes the caller's own photo, back to initials.
-    func removeProfileAvatar() async {
-        do {
-            profile = try await api.removeProfileAvatar()
-        } catch {
-            if await handleIfUnauthorized(error) { return }
-            banner = APIError.userMessage(for: error)
-            return
-        }
-        await refreshConnections()
-    }
-
-    /// Sets a connection's photo. Any member may, exactly as any member may
-    /// rename it.
-    func updateConnectionAvatar(connectionID: String, jpeg data: Data) async {
-        do {
-            _ = try await api.uploadConnectionAvatar(pairID: connectionID, jpeg: data)
-        } catch {
-            if await handleIfUnauthorized(error) { return }
-            banner = APIError.userMessage(for: error)
-            return
-        }
-        await refreshConnections()
-    }
-
-    /// Removes a connection's photo. A 1:1 falls back to the other person's, a
-    /// group to its initials.
-    func removeConnectionAvatar(connectionID: String) async {
-        do {
-            _ = try await api.removeConnectionAvatar(pairID: connectionID)
-        } catch {
-            if await handleIfUnauthorized(error) { return }
-            banner = APIError.userMessage(for: error)
-            return
-        }
-        await refreshConnections()
-    }
-
-    // MARK: Account deletion
-
-    /// Erases the account on the server, then tears the session down locally.
-    ///
-    /// The order matters: the delete needs the token, so the local cleanup can
-    /// only follow it. A failure leaves the session intact and reports itself,
-    /// because the alternative — signing somebody out of an account that still
-    /// exists while telling them it is gone — is worse than an error message.
-    ///
-    /// Push and Live Activities are only torn down once the server has said
-    /// yes. Doing it first meant a delete that failed — offline, a 500 — left
-    /// somebody signed in to an account that still exists and silently no
-    /// longer notified. The `devices` row goes with the account server-side,
-    /// so all that is left to do here is forget the token locally; asking the
-    /// server to delete it again would be a request made with the credentials
-    /// of an account that no longer exists.
-    ///
-    /// Returns true when the account is gone, so the caller knows whether to
-    /// dismiss its confirmation.
-    @discardableResult
-    func deleteAccount() async -> Bool {
-        do {
-            try await api.deleteAccount()
-        } catch let error as APIError where error.status == 404 {
-            // The route is missing, which means the app is talking to a server
-            // older than this feature. Worth its own message: "Not found" tells
-            // somebody trying to delete their account nothing at all, and the
-            // fallback the privacy policy still documents — emailing us — does
-            // work. An installed app cannot assume the server has caught up
-            // with it, and this is the one request where failing opaquely is
-            // least acceptable.
-            banner = String(localized: "This server can't delete accounts in-app yet. Email \(PeardLinks.supportEmail) and we'll do it for you.")
-            return false
-        } catch {
-            banner = APIError.userMessage(for: error)
-            return false
-        }
-        // Deliberately not `signOut()`: that deletes the push registration again
-        // against an account that no longer exists, which just produces a 404.
-        await liveActivities.endAll()
-        push.forgetRegistration()
-        await sendQueue.removeAll()
-        await refreshPendingSends()
-        // The queue is empty now, so this removes every queued photo: they were
-        // the deleted account's, and leaving them in the App Group container is
-        // exactly what deleting an account is meant to prevent.
-        prunePendingPhotos()
-        sessionStore.clear()
-        widgetSync.clear()
-        forgetCachedConnections()
-        connections = []
-        profile = nil
-        sharedStore.selectedConnectionID = nil
-        focusedPostID = nil
-        hasRequestedPushThisSession = false
-        unreadWatermarks.removeAll()
-        phase = .auth
-        return true
-    }
-
-    /// Requirement 8.4 — a 401 clears the session and forces re-authentication.
-    func clearSessionAndReturnToAuth() async {
-        sessionStore.clear()
-        widgetSync.clear()
-        forgetCachedConnections()
-        connections = []
-        sharedStore.selectedConnectionID = nil
-        focusedPostID = nil
-        hasRequestedPushThisSession = false
-        unreadWatermarks.removeAll()
-        phase = .auth
-    }
-
-    /// Central 401 handling for callers that surface their own messages.
-    /// Returns true when the error was a 401 and the session was cleared.
-    @discardableResult
-    func handleIfUnauthorized(_ error: Error) async -> Bool {
-        guard let apiError = error as? APIError, case .unauthorized = apiError else { return false }
-        await clearSessionAndReturnToAuth()
-        return true
-    }
-
-    /// Requirement 15.4 and clarification Q17: local cleanup is authoritative
-    /// and always completes; the remote device-registration delete is best
-    /// effort and its failure is reported rather than blocking sign-out.
-    func signOut() async {
-        await liveActivities.endAll()
-        await push.deleteRegistration()
-        // Queued moments are discarded here but deliberately *not* in
-        // clearSessionAndReturnToAuth: a 401 can just be an expired token, and
-        // the same person will sign back in and still want their moments. Signing
-        // out is a decision, and a queued send carries an author id that the next
-        // account cannot post under anyway.
-        await sendQueue.removeAll()
-        await refreshPendingSends()
-        prunePendingPhotos()
-        sessionStore.clear()
-        widgetSync.clear()
-        forgetCachedConnections()
-        connections = []
-        profile = nil
-        sharedStore.selectedConnectionID = nil
-        focusedPostID = nil
-        hasRequestedPushThisSession = false
-        unreadWatermarks.removeAll()
-        phase = .auth
-    }
-
     // MARK: Push
 
-    private func requestPushIfFirstHomeOfSession() async {
+    func requestPushIfFirstHomeOfSession() async {
         guard !hasRequestedPushThisSession else { return }
         hasRequestedPushThisSession = true
         liveActivities.start()
         await push.requestAuthorizationIfNeeded()
     }
 
-    private func openPost(_ postID: String) {
+    func openPost(_ postID: String) {
         focusedPostID = postID
         if case .home = phase { return }
         Task { await resolveMembership() }
