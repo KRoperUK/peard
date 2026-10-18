@@ -13,7 +13,7 @@ import Foundation
 /// Built-ins live in `MetricCatalogue`. A connection's custom metric is a
 /// `MomentKind` row that tracks an amount, resolved to a definition the same way
 /// a custom moment resolves to a `Moment`.
-public struct MetricDefinition: Equatable, Sendable, Identifiable {
+public struct MetricDefinition: Equatable, Hashable, Sendable, Identifiable {
     public let slug: EventKind
     public let label: String
     public let emoji: String

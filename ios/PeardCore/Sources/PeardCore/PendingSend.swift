@@ -91,7 +91,7 @@ public struct PendingSend: Codable, Hashable, Sendable, Identifiable {
         self.hasPhoto = hasPhoto
         self.happenedAt = happenedAt
         self.replyTo = replyTo
-        self.amount = WaterAmount.normalised(amount)
+        self.amount = Self.normalisedAmount(amount, kind: kind)
         self.attempts = attempts
         self.lastAttemptAt = lastAttemptAt
         self.lastError = lastError
@@ -116,10 +116,23 @@ public struct PendingSend: Codable, Hashable, Sendable, Identifiable {
         happenedAt = try c.decodeIfPresent(Date.self, forKey: .happenedAt)
         replyTo = try c.decodeIfPresent(String.self, forKey: .replyTo)
         // Written by a build that knew of amounts; a queue from before has none.
-        amount = WaterAmount.normalised(try? c.decodeIfPresent(Int.self, forKey: .amount))
+        amount = Self.normalisedAmount(try? c.decodeIfPresent(Int.self, forKey: .amount), kind: kind)
         attempts = try c.decodeIfPresent(Int.self, forKey: .attempts) ?? 0
         lastAttemptAt = try c.decodeIfPresent(Date.self, forKey: .lastAttemptAt)
         lastError = try c.decodeIfPresent(String.self, forKey: .lastError)
+    }
+
+    /// A positive amount within the kind's metric ceiling, or nil.
+    ///
+    /// The queue used to clamp to `WaterAmount.maximum`, which was right while
+    /// only water carried one. A daily-progress metric counts in its own unit
+    /// (#390) — thousands of steps — so the ceiling comes from the metric's
+    /// definition. Water's is still five litres.
+    private static func normalisedAmount(_ amount: Int?, kind: EventKind) -> Int? {
+        guard let amount, amount > 0 else { return nil }
+        let maximum = MetricCatalogue.builtin(kind)?.maximum ?? WaterAmount.maximum
+        guard amount <= maximum else { return nil }
+        return amount
     }
 
     /// Fields for the `posts` record this send becomes.

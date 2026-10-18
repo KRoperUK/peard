@@ -610,6 +610,20 @@ struct HomeView: View {
                 }
             }
 
+            // A metric that is not water: steps, exercise, or a connection's
+            // own (#390). Water keeps the picker above, with its unit switch.
+            if let send = model.quickSend, let metric = model.quickSendMetric {
+                MetricAmountPicker(
+                    definition: metric,
+                    amount: send.amount,
+                    // Reaching for the custom field stops the clock, before a
+                    // figure has parsed.
+                    onBeginEditing: { model.holdQuickSend() }
+                ) {
+                    model.setQuickSendAmount($0)
+                }
+            }
+
             noteField
 
             HStack(spacing: 8) {
