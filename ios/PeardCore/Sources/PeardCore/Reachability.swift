@@ -166,6 +166,22 @@ public final class Reachability: @unchecked Sendable {
     }
 }
 
+#if DEBUG
+public extension Reachability {
+    /// Delivers a path update as the monitor would, so a test can drive the
+    /// offline → online transition without a network (#384).
+    ///
+    /// Public only in a Debug build: the app's test bundle imports PeardCore
+    /// normally rather than `@testable`, so an internal seam would not be
+    /// visible to it, while in production this path is reached only through
+    /// `NWPathMonitor`'s own callback. The change-only guard is kept, so
+    /// simulating the same status twice is still a no-op.
+    func simulatePathUpdate(isOnline: Bool) {
+        update(isOnline: isOnline)
+    }
+}
+#endif
+
 /// Resumes the probe's continuation once, whichever of the path update and the
 /// timeout gets there first. Both run on the probe's serial queue, but a class
 /// with a lock says so without depending on it.
