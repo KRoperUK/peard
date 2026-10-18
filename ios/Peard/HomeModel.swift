@@ -351,6 +351,28 @@ final class HomeModel {
     /// zero and zero, which the server stores as "cleared" (#387).
     func setMetricTracked(_ tracked: Bool, definition: MetricDefinition) {
         commitMetricGoal(tracked ? metricGoal(for: definition) : 0, definition: definition)
+        // Turning a metric on also publishes its moment, so there is a tile to
+        // log it with — otherwise "track steps" would set a goal for something
+        // the home screen cannot send.
+        if tracked { ensureMetricMoment(definition) }
+    }
+
+    /// Publishes the metric's moment to the connection if it is not already
+    /// there. Deliberately silent: the goal is saved either way, and the moment
+    /// can still be added from the More sheet if this could not reach the server.
+    private func ensureMetricMoment(_ definition: MetricDefinition) {
+        guard !customKinds.contains(where: { $0.slug == definition.slug }) else { return }
+        Task { [weak self] in
+            guard let self else { return }
+            guard let created = try? await self.api.createMomentKind(
+                pairID: self.pairID,
+                slug: definition.slug.rawValue,
+                emoji: definition.emoji,
+                label: definition.label,
+                createdBy: self.signedInUserID
+            ) else { return }
+            self.customKinds.append(created)
+        }
     }
 
     /// Changes the daily goal, held to the metric's ceiling.
@@ -402,8 +424,18 @@ final class HomeModel {
     /// pending moment is water, or `nil` — no picker at all — for any other
     /// moment, and for water when the connection has turned it off.
     var quickSendWaterPresets: [WaterAmount.Preset]? {
-        guard waterConfig.isEnabled, quickSend?.takesAmount == true else { return nil }
+        guard waterConfig.isEnabled, quickSend?.metric?.slug == .water else { return nil }
         return waterConfig.presets
+    }
+
+    /// The daily metric the pending moment counts toward, when it is one other
+    /// than water (#390) — steps, exercise, or a connection's own kind.
+    ///
+    /// Nil for water, which keeps its own picker with the ml ⇄ fl-oz switch, and
+    /// for a moment that carries no amount at all.
+    var quickSendMetric: MetricDefinition? {
+        guard let metric = quickSend?.metric, metric.slug != .water else { return nil }
+        return metric
     }
 
     /// When each moment last happened here, keyed by kind.
