@@ -28,7 +28,7 @@ XCODEBUILD = xcodebuild -project $(PROJECT) -scheme Peard $(XCODE_SANDBOX_FLAGS)
 BUILT_APP = ios/build/Build/Products/Debug-iphonesimulator/Peard.app
 
 .PHONY: server migrate app app-release run project test test-app test-ui test-integration \
-        test-all test-server icons lint fmt hooks clean \
+        test-all test-server icons lint fmt hooks clean localize-export localize-import \
         docker-build docker-up docker-up-tls docker-up-cloudflared docker-down docker-logs
 
 # --- git hooks ---
@@ -164,6 +164,18 @@ test-server:
 test-integration:
 	cd ios/PeardCore && PEARD_TEST_SERVER_URL=$(or $(PEARD_TEST_SERVER_URL),http://127.0.0.1:8090) \
 		swift test $(SWIFT_SANDBOX_FLAGS) --filter LocalServerIntegrationTests
+
+# --- localisation ---
+
+# The String Catalog is the app's user-facing copy (#377). Translations are
+# exported as XLIFF so a translator can do the words without anybody editing
+# JSON by hand, and imported back into the catalog. Both need Xcode, and the
+# project is generated, so they depend on `project`.
+localize-export: project
+	scripts/localizations export
+
+localize-import: project
+	scripts/localizations import
 
 # --- checks ---
 

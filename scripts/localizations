@@ -1,0 +1,63 @@
+#!/usr/bin/env bash
+# Export/import the app's String Catalog as XLIFF, so translations go through a
+# translator rather than being hand-edited as JSON (#377).
+#
+# `export` writes one .xcloc bundle per language into ios/build/localizations.
+# A translator opens them in Xcode or any XLIFF editor, fills in the target
+# strings, and `import` folds them back into ios/Peard/Localizable.xcstrings.
+#
+# The languages are the ones the moment catalogue already carries (#615). The
+# project is generated from ios/project.yml, so run `make project` first — the
+# Make targets do that for you.
+set -euo pipefail
+
+PROJECT="ios/Peard.xcodeproj"
+OUT="ios/build/localizations"
+LANGUAGES=(fr es it de)
+
+usage() {
+  cat <<'EOF'
+Usage: scripts/localizations <export|import>
+
+  export   write one .xcloc per language to ios/build/localizations
+  import   read them back into ios/Peard/Localizable.xcstrings
+
+Run `make project` first: the Xcode project is generated, not committed.
+EOF
+}
+
+case "${1:-}" in
+  export)
+    mkdir -p "$OUT"
+    args=()
+    for lang in "${LANGUAGES[@]}"; do
+      args+=(-exportLanguage "$lang")
+    done
+    xcodebuild \
+      -exportLocalizations \
+      -project "$PROJECT" \
+      -localizationPath "$OUT" \
+      "${args[@]}"
+    echo "Exported to $OUT — hand those bundles to a translator."
+    ;;
+
+  import)
+    for lang in "${LANGUAGES[@]}"; do
+      bundle="$OUT/$lang.xcloc"
+      if [ ! -d "$bundle" ]; then
+        echo "missing $bundle — run 'scripts/localizations export' and translate it first" >&2
+        exit 1
+      fi
+      xcodebuild \
+        -importLocalizations \
+        -project "$PROJECT" \
+        -localizationPath "$bundle"
+    done
+    echo "Imported. Commit ios/Peard/Localizable.xcstrings."
+    ;;
+
+  *)
+    usage
+    exit 2
+    ;;
+esac
