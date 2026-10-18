@@ -267,6 +267,29 @@ final class MomentBreakdownTests: XCTestCase {
         )
     }
 
+    // MARK: Generic metrics (#390)
+
+    /// A tracked metric says what is left in its own unit, not in millilitres.
+    func testAMetricRowSaysWhatIsLeftInItsOwnUnit() {
+        let steps = MetricCatalogue.steps
+        let progress = steps.progress(amount: 6000, goal: 10_000)
+
+        XCTAssertEqual(
+            MetricProgressRow.detail(progress, definition: steps, locale: gb),
+            "4,000 steps to the 10,000 steps goal"
+        )
+    }
+
+    func testAMetMetricRowSaysTheGoalIsMet() {
+        let exercise = MetricCatalogue.exercise
+        let progress = exercise.progress(amount: 45, goal: 30)
+
+        XCTAssertEqual(
+            MetricProgressRow.detail(progress, definition: exercise, locale: gb),
+            "Goal met · 30 min"
+        )
+    }
+
     func testTheWaterSectionRendersWithProgress() async throws {
         await drink(500)
         let section = WaterTodaySection(tallies: model.momentTallies, config: .standard, mineLabel: "You", othersLabel: "Ari")

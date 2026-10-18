@@ -200,6 +200,8 @@ private struct TalliesTab: View {
                     othersLabel: model.othersLabel
                 )
 
+                MetricProgressSection(metrics: model.metrics)
+
                 MomentBreakdownSection(
                     tallies: model.momentTallies,
                     mineLabel: String(localized: "You"),
