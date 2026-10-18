@@ -22,6 +22,7 @@ public final class SharedStore: @unchecked Sendable {
         public static let waterConfigs = "waterConfigs"
         public static let waterUnit = "waterUnit"
         public static let sendWindow = "sendWindow"
+        public static let metricGoals = "metricGoals"
         public static let watchLastMoments = "watchLastMoments"
         public static let cachedMoments = "cachedMoments"
         public static let cachedAvatars = "cachedAvatars"
@@ -159,6 +160,30 @@ public final class SharedStore: @unchecked Sendable {
     public var sendWindow: SendWindow {
         get { SendWindow(storedValue: defaults?.string(forKey: Key.sendWindow)) }
         set { set(newValue.rawValue, forKey: Key.sendWindow) }
+    }
+
+    // MARK: Metric goals
+
+    /// This user's own daily goal for a metric, per connection (#390).
+    ///
+    /// The local echo of what was written to `metric_targets`, kept for the same
+    /// reason `WaterConfig` keeps the water targets: the stepper answers at once
+    /// and an offline phone still has a value, while the server's summed goal is
+    /// what the feed reports. Zero means "not tracked" — the row the server
+    /// treats as cleared.
+    ///
+    /// Keyed `"<pair>|<metric>"` rather than nested dictionaries: one flat map
+    /// round-trips through `UserDefaults` without the bridging surprises a
+    /// `[String: [String: Int]]` cast can bring.
+    public func metricGoal(forMetric metric: String, forConnection pairID: String) -> Int? {
+        let all = defaults?.dictionary(forKey: Key.metricGoals) as? [String: Int]
+        return all?["\(pairID)|\(metric)"]
+    }
+
+    public func setMetricGoal(_ goal: Int, forMetric metric: String, forConnection pairID: String) {
+        var all = (defaults?.dictionary(forKey: Key.metricGoals) as? [String: Int]) ?? [:]
+        all["\(pairID)|\(metric)"] = goal
+        defaults?.set(all, forKey: Key.metricGoals)
     }
 
     // MARK: Pinned moments

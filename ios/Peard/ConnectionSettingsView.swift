@@ -54,6 +54,7 @@ struct ConnectionSettingsView: View {
                 SendWindowSection()
                 WaterUnitSection(app: app)
                 WaterSettingsSection(model: model)
+                MetricTrackingSection(model: model)
                 LowDataSection()
                 appIconSection
                 MomentsExportSection(model: model)

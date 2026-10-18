@@ -154,6 +154,9 @@
     "A contact" : {
 
     },
+    "A daily goal for steps, exercise and the like. Your goal is shared with the connection, where it is summed with everybody else's." : {
+
+    },
     "A year ago today" : {
 
     },
@@ -359,6 +362,9 @@
 
     },
     "Custom amount in %@" : {
+
+    },
+    "Daily %@ goal" : {
 
     },
     "Daily goal" : {
@@ -821,6 +827,9 @@
 
     },
     "Other" : {
+
+    },
+    "Other metrics" : {
 
     },
     "Pairing code" : {

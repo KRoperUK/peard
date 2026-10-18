@@ -80,6 +80,15 @@ final class HomeModel {
         // Seeded from the cache so the grid offers the connection's custom
         // moments on the first paint, before — or without — a fetch (#313).
         self.customKinds = app.sharedStore.cachedMomentKinds(forConnection: pairID)
+        // The metric goals this user has already set, so the Settings stepper is
+        // right before the feed has answered (#390).
+        self.metricGoals = Dictionary(
+            uniqueKeysWithValues: MetricCatalogue.builtins.compactMap { definition in
+                app.sharedStore
+                    .metricGoal(forMetric: definition.slug.rawValue, forConnection: pairID)
+                    .map { (definition.slug.rawValue, $0) }
+            }
+        )
     }
 
     var signedInUserID: String { app.signedInUserID }
@@ -302,6 +311,92 @@ final class HomeModel {
     /// Read when a moment is tapped, so the VoiceOver hint and the countdown
     /// agree on one number.
     var sendWindowSeconds: TimeInterval { app.sendWindow.seconds }
+
+    // MARK: Daily metrics (#390)
+
+    /// This user's own daily goal per metric, keyed by slug. Seeded from the
+    /// store in `init` and written through on every change, so the settings
+    /// stepper redraws at once. A missing key means "never set"; zero means the
+    /// metric is not tracked.
+    private(set) var metricGoals: [String: Int] = [:]
+
+    /// The connection's daily-progress metrics as the server summarises them
+    /// (#386): water, steps, exercise and anything else it tracks, each with
+    /// today's amount against the summed goal.
+    ///
+    /// Read from the widget feed, the one route that carries them (#389). Empty
+    /// until first fetched, and against a server that predates them.
+    private(set) var metrics: [WidgetFeed.MetricSummary] = []
+
+    /// The metric templates a connection can turn on from Settings. Water has
+    /// its own richer section, with the ml ⇄ fl-oz switch and refill chips.
+    var trackableMetrics: [MetricDefinition] {
+        MetricCatalogue.builtins.filter { $0.slug != .water }
+    }
+
+    /// Whether this connection tracks a metric: this user's own goal says so, or
+    /// the feed reports it — which is how another member's goal shows.
+    func isMetricTracked(_ definition: MetricDefinition) -> Bool {
+        if let goal = metricGoals[definition.slug.rawValue] { return goal > 0 }
+        return metrics.contains { $0.slug == definition.slug.rawValue }
+    }
+
+    /// The goal the settings stepper shows: this user's own, or the metric's
+    /// built-in default until they set one.
+    func metricGoal(for definition: MetricDefinition) -> Int {
+        metricGoals[definition.slug.rawValue] ?? definition.defaultGoal
+    }
+
+    /// Turns a metric on or off by writing this user's own target. Off sends
+    /// zero and zero, which the server stores as "cleared" (#387).
+    func setMetricTracked(_ tracked: Bool, definition: MetricDefinition) {
+        commitMetricGoal(tracked ? metricGoal(for: definition) : 0, definition: definition)
+    }
+
+    /// Changes the daily goal, held to the metric's ceiling.
+    func setMetricGoal(_ goal: Int, definition: MetricDefinition) {
+        commitMetricGoal(min(max(goal, 0), definition.maximum), definition: definition)
+    }
+
+    private func commitMetricGoal(_ goal: Int, definition: MetricDefinition) {
+        let slug = definition.slug.rawValue
+        guard metricGoals[slug] != goal else { return }
+        metricGoals[slug] = goal
+        app.sharedStore.setMetricGoal(goal, forMetric: slug, forConnection: pairID)
+        pushMetricTarget(slug: definition.slug, goal: goal)
+    }
+
+    private var metricTargetPush: Task<Void, Never>?
+
+    /// Writes this user's target for one metric, chained so a run of stepper
+    /// taps lands in order and the server ends on the last one rather than on
+    /// whichever request happened to answer last.
+    private func pushMetricTarget(slug: EventKind, goal: Int) {
+        let previous = metricTargetPush
+        metricTargetPush = Task { [weak self] in
+            await previous?.value
+            guard let self else { return }
+            do {
+                try await self.api.setMetricTarget(
+                    pairID: self.pairID, metric: slug, minimum: 0, goal: goal
+                )
+            } catch let error as APIError where error.status == 404 {
+                // A server predating per-metric targets: the goal stays here.
+            } catch {
+                // Offline, or the server refused. The local echo stands; the
+                // next change tries again.
+            }
+        }
+    }
+
+    /// Re-reads `feed.metrics`, which is where "is this tracked" and the summed
+    /// goal come from. Best effort: a failure keeps what is already shown.
+    private func refreshMetrics() async {
+        guard let token = app.sharedStore.widgetToken, !token.isEmpty else { return }
+        if let feed = try? await api.widgetFeed(token: token, pairID: pairID) {
+            metrics = feed.metrics
+        }
+    }
 
     /// The chips the quick-send window offers: this connection's sizes while the
     /// pending moment is water, or `nil` — no picker at all — for any other
@@ -595,7 +690,8 @@ final class HomeModel {
         async let tallies: Void = refreshTallies()
         async let recap: Void = refreshRecap()
         async let yearAgo: Void = refreshYearAgo()
-        _ = await (kinds, timeline, tallies, recap, yearAgo)
+        async let metricFeed: Void = refreshMetrics()
+        _ = await (kinds, timeline, tallies, recap, yearAgo, metricFeed)
     }
 
     func focus(postID: String?) async {

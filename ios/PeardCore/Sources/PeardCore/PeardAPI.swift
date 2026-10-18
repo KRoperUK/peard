@@ -210,6 +210,34 @@ public extension APIClient {
         )
     }
 
+    /// `POST /api/peard/metric/target` — sets the caller's own daily targets for
+    /// one daily-progress metric in this connection (#387, #390).
+    ///
+    /// The generalisation of `setWaterTarget` to any metric slug — steps,
+    /// exercise, or a connection's own kind. Only ever the caller's own: the
+    /// server takes the user from the session, so there is no way to name
+    /// somebody else's. Both zero clears the row, which is how a metric stops
+    /// being tracked.
+    ///
+    /// An older server has no such route and answers 404; the caller treats that
+    /// as "the goal stays on this device".
+    func setMetricTarget(
+        pairID: String,
+        metric: EventKind,
+        minimum: Int,
+        goal: Int
+    ) async throws {
+        try await postIgnoringResponse(
+            path: "/api/peard/metric/target",
+            typedFields: [
+                "pair": .string(pairID),
+                "metric": .string(metric.rawValue),
+                "minimum": .int(minimum),
+                "goal": .int(goal),
+            ]
+        )
+    }
+
     /// `POST /api/peard/connections/seen` — marks this connection read up to now.
     ///
     /// The server stamps its own clock rather than accepting one from here: the
