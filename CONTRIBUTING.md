@@ -42,6 +42,13 @@ string, with `\(…)` for the variable parts, never fragments joined together.
 to the catalog (command-line `xcodebuild` does not); commit the change. The widget, watch and other extensions, and
 `PeardCore`, are not extracted yet.
 
+Translations (#377) do not go in by hand. `make localize-export` writes one
+`.xcloc` bundle per language to `ios/build/localizations`; a translator fills
+them in (Xcode or any XLIFF editor), and `make localize-import` folds them back
+into `Localizable.xcstrings`. That keeps the catalog's JSON out of a
+translator's way and keeps plural and interpolation rules intact — an
+interpolated key is a different string per language, not a word-for-word swap.
+
 ## Commit messages
 
 Commits follow [Conventional Commits](https://www.conventionalcommits.org/),
