@@ -17,12 +17,15 @@ LANGUAGES=(fr es it de)
 
 usage() {
   cat <<'EOF'
-Usage: scripts/localizations <export|import>
+Usage: scripts/localizations <export|import|translate> [args]
 
-  export   write one .xcloc per language to ios/build/localizations
-  import   read them back into ios/Peard/Localizable.xcstrings
+  export     write one .xcloc per language to ios/build/localizations
+  import     read them back into ios/Peard/Localizable.xcstrings
+  translate  fill the catalog from a model via OpenRouter
+             (--language fr, --limit 25, --model google/gemini-2.5-flash)
 
-Run `make project` first: the Xcode project is generated, not committed.
+Export and import need Xcode and a generated project (`make project`).
+Translate needs OPENROUTER_API_KEY in the environment.
 EOF
 }
 
@@ -54,6 +57,11 @@ case "${1:-}" in
         -localizationPath "$bundle"
     done
     echo "Imported. Commit ios/Peard/Localizable.xcstrings."
+    ;;
+
+  translate)
+    shift || true
+    exec python3 "$(dirname "$0")/localizations-openrouter" "$@"
     ;;
 
   *)

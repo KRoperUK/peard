@@ -1,0 +1,220 @@
+#!/usr/bin/env python3
+"""Fill Localizable.xcstrings through OpenRouter (#377).
+
+Batched: one request per ~25 strings, because 490 keys × 4 languages is ~1,960
+short translations and one call per string is both slow and needlessly
+expensive. The model returns a JSON object keyed by our own ids, so nothing
+depends on the model keeping the input order.
+
+Every result is written with `"state": "needs_review"`: machine translation is
+not "translated" until somebody has read it, and Xcode shows the difference.
+
+Safety rails, because UI copy is not prose:
+
+* Format specifiers (`%@`, `%lld`, `%1$d`, `%%`) must survive with the same
+  multiset. A result that changes them is retried alone, then skipped.
+* Keys containing `${…}` are skipped: those are App Shortcut phrase
+  placeholders, and a malformed phrase is TestFlight-blocking. They need a
+  build, not a model.
+* Only untranslated keys are touched, so re-running is safe and `--language` /
+  `--limit` make tranches easy.
+
+Usage: scripts/localizations-openrouter [--language fr] [--limit 25] [--model ...]
+Requires OPENROUTER_API_KEY in the environment.
+"""
+
+from __future__ import annotations
+
+import argparse
+import json
+import os
+import re
+import sys
+import urllib.error
+import urllib.request
+from collections import Counter
+from pathlib import Path
+
+CATALOG = Path("ios/Peard/Localizable.xcstrings")
+ENDPOINT = "https://openrouter.ai/api/v1/chat/completions"
+# Cheap and multilingual. `google/gemma-4-26b-a4b-it:free` is the free variant;
+# it is rate-limited, so the paid one is the default for a whole-catalog run.
+DEFAULT_MODEL = "google/gemma-4-26b-a4b-it"
+BATCH = 25
+LANGUAGES = {
+    "fr": "French",
+    "es": "Spanish",
+    "it": "Italian",
+    "de": "German",
+}
+# %@, %d, %lld (with its length modifier), %1$d, %% — the specifiers a Swift
+# string can carry. `%lld` must be consumed whole, or the "is there anything to
+# translate?" test sees the leftover "ld" as words.
+SPECIFIER = re.compile(r"%[0-9$]*(?:hh|h|ll|l|q|L|j|z|t)?[@a-zA-Z%]")
+
+
+def xcode_json(value, level: int = 0) -> str:
+    """The catalog's own formatting: two-space indent, `" : "`, blank empty objects.
+
+    Re-emitting through `json.dump` would reformat all ~490 entries and bury the
+    actual change in noise.
+    """
+    pad = "  " * level
+    inner = "  " * (level + 1)
+    if isinstance(value, dict):
+        if not value:
+            return "{\n\n" + pad + "}"
+        parts = [
+            f"{inner}{json.dumps(key, ensure_ascii=False)} : {xcode_json(item, level + 1)}"
+            for key, item in sorted(value.items())
+        ]
+        return "{\n" + ",\n".join(parts) + "\n" + pad + "}"
+    if isinstance(value, list):
+        if not value:
+            return "[\n\n" + pad + "]"
+        parts = [f"{inner}{xcode_json(item, level + 1)}" for item in value]
+        return "[\n" + ",\n".join(parts) + "\n" + pad + "]"
+    return json.dumps(value, ensure_ascii=False)
+
+
+def call(prompt: str, model: str) -> str:
+    request = urllib.request.Request(
+        ENDPOINT,
+        data=json.dumps({
+            "model": model,
+            "temperature": 0,
+            "messages": [{"role": "user", "content": prompt}],
+        }).encode(),
+        headers={
+            "Content-Type": "application/json",
+            "Authorization": f"Bearer {os.environ['OPENROUTER_API_KEY']}",
+        },
+    )
+    with urllib.request.urlopen(request, timeout=180) as response:
+        body = json.loads(response.read())
+    return body["choices"][0]["message"]["content"]
+
+
+def parse_object(raw: str) -> dict[str, str]:
+    """The id -> translation map, tolerating the shapes a model actually returns.
+
+    Asked for an object, a model occasionally answers with a list (of
+    `{"id", "text"}` or of bare strings). Accepting both is cheaper than losing a
+    whole batch to formatting.
+    """
+    text = raw.strip()
+    if text.startswith("```"):
+        text = re.sub(r"^```[a-zA-Z]*\n?", "", text)
+        text = re.sub(r"\n?```$", "", text).strip()
+    data = json.loads(text)
+    if isinstance(data, dict):
+        return {str(key): str(value) for key, value in data.items()}
+    if isinstance(data, list):
+        parsed: dict[str, str] = {}
+        for index, item in enumerate(data):
+            if isinstance(item, dict):
+                key = item.get("id", index)
+                value = item.get("translation", item.get("text", item.get("value", "")))
+                parsed[str(key)] = str(value)
+            else:
+                parsed[str(index)] = str(item)
+        return parsed
+    raise ValueError("model returned neither an object nor a list")
+
+
+def specs_match(source: str, result: str) -> bool:
+    return Counter(SPECIFIER.findall(source)) == Counter(SPECIFIER.findall(result))
+
+
+def translate_batch(texts: list[str], language: str, model: str) -> dict[str, str]:
+    payload = [{"id": str(index), "text": text} for index, text in enumerate(texts)]
+    prompt = (
+        f"Translate user-interface strings for an iOS app from English into {language}.\n"
+        "Translate each `text`. Keep it short and natural, as it appears in an app.\n"
+        "Preserve every format placeholder exactly as written (%@, %lld, %1$d, %%): "
+        "keep the same specifiers, and reorder the words around them if the language needs it.\n"
+        "Do not translate the product name Pear'd, and keep emoji as they are.\n"
+        "Return ONLY a JSON object mapping each id to its translated string. No markdown.\n\n"
+        f"{json.dumps(payload, ensure_ascii=False)}"
+    )
+    return parse_object(call(prompt, model))
+
+
+def translate_one(text: str, language: str, model: str) -> str | None:
+    return translate_batch([text], language, model).get("0")
+
+
+def main() -> int:
+    if not os.environ.get("OPENROUTER_API_KEY"):
+        print("OPENROUTER_API_KEY is not set", file=sys.stderr)
+        return 1
+
+    parser = argparse.ArgumentParser(description="Translate the app String Catalog.")
+    parser.add_argument("--language", choices=sorted(LANGUAGES), help="only this language")
+    parser.add_argument("--limit", type=int, help="translate at most this many keys per language")
+    parser.add_argument("--model", default=DEFAULT_MODEL)
+    args = parser.parse_args()
+
+    languages = [args.language] if args.language else list(LANGUAGES)
+    data = json.loads(CATALOG.read_text())
+    entries = data["strings"]
+
+    translated = 0
+    skipped = 0
+    failures = 0
+
+    for lang in languages:
+        wanted: list[str] = []
+        for source in sorted(entries):
+            if args.limit is not None and len(wanted) >= args.limit:
+                break
+            # Nothing to translate in a key that is only placeholders or symbols;
+            # an identical "translation" is noise.
+            if not re.search(r"[A-Za-z]", SPECIFIER.sub("", source)):
+                continue
+            if "${" in source:
+                skipped += 1  # App Shortcut phrase — needs a build, not a model.
+                continue
+            entry = entries[source]
+            if "value" in entry.get("localizations", {}).get(lang, {}).get("stringUnit", {}):
+                continue
+            wanted.append(source)
+
+        for start in range(0, len(wanted), BATCH):
+            chunk = wanted[start:start + BATCH]
+            try:
+                results = translate_batch(chunk, LANGUAGES[lang], args.model)
+            except (urllib.error.URLError, KeyError, ValueError, TimeoutError) as error:
+                print(f"{lang}: batch failed: {error}", file=sys.stderr)
+                failures += len(chunk)
+                continue
+
+            for index, source in enumerate(chunk):
+                result = (results.get(str(index)) or "").strip()
+                if not result or not specs_match(source, result):
+                    # Retry on its own: batching is where placeholders get lost.
+                    try:
+                        alone = (translate_one(source, LANGUAGES[lang], args.model) or "").strip()
+                    except (urllib.error.URLError, KeyError, ValueError, TimeoutError):
+                        alone = ""
+                    if alone and specs_match(source, alone):
+                        result = alone
+                    else:
+                        print(f"  {lang}: skipped (placeholders changed): {source!r}", file=sys.stderr)
+                        failures += 1
+                        continue
+                entries[source].setdefault("localizations", {})[lang] = {
+                    "stringUnit": {"state": "needs_review", "value": result}
+                }
+                translated += 1
+
+    # No trailing newline: the catalog as Xcode writes it has none, so a run that
+    # translates nothing leaves the file byte-identical.
+    CATALOG.write_text(xcode_json(data))
+    print(f"{translated} translation(s) written, {skipped} phrase key(s) skipped, {failures} failure(s).")
+    print("Review before committing: machine output is marked needs_review.")
+    return 0
+
+
+if __name__ == "__main__":
+    raise SystemExit(main())
