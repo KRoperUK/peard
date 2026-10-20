@@ -89,7 +89,7 @@ names and avatars while never getting an email address.
 | `happened_at` | date | when it happened. The timeline sorts by this, and tallies, recap, streaks and "last happened" count by it. Defaults to now; a create may set it up to 24 hours back — see [Rewinding a moment](#rewinding-a-moment) |
 | `rewound` | bool | somebody picked `happened_at`, as opposed to the moment arriving late from the offline queue. Drives the "⏪ Rewound" chip |
 | `reply_to` | string | relation → `posts`, `""` when unset. The photo this post answers — see [Answering a photo](#answering-a-photo) |
-| `amount` | number | whole millilitres, `0` when unset (how PocketBase stores a number nobody gave). A water moment's size; see [A moment with an amount](#a-moment-with-an-amount) |
+| `amount` | number | a whole number in the metric's canonical unit — millilitres for water, a count for steps — `0` when unset (how PocketBase stores a number nobody gave); see [A moment with an amount](#a-moment-with-an-amount) |
 
 Thumbnail URL: `GET /api/files/posts/{id}/{media}?thumb=512x512`. `256x256` and
 `1024x1024` are also declared; the large widget uses the 1024 one.
@@ -138,7 +138,11 @@ queues offline and tallies like any other moment; the number is one more field o
 it. A moment with nothing to measure leaves `amount` at `0`, and a client that has
 never heard of the field draws the moment as it always did.
 
-The server refuses (`400`) a negative amount, one above 5000 ml, a fractional one,
+Amount is no longer water's alone: a daily-progress metric (#386) counts one too,
+so the wire ceiling is a sanity bound rather than a glass size. Each metric's own
+maximum lives in the client (five litres for water).
+
+The server refuses (`400`) a negative amount, one above 1,000,000, a fractional one,
 and one on anything that is not an `event` (a photo or a note counts in no total).
 A client may send it as a string (`"330"`) — the app's form fields are strings —
 and PocketBase stores the number.
