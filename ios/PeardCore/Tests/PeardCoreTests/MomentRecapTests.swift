@@ -153,6 +153,50 @@ final class MomentRecapTests: XCTestCase {
         XCTAssertEqual(recap.total, 3)
     }
 
+    /// A streak per tracked metric decodes with both goals and both runs (#391).
+    func testMetricStreaksDecode() throws {
+        let json = #"""
+        {"total":3,"streak":{"current":1,"best":1},
+         "metric_streaks":[{"metric":"steps","current":3,"best":5,"goal":20000,"mine_goal":10000,
+                            "mine":{"current":2,"best":4}}]}
+        """#
+
+        let recap = try JSONDecoder.peard.decode(MomentRecap.self, from: Data(json.utf8))
+
+        let steps = try XCTUnwrap(recap.metricStreaks.first)
+        XCTAssertEqual(steps.metric, "steps")
+        XCTAssertEqual(steps.current, 3)
+        XCTAssertEqual(steps.best, 5)
+        XCTAssertEqual(steps.goal, 20000)
+        XCTAssertEqual(steps.mineGoal, 10000)
+        XCTAssertEqual(steps.mine, MomentRecap.Streak(current: 2, best: 4))
+        XCTAssertEqual(steps.definition.emoji, "👟", "the built-in definition draws it")
+    }
+
+    /// A server that predates the field answers without it, and that is an empty
+    /// list rather than a decode failure.
+    func testAnOldServerHasNoMetricStreaks() throws {
+        let json = #"{"total":3,"streak":{"current":5,"best":9}}"#
+
+        let recap = try JSONDecoder.peard.decode(MomentRecap.self, from: Data(json.utf8))
+
+        XCTAssertTrue(recap.metricStreaks.isEmpty)
+        XCTAssertEqual(recap.total, 3)
+    }
+
+    /// One unreadable entry costs itself, not the others.
+    func testAMalformedMetricStreakIsDroppedAlone() throws {
+        let json = #"""
+        {"total":3,"streak":{"current":1,"best":1},
+         "metric_streaks":[{"metric":"steps","current":2,"best":2},
+                           {"metric":"exercise","current":"heaps","best":1}]}
+        """#
+
+        let recap = try JSONDecoder.peard.decode(MomentRecap.self, from: Data(json.utf8))
+
+        XCTAssertEqual(recap.metricStreaks.map(\.metric), ["steps"])
+    }
+
     // MARK: Decoding
 
     func testAFullRecapDecodes() throws {

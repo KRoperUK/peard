@@ -66,6 +66,17 @@ type response struct {
 		Minimum     int    `json:"minimum"`
 		Recommended int    `json:"recommended"`
 	} `json:"water_targets"`
+	MetricStreaks []struct {
+		Metric   string `json:"metric"`
+		Current  int    `json:"current"`
+		Best     int    `json:"best"`
+		Goal     int    `json:"goal"`
+		MineGoal int    `json:"mine_goal"`
+		Mine     struct {
+			Current int `json:"current"`
+			Best    int `json:"best"`
+		} `json:"mine"`
+	} `json:"metric_streaks"`
 }
 
 // MARK: The window
@@ -495,6 +506,69 @@ func TestTheWindowCountsWhenAMomentHappened(t *testing.T) {
 
 	if got := w.recap(t, w.aliceTok); got.Total != 0 {
 		t.Errorf("total=%d, want 0 — it happened before the window", got.Total)
+	}
+}
+
+// MARK: Metric streaks (#391)
+
+// Every tracked metric gets the same streak rule water has: days whose combined
+// amount reached the summed goal, counted back from the most recent one.
+func TestATrackedMetricHasItsOwnStreak(t *testing.T) {
+	w := newWorld(t)
+	w.postMetricTarget(t, w.aliceTok, w.pair.Id, "steps", 0, 10000)
+	w.postMetricTarget(t, w.bobTok, w.pair.Id, "steps", 0, 10000)
+	// Two members at 10,000 is a connection goal of 20,000.
+	w.metric(t, w.alice, "steps", 12000, 0)
+	w.metric(t, w.alice, "steps", 8000, 0)
+	w.metric(t, w.alice, "steps", 21000, 1)
+	w.metric(t, w.alice, "steps", 5000, 2)
+
+	got := w.recapWith(t, w.aliceTok, "")
+
+	if len(got.MetricStreaks) != 1 {
+		t.Fatalf("metric_streaks = %d, want 1 (steps)", len(got.MetricStreaks))
+	}
+	steps := got.MetricStreaks[0]
+	if steps.Metric != "steps" {
+		t.Fatalf("metric = %q, want steps", steps.Metric)
+	}
+	if steps.Goal != 20000 || steps.MineGoal != 10000 {
+		t.Errorf("goals = %d/%d, want 20000 connection / 10000 mine", steps.Goal, steps.MineGoal)
+	}
+	if steps.Current != 2 || steps.Best != 2 {
+		t.Errorf("steps streak = %d/%d, want 2/2", steps.Current, steps.Best)
+	}
+	if steps.Mine.Current != 2 || steps.Mine.Best != 2 {
+		t.Errorf("my steps streak = %d/%d, want 2/2", steps.Mine.Current, steps.Mine.Best)
+	}
+}
+
+// Water is the hero and already has water_streak/water_streak_mine. Listing it
+// again would show the same figure twice with two different targets.
+func TestMetricStreaksDoNotRepeatWater(t *testing.T) {
+	w := newWorld(t)
+	w.water(t, w.alice, 2000, 0)
+	w.postMetricTarget(t, w.aliceTok, w.pair.Id, "water", 0, 2000)
+
+	got := w.recapWith(t, w.aliceTok, "")
+
+	for _, metric := range got.MetricStreaks {
+		if metric.Metric == "water" {
+			t.Fatal("metric_streaks repeated water")
+		}
+	}
+}
+
+// A metric nobody has given a goal to is not tracked, so it has no streak to
+// report — even if somebody logged an amount of it.
+func TestAnUntrackedMetricHasNoStreakEntry(t *testing.T) {
+	w := newWorld(t)
+	w.metric(t, w.alice, "steps", 20000, 0)
+
+	got := w.recapWith(t, w.aliceTok, "")
+
+	if len(got.MetricStreaks) != 0 {
+		t.Errorf("metric_streaks = %d, want none without a stored goal", len(got.MetricStreaks))
 	}
 }
 

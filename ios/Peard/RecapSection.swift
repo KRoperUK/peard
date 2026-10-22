@@ -31,6 +31,12 @@ struct RecapSection: View {
         return mine.current > 0 || mine.best > 1
     }
 
+    /// Streaks for any other tracked metric (#391), shown on the same bar and
+    /// with the same "worth mentioning" threshold as the two water rows.
+    var shownMetricStreaks: [MomentRecap.MetricStreak] {
+        recap.metricStreaks.filter(\.isWorthShowing)
+    }
+
     var body: some View {
         Section {
             if recap.isEmpty {
@@ -47,6 +53,9 @@ struct RecapSection: View {
                 }
                 if showsPersonalWaterStreak, let mine = recap.waterStreakMine {
                     personalWaterStreakRow(mine)
+                }
+                ForEach(shownMetricStreaks) { metric in
+                    metricStreakRow(metric)
                 }
                 if let busiest = recap.busiest, busiest.count > 1 {
                     busiestRow(busiest)
@@ -179,6 +188,45 @@ struct RecapSection: View {
         case 0: return String(localized: "Your own water streak ended — best was \(mine.best) days")
         case 1: return String(localized: "1 day hitting your own goal")
         default: return String(localized: "\(mine.current) days hitting your own goal")
+        }
+    }
+
+    /// A tracked metric's streak (#391): steps, exercise, or a kind the
+    /// connection gave itself. The icon and name come from the same definition
+    /// that draws its progress ring, so the two rows read as one metric.
+    private func metricStreakRow(_ metric: MomentRecap.MetricStreak) -> some View {
+        let definition = metric.definition
+        return HStack {
+            Label {
+                Text(Self.metricStreakText(metric, definition: definition))
+            } icon: {
+                Text(definition.emoji)
+            }
+            .font(.subheadline)
+            .foregroundStyle(PearColor.textPrimary)
+            Spacer()
+            if metric.best > metric.current {
+                Text("best \(metric.best)")
+                    .font(.caption)
+                    .foregroundStyle(PearColor.textTertiary)
+                    .monospacedDigit()
+            }
+        }
+        .accessibilityElement(children: .combine)
+    }
+
+    static func metricStreakText(
+        _ metric: MomentRecap.MetricStreak,
+        definition: MetricDefinition
+    ) -> String {
+        let noun = definition.label.lowercased()
+        switch metric.current {
+        case 0:
+            return String(localized: "\(definition.label) streak ended — best was \(metric.best) days hitting the goal")
+        case 1:
+            return String(localized: "1 day hitting your \(noun) goal")
+        default:
+            return String(localized: "\(metric.current) days hitting your \(noun) goal")
         }
     }
 
