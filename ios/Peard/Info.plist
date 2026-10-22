@@ -97,6 +97,11 @@
 	<string>Find friends already on Pear'd by matching your contacts — only one-way hashes ever leave this device.</string>
 	<key>NSHealthShareUsageDescription</key>
 	<string>Pear'd reads today's steps and exercise minutes from Apple Health so the goal you share with your connection reflects what you actually did. It never writes to Health.</string>
+	<!-- Required by App Store Connect whenever the HealthKit entitlement is
+	     present, even though the app requests read access only and never saves
+	     a sample. The string says exactly that rather than inventing a write. -->
+	<key>NSHealthUpdateUsageDescription</key>
+	<string>Pear'd never adds to or changes anything in Apple Health. This app only reads today's steps and exercise minutes, which is why access is requested for reading only.</string>
 	<key>ITSAppUsesNonExemptEncryption</key>
 	<false/>
 	<key>PeardServerURL</key>
