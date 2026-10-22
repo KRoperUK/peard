@@ -76,7 +76,7 @@ ORDER BY day DESC`
 const waterDayQuery = `
 SELECT substr(datetime(replace(happened_at, 'Z', ''), {:shift}), 1, 10) AS day
 FROM posts
-WHERE pair = {:pair} AND type = 'event' AND happened_at >= {:since}
+WHERE pair = {:pair} AND type = 'event' AND event_kind = 'water' AND happened_at >= {:since}
 GROUP BY day
 HAVING SUM(COALESCE(amount, 0)) >= {:target}
 ORDER BY day DESC`
@@ -97,7 +97,7 @@ ORDER BY happened_at DESC`
 const rawWaterDayQuery = `
 SELECT happened_at AS day, COALESCE(amount, 0) AS amount
 FROM posts
-WHERE pair = {:pair} AND type = 'event' AND happened_at >= {:since}
+WHERE pair = {:pair} AND type = 'event' AND event_kind = 'water' AND happened_at >= {:since}
 ORDER BY happened_at DESC`
 
 // personalWaterDayQuery is waterDayQuery for one person: the distinct local days
@@ -110,7 +110,7 @@ ORDER BY happened_at DESC`
 const personalWaterDayQuery = `
 SELECT substr(datetime(replace(happened_at, 'Z', ''), {:shift}), 1, 10) AS day
 FROM posts
-WHERE pair = {:pair} AND author = {:user} AND type = 'event' AND happened_at >= {:since}
+WHERE pair = {:pair} AND author = {:user} AND type = 'event' AND event_kind = 'water' AND happened_at >= {:since}
 GROUP BY day
 HAVING SUM(COALESCE(amount, 0)) >= {:target}
 ORDER BY day DESC`
@@ -121,7 +121,7 @@ ORDER BY day DESC`
 const rawPersonalWaterDayQuery = `
 SELECT happened_at AS day, COALESCE(amount, 0) AS amount
 FROM posts
-WHERE pair = {:pair} AND author = {:user} AND type = 'event' AND happened_at >= {:since}
+WHERE pair = {:pair} AND author = {:user} AND type = 'event' AND event_kind = 'water' AND happened_at >= {:since}
 ORDER BY happened_at DESC`
 
 // defaultWaterTarget is the built-in recommended daily amount in millilitres,

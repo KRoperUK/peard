@@ -532,6 +532,27 @@ func TestWaterFromEverybodyAddsUpWithinADay(t *testing.T) {
 	}
 }
 
+// Other metrics carry an amount too (#390), and it is not millilitres. A steps
+// entry must not fill the water streak, or any connection tracking steps would
+// have a permanent one.
+func TestOtherMetricAmountsDoNotCountTowardsWater(t *testing.T) {
+	w := newWorld(t)
+	w.metric(t, w.alice, "steps", 12000, 0)
+	w.metric(t, w.alice, "exercise", 60, 1)
+	w.water(t, w.alice, 100, 0)
+
+	got := w.recapWith(t, w.aliceTok, "")
+
+	if got.WaterStreak.Current != 0 || got.WaterStreak.Best != 0 {
+		t.Errorf("water streak = %d/%d, want zeroes — steps are not millilitres",
+			got.WaterStreak.Current, got.WaterStreak.Best)
+	}
+	if got.WaterStreakMine.Current != 0 || got.WaterStreakMine.Best != 0 {
+		t.Errorf("personal water streak = %d/%d, want zeroes",
+			got.WaterStreakMine.Current, got.WaterStreakMine.Best)
+	}
+}
+
 // Moments with no amount, and other moments, add nothing.
 func TestMomentsWithoutAnAmountDoNotCountTowardsWater(t *testing.T) {
 	w := newWorld(t)
@@ -701,6 +722,27 @@ func (w *world) recapWith(t *testing.T, token, extra string) response {
 		t.Fatalf("decode %s: %v", body, err)
 	}
 	return got
+}
+
+// metric logs an amount of a non-water metric `daysAgo` days back, at midday UTC.
+func (w *world) metric(t *testing.T, author *core.Record, kind string, amount, daysAgo int) {
+	t.Helper()
+	col, err := w.app.FindCollectionByNameOrId("posts")
+	if err != nil {
+		t.Fatalf("posts collection: %v", err)
+	}
+	r := core.NewRecord(col)
+	r.Set("pair", w.pair.Id)
+	r.Set("author", author.Id)
+	r.Set("type", "event")
+	r.Set("event_kind", kind)
+	r.Set("amount", amount)
+	if err := w.app.Save(r); err != nil {
+		t.Fatalf("save %s: %v", kind, err)
+	}
+	if daysAgo > 0 {
+		w.backdate(t, r, daysAgo)
+	}
 }
 
 // water logs `ml` of water `daysAgo` days back, at midday UTC.

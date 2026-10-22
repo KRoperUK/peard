@@ -182,6 +182,7 @@ func personalWaterOnDay(app core.App, pairID, userID string, day time.Time, loc 
 		From("posts").
 		Where(dbx.NewExp(
 			"pair = {:pair} AND author = {:user} AND type = 'event'"+
+				" AND event_kind = 'water'"+
 				" AND happened_at >= {:start} AND happened_at < {:end}",
 			dbx.Params{
 				"pair":  pairID,
