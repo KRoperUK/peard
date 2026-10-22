@@ -102,6 +102,8 @@
 	<string>Save a photo somebody shared with you to your own library.</string>
 	<key>NSContactsUsageDescription</key>
 	<string>Find friends already on Pear'd by matching your contacts — only one-way hashes ever leave this device.</string>
+	<key>NSHealthShareUsageDescription</key>
+	<string>Pear'd reads today's steps and exercise minutes from Apple Health so the goal you share with your connection reflects what you actually did. It never writes to Health.</string>
 	<key>ITSAppUsesNonExemptEncryption</key>
 	<false/>
 	<key>NSAppTransportSecurity</key>

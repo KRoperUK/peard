@@ -70,6 +70,14 @@ targets:
   Peard:
     type: application
     platform: iOS
+    # HealthKit is read-only (#411): the entitlement is what lets the app ask
+    # for share access to steps and exercise minutes. The App ID also needs the
+    # capability enabled in the portal, which automatic signing cannot do from
+    # here.
+    attributes:
+      SystemCapabilities:
+        com.apple.HealthKit:
+          enabled: 1
     sources:
       - path: Peard
         excludes:

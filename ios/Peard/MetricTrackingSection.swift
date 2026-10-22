@@ -20,7 +20,14 @@ struct MetricTrackingSection: View {
             ForEach(model.trackableMetrics) { definition in
                 Toggle("Track \(definition.label.lowercased())", isOn: Binding(
                     get: { model.isMetricTracked(definition) },
-                    set: { model.setMetricTracked($0, definition: definition) }
+                    set: { tracked in
+                        model.setMetricTracked(tracked, definition: definition)
+                        // Turning it on asks Apple Health for read access, once.
+                        // Denial is fine: logging an amount by hand still works.
+                        if tracked {
+                            Task { await model.enableHealthSync(for: definition) }
+                        }
+                    }
                 ))
                 .tint(PearColor.accent)
                 .foregroundStyle(PearColor.textPrimary)
@@ -33,7 +40,7 @@ struct MetricTrackingSection: View {
         } header: {
             Text("Other metrics")
         } footer: {
-            Text("A daily goal for steps, exercise and the like. Your goal is shared with the connection, where it is summed with everybody else's.")
+            Text("A daily goal for steps, exercise and the like. Your goal is shared with the connection, where it is summed with everybody else's. Apple Health is read-only: turning one on asks for access, and denying it leaves the metric to log by hand.")
         }
     }
 
