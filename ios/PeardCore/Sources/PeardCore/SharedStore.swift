@@ -23,6 +23,7 @@ public final class SharedStore: @unchecked Sendable {
         public static let waterUnit = "waterUnit"
         public static let sendWindow = "sendWindow"
         public static let metricGoals = "metricGoals"
+        public static let healthSync = "healthSync"
         public static let watchLastMoments = "watchLastMoments"
         public static let cachedMoments = "cachedMoments"
         public static let cachedAvatars = "cachedAvatars"
@@ -184,6 +185,29 @@ public final class SharedStore: @unchecked Sendable {
         var all = (defaults?.dictionary(forKey: Key.metricGoals) as? [String: Int]) ?? [:]
         all["\(pairID)|\(metric)"] = goal
         defaults?.set(all, forKey: Key.metricGoals)
+    }
+
+    // MARK: Apple Health sync
+
+    /// The last per-day total pushed for a metric, so a foreground refresh does
+    /// not re-send a figure that has not moved (#411). Per connection, because
+    /// the same steps are reported to each one.
+    public func healthSync(forMetric metric: String, forConnection pairID: String) -> HealthSyncState? {
+        guard
+            let all = defaults?.dictionary(forKey: Key.healthSync) as? [String: Data],
+            let data = all["\(pairID)|\(metric)"]
+        else { return nil }
+        return try? JSONDecoder().decode(HealthSyncState.self, from: data)
+    }
+
+    public func setHealthSync(
+        _ state: HealthSyncState?,
+        forMetric metric: String,
+        forConnection pairID: String
+    ) {
+        var all = (defaults?.dictionary(forKey: Key.healthSync) as? [String: Data]) ?? [:]
+        all["\(pairID)|\(metric)"] = state.flatMap { try? JSONEncoder().encode($0) }
+        defaults?.set(all, forKey: Key.healthSync)
     }
 
     // MARK: Pinned moments

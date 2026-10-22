@@ -364,6 +364,31 @@ func (w *feedWorld) setMetricTarget(t *testing.T, user *core.Record, metric stri
 	})
 }
 
+// A day reported by a source outside the timeline (Apple Health) is that
+// member's whole day, so it replaces their posts for the day rather than
+// adding to them (#411).
+func TestFeedPrefersAStoredMetricDayOverThatMembersPosts(t *testing.T) {
+	w := newFeedWorld(t)
+	w.setMetricTarget(t, w.alice, "steps", 10000)
+	w.setMetricTarget(t, w.bob, "steps", 10000)
+	w.newMetricPost(t, w.alice, "steps", 4000)
+	w.newMetricPost(t, w.bob, "steps", 3000)
+	w.newRecord(t, "metric_days", map[string]any{
+		"pair": w.pair.Id, "user": w.alice.Id, "metric": "steps",
+		"day":    time.Now().In(time.Local).Format("2006-01-02"),
+		"amount": 9000, "source": "health",
+	})
+
+	steps := metricBlock(w.feedMetrics(t), "steps")
+	if steps == nil {
+		t.Fatal("feed carried no steps metric block")
+	}
+	// Alice's 9,000 replaces her 4,000 post; Bob's 3,000 still counts.
+	if got := int(steps["today"].(float64)); got != 12000 {
+		t.Errorf("today = %d, want 12000 (9000 stored + 3000 posted)", got)
+	}
+}
+
 // A connection logging steps today shows a steps metric block with the summed
 // goal — the generalisation of the water block to any metric (#386).
 func TestFeedCarriesTrackedMetrics(t *testing.T) {

@@ -65,22 +65,6 @@ FROM posts
 WHERE pair = {:pair} AND happened_at >= {:since}
 ORDER BY day DESC`
 
-// waterDayQuery lists the distinct local days the connection's combined water
-// reached the target, newest first (#323).
-//
-// The same bucketing as dayQuery, deliberately: `replace(happened_at,'Z',”)`
-// and the caller's `{:shift}`, so a day means one thing to both streaks. What
-// differs is the predicate. A day counts when everything logged that local day
-// adds up to the target, whoever logged it; a moment with no amount stores 0 and
-// adds nothing. Restricted to `type = 'event'` like the tallies' daily total.
-const waterDayQuery = `
-SELECT substr(datetime(replace(happened_at, 'Z', ''), {:shift}), 1, 10) AS day
-FROM posts
-WHERE pair = {:pair} AND type = 'event' AND happened_at >= {:since}
-GROUP BY day
-HAVING SUM(COALESCE(amount, 0)) >= {:target}
-ORDER BY day DESC`
-
 // rawDayQuery lists every moment's UTC timestamp within the horizon, newest
 // first, so each can be bucketed into its own local day in Go using the IANA
 // zone — which knows that day's actual offset (#344). The fixed-offset SQL
@@ -91,38 +75,37 @@ FROM posts
 WHERE pair = {:pair} AND happened_at >= {:since}
 ORDER BY happened_at DESC`
 
-// rawWaterDayQuery is rawDayQuery for water: every event's timestamp and amount,
-// so the per-local-day sum (and the >= target test) can be computed in Go with
-// IANA-correct day boundaries (#344).
-const rawWaterDayQuery = `
-SELECT happened_at AS day, COALESCE(amount, 0) AS amount
+// metricRowQuery lists every amount-bearing event of one metric within the
+// horizon, with its author, so the amounts can be bucketed into local days in Go
+// with IANA-correct boundaries (#344) and summed per member (#391, #411).
+const metricRowQuery = `
+SELECT happened_at AS day, author AS author, COALESCE(amount, 0) AS amount
 FROM posts
-WHERE pair = {:pair} AND type = 'event' AND happened_at >= {:since}
+WHERE pair = {:pair} AND type = 'event' AND event_kind = {:metric} AND happened_at >= {:since}
 ORDER BY happened_at DESC`
 
-// personalWaterDayQuery is waterDayQuery for one person: the distinct local days
-// that member's *own* water reached their target, newest first (#353).
-//
-// Where waterDayQuery sums the whole connection against the pair's combined
-// goal, this sums one author against their own. The per-person streak is the
-// one an "at-risk" reminder can be about — a nudge is to the person who is
-// behind, not to the connection.
-const personalWaterDayQuery = `
-SELECT substr(datetime(replace(happened_at, 'Z', ''), {:shift}), 1, 10) AS day
+// personalMetricRowQuery is metricRowQuery for one author (#353).
+const personalMetricRowQuery = `
+SELECT happened_at AS day, author AS author, COALESCE(amount, 0) AS amount
 FROM posts
-WHERE pair = {:pair} AND author = {:user} AND type = 'event' AND happened_at >= {:since}
-GROUP BY day
-HAVING SUM(COALESCE(amount, 0)) >= {:target}
+WHERE pair = {:pair} AND author = {:user} AND type = 'event' AND event_kind = {:metric} AND happened_at >= {:since}
+ORDER BY happened_at DESC`
+
+// metricDayRowQuery lists externally-reported per-day totals (Apple Health,
+// #411), already keyed by the member's own local day. A stored day supersedes
+// that member's posts for the same metric and day.
+const metricDayRowQuery = `
+SELECT day AS day, user AS user, COALESCE(amount, 0) AS amount
+FROM metric_days
+WHERE pair = {:pair} AND metric = {:metric} AND day >= {:since_day}
 ORDER BY day DESC`
 
-// rawPersonalWaterDayQuery is rawWaterDayQuery for one person: every event's
-// timestamp and amount by that author, so the per-local-day sum (and >= target
-// test) buckets with IANA-correct day boundaries (#344, #353).
-const rawPersonalWaterDayQuery = `
-SELECT happened_at AS day, COALESCE(amount, 0) AS amount
-FROM posts
-WHERE pair = {:pair} AND author = {:user} AND type = 'event' AND happened_at >= {:since}
-ORDER BY happened_at DESC`
+// personalMetricDayRowQuery is metricDayRowQuery for one member.
+const personalMetricDayRowQuery = `
+SELECT day AS day, user AS user, COALESCE(amount, 0) AS amount
+FROM metric_days
+WHERE pair = {:pair} AND user = {:user} AND metric = {:metric} AND day >= {:since_day}
+ORDER BY day DESC`
 
 // defaultWaterTarget is the built-in recommended daily amount in millilitres,
 // used for a member who has stored no target when the caller sends none either.
@@ -155,6 +138,7 @@ func Register(app core.App) {
 		se.Router.GET("/api/peard/recap", handler(app)).Bind(apis.RequireAuth())
 		registerTarget(se)
 		registerMetricTarget(se)
+		registerMetricDay(se)
 		return se.Next()
 	})
 }
@@ -174,9 +158,19 @@ type busiestRow struct {
 	Total int    `db:"total"`
 }
 
-// waterRawRow is one event's timestamp and amount, for IANA day-bucketing (#344).
-type waterRawRow struct {
+// metricAmountRow is one event's timestamp, author and amount, for IANA
+// day-bucketing and per-member precedence (#344, #391, #411).
+type metricAmountRow struct {
 	Day    string `db:"day"`
+	Author string `db:"author"`
+	Amount int    `db:"amount"`
+}
+
+// metricDayAmountRow is one member's externally-reported total for one metric
+// on one local day (#411).
+type metricDayAmountRow struct {
+	Day    string `db:"day"`
+	User   string `db:"user"`
 	Amount int    `db:"amount"`
 }
 
@@ -248,8 +242,12 @@ func handler(app core.App) func(e *core.RequestEvent) error {
 
 		current, best := streaks(app, pairID, shift, loc)
 		targets := memberTargets(app, pairID)
-		waterCurrent, waterBest := waterStreaks(app, pairID, shift, loc, streakTarget(targets, waterTarget(e)))
-		mineCurrent, mineBest := personalWaterStreaks(app, pairID, e.Auth.Id, shift, loc,
+		// The clock the caller's days are bucketed in: the offset they sent, or
+		// their stored zone. A streak is a sequence of days, so it has to agree
+		// with the day the caller thinks it is.
+		streakLoc := metricStreakZone(e, loc)
+		waterCurrent, waterBest := waterStreaks(app, pairID, streakLoc, streakTarget(targets, waterTarget(e)))
+		mineCurrent, mineBest := personalMetricStreaks(app, pairID, e.Auth.Id, "water", streakLoc,
 			personalTarget(targets, e.Auth.Id, waterTarget(e)))
 
 		res := map[string]any{
@@ -268,6 +266,10 @@ func handler(app core.App) func(e *core.RequestEvent) error {
 			// Every member's own daily targets (#335), the caller's included, so
 			// both people see each other's goals. Zero means none stored.
 			"water_targets": targets,
+			// A streak for every other tracked metric (#391): steps, exercise,
+			// and any kind a connection gave itself. Water keeps its own fields
+			// above; this list never repeats it.
+			"metric_streaks": trackedMetricStreaks(app, pairID, e.Auth.Id, streakLoc),
 		}
 
 		var busiest []busiestRow
@@ -318,8 +320,9 @@ func ConnectionStreak(app core.App, pairID string, loc *time.Location) (current,
 	return streaks(app, pairID, shift, loc)
 }
 
-// waterStreaks is streaks for water: how many days in a row the connection's
-// combined total reached `target` millilitres, and the longest such run.
+// waterStreaks is metricStreaks for the hero: how many days in a row the
+// connection's combined total reached `target` millilitres, and the longest
+// such run (#323).
 //
 // The same rule as streaks, so the same liveness: the run reaches back from the
 // most recent day that met the target, and is live only if that day is today or
@@ -327,16 +330,8 @@ func ConnectionStreak(app core.App, pairID string, loc *time.Location) (current,
 //
 // No target is no streak, not a vacuously true one: with a target of zero every
 // day would qualify.
-func waterStreaks(app core.App, pairID, shift string, loc *time.Location, target int) (current, best int) {
-	if target <= 0 {
-		return 0, 0
-	}
-	since := time.Now().AddDate(0, 0, -streakHorizonDays).UTC().Format(pocketBaseLayout)
-	if loc != nil && loc != time.UTC {
-		days := ianaWaterDays(app, pairID, since, loc, target)
-		return runsFromDays(days, nowInZone(loc))
-	}
-	return streaksFrom(app, waterDayQuery, dbx.Params{"pair": pairID, "shift": shift, "target": target}, shift)
+func waterStreaks(app core.App, pairID string, loc *time.Location, target int) (current, best int) {
+	return metricStreaks(app, pairID, "water", loc, target)
 }
 
 // ianaDays returns the distinct local days (newest first) the connection logged
@@ -364,85 +359,244 @@ func ianaDays(app core.App, pairID, since string, loc *time.Location) []time.Tim
 	return days
 }
 
-// ianaWaterDays returns the distinct local days (newest first) on which the
-// connection's combined water met the target, bucketed by the IANA zone (#344).
-func ianaWaterDays(app core.App, pairID, since string, loc *time.Location, target int) []time.Time {
-	var rows []waterRawRow
-	if err := app.DB().NewQuery(rawWaterDayQuery).Bind(dbx.Params{"pair": pairID, "since": since}).All(&rows); err != nil {
-		return nil
-	}
-	totals := map[string]int{}
-	keys := map[string]time.Time{}
-	for _, r := range rows {
-		day, ok := localDay(r.Day, loc)
-		if !ok {
-			continue
-		}
-		key := day.Format("2006-01-02")
-		totals[key] += r.Amount
-		keys[key] = day
-	}
-	days := make([]time.Time, 0, len(totals))
-	for key, total := range totals {
-		if total >= target {
-			days = append(days, keys[key])
-		}
-	}
-	sort.Slice(days, func(a, b int) bool { return days[a].After(days[b]) })
-	return days
+// metricStreaks is a streak for any tracked metric (#391): how many days in a
+// row the connection's combined amount reached `target`, and the longest run.
+//
+// The same rule as the water streak it generalises, so the same liveness: the
+// run reaches back from the most recent day that met the target, and is live
+// only if that day is today or yesterday. A day that has not reached the target
+// *yet* does not break it. No target is no streak, not a vacuously true one.
+func metricStreaks(app core.App, pairID, metric string, loc *time.Location, target int) (current, best int) {
+	return metricStreaksFor(app, pairID, "", metric, loc, target)
 }
 
-// personalWaterStreaks is waterStreaks for one person: how many days in a row
-// that member's *own* water reached `target`, and the longest such run (#353).
+// personalMetricStreaks is metricStreaks for one person: how many days in a row
+// that member's *own* amount reached `target` (#353).
 //
 // The same rule and liveness as the connection streak — the run reaches back
 // from the most recent day the member met their goal, and is live only if that
 // day is today or yesterday. A day not yet at the target does not break it, so
 // a nudge at nine in the evening is about a streak still savable, not a lost one.
-//
-// No target is no streak, as for the connection: a target of zero would make
-// every day vacuously qualify.
-func personalWaterStreaks(app core.App, pairID, userID, shift string, loc *time.Location, target int) (current, best int) {
+func personalMetricStreaks(app core.App, pairID, userID, metric string, loc *time.Location, target int) (current, best int) {
+	if userID == "" {
+		return 0, 0
+	}
+	return metricStreaksFor(app, pairID, userID, metric, loc, target)
+}
+
+// metricStreaksFor reads the qualifying days for one metric, for the whole
+// connection or one member, and then the runs of consecutive days among them.
+func metricStreaksFor(app core.App, pairID, userID, metric string, loc *time.Location, target int) (current, best int) {
 	if target <= 0 {
 		return 0, 0
 	}
-	since := time.Now().AddDate(0, 0, -streakHorizonDays).UTC().Format(pocketBaseLayout)
-	if loc != nil && loc != time.UTC {
-		days := ianaPersonalWaterDays(app, pairID, userID, since, loc, target)
-		return runsFromDays(days, nowInZone(loc))
+	if loc == nil {
+		loc = time.UTC
 	}
-	return streaksFrom(app, personalWaterDayQuery,
-		dbx.Params{"pair": pairID, "user": userID, "shift": shift, "target": target}, shift)
+	since := time.Now().AddDate(0, 0, -streakHorizonDays).UTC().Format(pocketBaseLayout)
+	totals := metricDayTotals(app, pairID, userID, metric, since, loc)
+
+	days := make([]time.Time, 0, len(totals))
+	for key, total := range totals {
+		if total < target {
+			continue
+		}
+		day, err := time.Parse("2006-01-02", key)
+		if err != nil {
+			continue
+		}
+		days = append(days, day)
+	}
+	sort.Slice(days, func(a, b int) bool { return days[a].After(days[b]) })
+	return runsFromDays(days, nowInZone(loc))
 }
 
-// ianaPersonalWaterDays is ianaWaterDays for one person: the distinct local
-// days that member's own water met the target, bucketed by the IANA zone (#344,
-// #353).
-func ianaPersonalWaterDays(app core.App, pairID, userID, since string, loc *time.Location, target int) []time.Time {
-	var rows []waterRawRow
-	if err := app.DB().NewQuery(rawPersonalWaterDayQuery).
-		Bind(dbx.Params{"pair": pairID, "user": userID, "since": since}).All(&rows); err != nil {
+// metricDayTotals sums one metric by local day. With a userID it is that
+// member's own days; without one it is the connection's combined days.
+//
+// Bucketing happens in Go from each event's IANA-aware local day, matching the
+// zone-aware path the water streak already used, so a clock change cannot
+// misplace an entry logged near midnight (#344).
+func metricDayTotals(app core.App, pairID, userID, metric, since string, loc *time.Location) map[string]int {
+	query := metricRowQuery
+	params := dbx.Params{"pair": pairID, "metric": metric, "since": since}
+	if userID != "" {
+		query = personalMetricRowQuery
+		params["user"] = userID
+	}
+
+	var rows []metricAmountRow
+	if err := app.DB().NewQuery(query).Bind(params).All(&rows); err != nil {
 		return nil
 	}
-	totals := map[string]int{}
-	keys := map[string]time.Time{}
+
+	byMemberDay := map[string]map[string]int{}
 	for _, r := range rows {
 		day, ok := localDay(r.Day, loc)
 		if !ok {
 			continue
 		}
-		key := day.Format("2006-01-02")
-		totals[key] += r.Amount
-		keys[key] = day
+		key := day.Format(metricDayLayout)
+		if byMemberDay[r.Author] == nil {
+			byMemberDay[r.Author] = map[string]int{}
+		}
+		byMemberDay[r.Author][key] += r.Amount
 	}
-	days := make([]time.Time, 0, len(totals))
-	for key, total := range totals {
-		if total >= target {
-			days = append(days, keys[key])
+
+	// A stored day is the member's whole day, not an increment (#411). It
+	// replaces their posts for that day, so a connection that also logs a metric
+	// by hand cannot count the same steps twice. An explicit zero still wins:
+	// the source said the member did none.
+	storedParams := dbx.Params{
+		"pair":      pairID,
+		"metric":    metric,
+		"since_day": time.Now().AddDate(0, 0, -streakHorizonDays).In(loc).Format(metricDayLayout),
+	}
+	storedQuery := metricDayRowQuery
+	if userID != "" {
+		storedQuery = personalMetricDayRowQuery
+		storedParams["user"] = userID
+	}
+	var stored []metricDayAmountRow
+	if err := app.DB().NewQuery(storedQuery).Bind(storedParams).All(&stored); err == nil {
+		for _, r := range stored {
+			if _, err := time.Parse(metricDayLayout, r.Day); err != nil {
+				continue
+			}
+			if byMemberDay[r.User] == nil {
+				byMemberDay[r.User] = map[string]int{}
+			}
+			byMemberDay[r.User][r.Day] = r.Amount
 		}
 	}
-	sort.Slice(days, func(a, b int) bool { return days[a].After(days[b]) })
-	return days
+
+	totals := make(map[string]int, len(byMemberDay))
+	for _, days := range byMemberDay {
+		for key, amount := range days {
+			totals[key] += amount
+		}
+	}
+	return totals
+}
+
+// metricStreak is one tracked metric's streak figures in the recap (#391).
+// Water is not listed here: it keeps `water_streak` and `water_streak_mine`.
+type metricStreak struct {
+	Metric   string        `json:"metric"`
+	Current  int           `json:"current"`
+	Best     int           `json:"best"`
+	Goal     int           `json:"goal"`
+	MineGoal int           `json:"mine_goal"`
+	Mine     streakFigures `json:"mine"`
+}
+
+type streakFigures struct {
+	Current int `json:"current"`
+	Best    int `json:"best"`
+}
+
+// metricDefaultGoal is the built-in daily goal for a metric, mirroring the
+// client's MetricCatalogue and the widget feed's builtinMetrics.
+func metricDefaultGoal(metric string) int {
+	switch metric {
+	case "water":
+		return defaultWaterTarget
+	case "steps":
+		return 10000
+	case "exercise":
+		return 30
+	default:
+		// A connection's own metric has no built-in goal, so a member who
+		// stored none contributes the smallest meaningful one rather than zero
+		// (which would make the day vacuously qualify).
+		return 1
+	}
+}
+
+// trackedMetricStreaks reports a streak for every non-water metric the
+// connection tracks (#391): one entry per metric that any member has given a
+// goal to. The connection's target is the sum of its members' goals, the same
+// shape water's targets use; a member without a goal contributes the built-in.
+func trackedMetricStreaks(app core.App, pairID, userID string, loc *time.Location) []metricStreak {
+	rows, err := app.FindRecordsByFilter("metric_targets",
+		"pair = {:pair}", "metric", 0, 0, dbx.Params{"pair": pairID})
+	if err != nil || len(rows) == 0 {
+		return []metricStreak{}
+	}
+
+	goals := map[string]map[string]int{}
+	order := []string{}
+	for _, row := range rows {
+		metric := strings.TrimSpace(row.GetString("metric"))
+		goal := row.GetInt("goal")
+		if metric == "" || metric == "water" || goal <= 0 {
+			continue
+		}
+		if goals[metric] == nil {
+			goals[metric] = map[string]int{}
+			order = append(order, metric)
+		}
+		goals[metric][row.GetString("user")] = goal
+	}
+	if len(order) == 0 {
+		return []metricStreak{}
+	}
+	sort.Strings(order)
+
+	members, err := app.FindRecordsByFilter("pair_members",
+		"pair = {:pair}", "", 0, 0, dbx.Params{"pair": pairID})
+	if err != nil {
+		return []metricStreak{}
+	}
+
+	out := make([]metricStreak, 0, len(order))
+	for _, metric := range order {
+		fallback := metricDefaultGoal(metric)
+		goal := 0
+		for _, m := range members {
+			if stored := goals[metric][m.GetString("user")]; stored > 0 {
+				goal += stored
+			} else {
+				goal += fallback
+			}
+		}
+		mineGoal := goals[metric][userID]
+		if mineGoal <= 0 {
+			mineGoal = fallback
+		}
+
+		current, best := metricStreaks(app, pairID, metric, loc, goal)
+		mineCurrent, mineBest := personalMetricStreaks(app, pairID, userID, metric, loc, mineGoal)
+		out = append(out, metricStreak{
+			Metric:   metric,
+			Current:  current,
+			Best:     best,
+			Goal:     goal,
+			MineGoal: mineGoal,
+			Mine:     streakFigures{Current: mineCurrent, Best: mineBest},
+		})
+	}
+	return out
+}
+
+// metricStreakZone is the clock metric days are bucketed in: the fixed offset
+// the caller sent (clamped like shiftFor), else their stored zone (#344).
+func metricStreakZone(e *core.RequestEvent, loc *time.Location) *time.Location {
+	raw := strings.TrimSpace(e.Request.URL.Query().Get("tz"))
+	if raw == "" {
+		return loc
+	}
+	minutes, err := strconv.Atoi(raw)
+	if err != nil {
+		return loc
+	}
+	if minutes > 14*60 {
+		minutes = 14 * 60
+	}
+	if minutes < -14*60 {
+		minutes = -14 * 60
+	}
+	return time.FixedZone("caller", minutes*60)
 }
 
 // localDay parses a PocketBase timestamp and returns the date-only value of the

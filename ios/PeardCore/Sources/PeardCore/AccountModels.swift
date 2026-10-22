@@ -289,6 +289,63 @@ public struct MomentRecap: Codable, Hashable, Sendable {
         }
     }
 
+    /// One non-water metric's streak (#391): the connection's run and the
+    /// caller's own, with the goals they were measured against.
+    public struct MetricStreak: Codable, Hashable, Sendable, Identifiable {
+        public let metric: String
+        public let current: Int
+        public let best: Int
+        public let goal: Int
+        public let mineGoal: Int
+        public let mine: Streak
+
+        public var id: String { metric }
+
+        public init(
+            metric: String,
+            current: Int = 0,
+            best: Int = 0,
+            goal: Int = 0,
+            mineGoal: Int = 0,
+            mine: Streak = Streak()
+        ) {
+            self.metric = metric
+            self.current = current
+            self.best = best
+            self.goal = goal
+            self.mineGoal = mineGoal
+            self.mine = mine
+        }
+
+        enum CodingKeys: String, CodingKey {
+            case metric, current, best, goal, mine
+            case mineGoal = "mine_goal"
+        }
+
+        /// Absent figures are zeroes rather than a decode failure: a server that
+        /// gains or loses a field must not cost the row, and a connection's own
+        /// metric is still drawable from its slug alone.
+        public init(from decoder: any Decoder) throws {
+            let container = try decoder.container(keyedBy: CodingKeys.self)
+            metric = try container.decodeIfPresent(String.self, forKey: .metric) ?? ""
+            current = try container.decodeIfPresent(Int.self, forKey: .current) ?? 0
+            best = try container.decodeIfPresent(Int.self, forKey: .best) ?? 0
+            goal = try container.decodeIfPresent(Int.self, forKey: .goal) ?? 0
+            mineGoal = try container.decodeIfPresent(Int.self, forKey: .mineGoal) ?? 0
+            mine = try container.decodeIfPresent(Streak.self, forKey: .mine) ?? Streak()
+        }
+
+        /// How this metric is drawn and read: the built-in when the slug names
+        /// one, else a plain-count fallback carrying the metric's own slug.
+        public var definition: MetricDefinition {
+            MetricCatalogue.resolve(EventKind(rawValue: metric), goal: goal)
+        }
+
+        /// Worth a row only when there is a run to speak of: live, or a best of
+        /// more than a day. The same bar the moment and water streaks use.
+        public var isWorthShowing: Bool { current > 0 || best > 1 }
+    }
+
     public let total: Int
     public let mine: Int
     public let others: Int
@@ -308,6 +365,10 @@ public struct MomentRecap: Codable, Hashable, Sendable {
     /// Nil from a server that predates them — not the same as nobody having set
     /// one, which is a list of members whose targets are unset.
     public let waterTargets: [MemberWaterTarget]?
+    /// A streak for every other tracked metric (#391), steps and exercise
+    /// included. Empty from a server that predates it and from a connection
+    /// that tracks nothing besides water.
+    public let metricStreaks: [MetricStreak]
 
     public init(
         total: Int = 0,
@@ -318,7 +379,8 @@ public struct MomentRecap: Codable, Hashable, Sendable {
         streak: Streak = Streak(),
         waterStreak: Streak? = nil,
         waterStreakMine: Streak? = nil,
-        waterTargets: [MemberWaterTarget]? = nil
+        waterTargets: [MemberWaterTarget]? = nil,
+        metricStreaks: [MetricStreak] = []
     ) {
         self.total = total
         self.mine = mine
@@ -329,6 +391,7 @@ public struct MomentRecap: Codable, Hashable, Sendable {
         self.waterStreak = waterStreak
         self.waterStreakMine = waterStreakMine
         self.waterTargets = waterTargets
+        self.metricStreaks = metricStreaks
     }
 
     private enum CodingKeys: String, CodingKey {
@@ -336,6 +399,7 @@ public struct MomentRecap: Codable, Hashable, Sendable {
         case waterStreak = "water_streak"
         case waterStreakMine = "water_streak_mine"
         case waterTargets = "water_targets"
+        case metricStreaks = "metric_streaks"
     }
 
     /// One element that does not decode is dropped rather than failing the list.
@@ -356,6 +420,8 @@ public struct MomentRecap: Codable, Hashable, Sendable {
         waterStreakMine = try? container.decodeIfPresent(Streak.self, forKey: .waterStreakMine)
         waterTargets = (try? container.decodeIfPresent([Lenient<MemberWaterTarget>].self, forKey: .waterTargets))?
             .compactMap(\.value)
+        metricStreaks = (try? container.decodeIfPresent([Lenient<MetricStreak>].self, forKey: .metricStreaks))?
+            .compactMap(\.value) ?? []
     }
 
     /// True when there is nothing to summarise, so a screen can say so rather

@@ -52,6 +52,7 @@ func TestPrivacyPolicyDisclosesWhatIsCollected(t *testing.T) {
 		"export with photos":             "Data and photos",
 		"Apple revocation on deletion":   "revoke Pear'd's access",
 		"device time zones":              "Time zone",
+		"health metrics read-only":       "never writes to it",
 	} {
 		if !strings.Contains(body, needle) {
 			t.Errorf("/privacy no longer covers %s (%q)", what, needle)

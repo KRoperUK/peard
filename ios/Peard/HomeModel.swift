@@ -66,10 +66,20 @@ final class HomeModel {
     /// not fetch it all again; see `RefreshGate`.
     private var contentGate = RefreshGate()
 
-    init(app: AppModel, pairID: String) {
+    /// Read-only Apple Health totals for the metrics this user tracks (#411).
+    /// The default does nothing, so tests and previews never touch HealthKit;
+    /// the app passes the real provider where the model is built.
+    private let health: HealthMetricsProviding
+
+    init(
+        app: AppModel,
+        pairID: String,
+        health: HealthMetricsProviding = DisabledHealthMetrics()
+    ) {
         self.app = app
         self.api = app.api
         self.pairID = pairID
+        self.health = health
         // Seeded with the connection id, not `.zero`, whose `pair` is empty:
         // `adding(pending:)` matches queued sends on it, so an empty seed would
         // silently drop every pending moment until the first successful fetch —
@@ -420,6 +430,73 @@ final class HomeModel {
         }
     }
 
+    // MARK: Apple Health (#411)
+
+    /// The tracked metrics Apple Health can fill: only ones this user has given
+    /// a goal to, and only the built-ins with a Health type.
+    private var healthMetrics: [MetricDefinition] {
+        MetricCatalogue.builtins.filter { definition in
+            definition.slug != .water
+                && health.supports(definition.slug)
+                && (metricGoals[definition.slug.rawValue] ?? 0) > 0
+        }
+    }
+
+    /// Asks Health for read access when a metric is turned on. Denial changes
+    /// nothing else: the metric still works by logging an amount by hand.
+    func enableHealthSync(for definition: MetricDefinition) async {
+        guard health.supports(definition.slug) else { return }
+        _ = await health.requestAuthorization(for: [definition.slug])
+    }
+
+    /// Pushes today's totals for every tracked health metric (#411).
+    ///
+    /// One upsert per metric and day, and only when the figure moved since the
+    /// last sync: a foreground refresh every few minutes would otherwise write
+    /// the same number over and over. A failure is left for the next refresh,
+    /// like the goal push — the number on screen is still right.
+    func syncHealthMetrics(now: Date = Date(), calendar: Calendar = .current) async {
+        let metrics = healthMetrics
+        guard !metrics.isEmpty else { return }
+
+        let totals = await health.todayTotals(
+            for: metrics.map(\.slug), now: now, calendar: calendar
+        )
+        guard !totals.isEmpty else { return }
+
+        let day = Self.healthDay(now, calendar: calendar)
+        for definition in metrics {
+            guard let amount = totals[definition.slug] else { continue }
+            let slug = definition.slug.rawValue
+            if app.sharedStore.healthSync(forMetric: slug, forConnection: pairID)
+                == HealthSyncState(day: day, amount: amount) {
+                continue
+            }
+            do {
+                try await api.setMetricDay(
+                    pairID: pairID, metric: definition.slug, day: day, amount: amount
+                )
+                app.sharedStore.setHealthSync(
+                    HealthSyncState(day: day, amount: amount),
+                    forMetric: slug,
+                    forConnection: pairID
+                )
+            } catch {
+                // Offline, or a server predating the route. Try again next time.
+            }
+        }
+    }
+
+    /// The member's local calendar day, `yyyy-MM-dd`, which is how a metric day
+    /// is keyed. Built from components rather than a formatter so it cannot pick
+    /// up a locale or a non-Gregorian calendar.
+    static func healthDay(_ now: Date, calendar: Calendar = .current) -> String {
+        let parts = calendar.dateComponents([.year, .month, .day], from: now)
+        return String(
+            format: "%04d-%02d-%02d", parts.year ?? 0, parts.month ?? 0, parts.day ?? 0
+        )
+    }
+
     /// The chips the quick-send window offers: this connection's sizes while the
     /// pending moment is water, or `nil` — no picker at all — for any other
     /// moment, and for water when the connection has turned it off.
@@ -722,8 +799,12 @@ final class HomeModel {
         async let tallies: Void = refreshTallies()
         async let recap: Void = refreshRecap()
         async let yearAgo: Void = refreshYearAgo()
-        async let metricFeed: Void = refreshMetrics()
-        _ = await (kinds, timeline, tallies, recap, yearAgo, metricFeed)
+        // Health pushes before the feed is read, so today's ring includes the
+        // total this refresh just reported (#411). Everything else runs beside
+        // it; only the metric feed waits.
+        async let health: Void = syncHealthMetrics()
+        _ = await (kinds, timeline, tallies, recap, yearAgo, health)
+        await refreshMetrics()
     }
 
     func focus(postID: String?) async {

@@ -96,7 +96,11 @@ struct RootView: View {
             case .pair(let prefilledCode):
                 PairView(prefilledCode: prefilledCode)
             case .home(let pairID):
-                MainTabView(model: HomeModel(app: app, pairID: pairID))
+                MainTabView(model: HomeModel(
+                    app: app,
+                    pairID: pairID,
+                    health: HealthKitMetricsProvider()
+                ))
                     .id(pairID)
             }
         }
