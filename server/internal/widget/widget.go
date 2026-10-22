@@ -527,8 +527,11 @@ func feedHandler(app core.App) func(e *core.RequestEvent) error {
 			return e.JSON(http.StatusOK, map[string]any{"state": "unpaired"})
 		}
 
-		today := startOfToday(time.Now(), callerZone(query.Get("tz")))
-		streakCurrent, streakBest := recap.ConnectionStreak(app, chosenPair, callerZone(query.Get("tz")))
+		now := time.Now()
+		callerLoc := callerZone(query.Get("tz"))
+		today := startOfToday(now, callerLoc)
+		todayDay := now.In(callerLoc).Format("2006-01-02")
+		streakCurrent, streakBest := recap.ConnectionStreak(app, chosenPair, callerLoc)
 		res := map[string]any{
 			"state":      "ok",
 			"connection": connectionInfo(app, chosenPair, len(others)+1),
@@ -550,7 +553,7 @@ func feedHandler(app core.App) func(e *core.RequestEvent) error {
 			// today's amount and the summed goal (#386) — the generalisation of
 			// the water block to steps, exercise and the like. Additive: the
 			// `water` block above is unchanged for older clients.
-			"metrics": metricSummaries(app, chosenPair, today),
+			"metrics": metricSummaries(app, chosenPair, today, todayDay),
 			// The connection's "any moment" day streak, for the watch's streak
 			// complication (#378) — the same figure the recap shows and the
 			// "at risk" reminder (#361) is about.
@@ -878,9 +881,14 @@ var builtinMetrics = []metricSpec{
 // member's stored goal, falling back to the metric's default for a member who
 // stored none and to one default when nobody has — exactly waterSummary's rule.
 //
+// `todayDay` is the caller's local `YYYY-MM-DD`, which is how a `metric_days`
+// row is keyed (#411). A stored day is that member's whole day from an external
+// source, so it replaces their posts for the same metric and day; a member with
+// no stored day is summed from posts as before.
+//
 // Water keeps its own dedicated `water` block in the feed unchanged; this is
 // additive, so an older client reading only `water` sees no difference.
-func metricSummaries(app core.App, pairID, today string) []map[string]any {
+func metricSummaries(app core.App, pairID, today, todayDay string) []map[string]any {
 	members, merr := app.FindRecordsByFilter("pair_members", "pair = {:pair}", "", maxMembers, 0,
 		dbx.Params{"pair": pairID})
 	if merr != nil {
@@ -895,9 +903,26 @@ func metricSummaries(app core.App, pairID, today string) []map[string]any {
 		if err != nil {
 			continue
 		}
+		storedDays, derr := app.FindRecordsByFilter("metric_days",
+			"pair = {:pair} && metric = {:kind} && day = {:day}", "", maxMembers, 0,
+			dbx.Params{"pair": pairID, "kind": spec.Slug, "day": todayDay})
+		storedByUser := map[string]int{}
+		if derr == nil {
+			for _, r := range storedDays {
+				storedByUser[r.GetString("user")] = r.GetInt("amount")
+			}
+		}
+
 		amount := 0
 		for _, p := range posts {
+			// A stored day supersedes that member's own posts for the day.
+			if _, stored := storedByUser[p.GetString("author")]; stored {
+				continue
+			}
 			amount += p.GetInt("amount")
+		}
+		for _, stored := range storedByUser {
+			amount += stored
 		}
 
 		rows, terr := app.FindRecordsByFilter("metric_targets",

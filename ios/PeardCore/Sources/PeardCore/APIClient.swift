@@ -306,6 +306,20 @@ public final class APIClient: Sendable {
         )
     }
 
+    /// `PUT` with real JSON types, discarding the response body.
+    ///
+    /// For a route that upserts a resource the body names — the metric day
+    /// (#411) is one row per (pair, user, metric, day), so repeating the call is
+    /// the same write rather than a second entry.
+    public func putIgnoringResponse(path: String, typedFields: [String: JSONField]) async throws {
+        _ = try await sendReturningData(
+            method: "PUT",
+            path: path,
+            query: [:],
+            body: .typedJSON(typedFields)
+        )
+    }
+
     /// `POST` multipart to an arbitrary path (the `/api/peard/*` routes).
     ///
     /// Distinct from `createMultipart`, which targets a collection. The avatar

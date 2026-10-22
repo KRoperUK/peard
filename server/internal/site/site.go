@@ -678,7 +678,7 @@ const privacyBody = `
   <div class="doc">
     <header>
       <h1>Privacy Policy</h1>
-      <div class="updated">Last updated 29 September 2026</div>
+      <div class="updated">Last updated 22 October 2026</div>
     </header>
 
     <p>Pear'd ("we", "us") is a small, independently-run app for sharing moments and tallies with people you choose to connect with. This page explains what we collect, why, and how to get it deleted.</p>
@@ -692,6 +692,7 @@ const privacyBody = `
       <li><strong>Sign in with Apple token</strong> — if you sign in with Apple, a token Apple issues to us, kept only on our server and used for one thing: telling Apple to revoke Pear'd's access when you delete your account.</li>
       <li><strong>Profile</strong> — the display name and photo you optionally set, shown to people you share a connection with.</li>
       <li><strong>Moments</strong> — the events you log, including any note or photo you attach, and the reactions, custom moment kinds, group names and group photos you add.</li>
+      <li><strong>Daily health metrics (optional)</strong> — if you turn on step or exercise tracking, the daily totals your iPhone's Apple Health reports for today, stored with your connection so both people's progress adds up. Pear'd only reads from Apple Health and never writes to it. Turn the metric off in Settings and the totals stop syncing; your account export includes what was stored.</li>
       <li><strong>Read state</strong> — when you last opened each connection, so the app can show what's new since.</li>
       <li><strong>Push tokens</strong> — a device token used only to deliver notifications from your connections, and, while a Live Activity is running, a token that updates it on your Lock Screen.</li>
       <li><strong>Time zone</strong> — your phone's time zone name (like "Europe/London"), stored with its push token so the weekly recap arrives on Sunday evening where you are, and sent by the widget so its "today" is your day. It says roughly where in the world you are, and nothing more precise.</li>

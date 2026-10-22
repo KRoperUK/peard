@@ -249,6 +249,22 @@ func exportHandler(app core.App) func(e *core.RequestEvent) error {
 			return e.InternalServerError("could not read your devices", err)
 		}
 
+		metricDays := []map[string]any{}
+		err = eachRecord(app, "metric_days", "user = {:user}", mine, func(d *core.Record) {
+			metricDays = append(metricDays, map[string]any{
+				"id":      d.Id,
+				"pair":    d.GetString("pair"),
+				"metric":  d.GetString("metric"),
+				"day":     d.GetString("day"),
+				"amount":  d.GetInt("amount"),
+				"source":  d.GetString("source"),
+				"created": d.GetString("created"),
+			})
+		})
+		if err != nil {
+			return e.InternalServerError("could not read your metric days", err)
+		}
+
 		widgetTokens := []map[string]any{}
 		err = eachRecord(app, "widget_tokens", "user = {:user}", mine, func(w *core.Record) {
 			widgetTokens = append(widgetTokens, map[string]any{
@@ -287,6 +303,7 @@ func exportHandler(app core.App) func(e *core.RequestEvent) error {
 			"reactions":       reactions,
 			"moment_kinds":    kinds,
 			"devices":         devices,
+			"metric_days":     metricDays,
 			"widget_tokens":   widgetTokens,
 			"live_activities": activities,
 		}

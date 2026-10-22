@@ -91,6 +91,22 @@ FROM posts
 WHERE pair = {:pair} AND author = {:user} AND type = 'event' AND event_kind = {:metric} AND happened_at >= {:since}
 ORDER BY happened_at DESC`
 
+// metricDayRowQuery lists externally-reported per-day totals (Apple Health,
+// #411), already keyed by the member's own local day. A stored day supersedes
+// that member's posts for the same metric and day.
+const metricDayRowQuery = `
+SELECT day AS day, user AS user, COALESCE(amount, 0) AS amount
+FROM metric_days
+WHERE pair = {:pair} AND metric = {:metric} AND day >= {:since_day}
+ORDER BY day DESC`
+
+// personalMetricDayRowQuery is metricDayRowQuery for one member.
+const personalMetricDayRowQuery = `
+SELECT day AS day, user AS user, COALESCE(amount, 0) AS amount
+FROM metric_days
+WHERE pair = {:pair} AND user = {:user} AND metric = {:metric} AND day >= {:since_day}
+ORDER BY day DESC`
+
 // defaultWaterTarget is the built-in recommended daily amount in millilitres,
 // used for a member who has stored no target when the caller sends none either.
 // Mirrors the app's `WaterAmount.defaultRecommended`.
@@ -122,6 +138,7 @@ func Register(app core.App) {
 		se.Router.GET("/api/peard/recap", handler(app)).Bind(apis.RequireAuth())
 		registerTarget(se)
 		registerMetricTarget(se)
+		registerMetricDay(se)
 		return se.Next()
 	})
 }
@@ -146,6 +163,14 @@ type busiestRow struct {
 type metricAmountRow struct {
 	Day    string `db:"day"`
 	Author string `db:"author"`
+	Amount int    `db:"amount"`
+}
+
+// metricDayAmountRow is one member's externally-reported total for one metric
+// on one local day (#411).
+type metricDayAmountRow struct {
+	Day    string `db:"day"`
+	User   string `db:"user"`
 	Amount int    `db:"amount"`
 }
 
@@ -411,11 +436,38 @@ func metricDayTotals(app core.App, pairID, userID, metric, since string, loc *ti
 		if !ok {
 			continue
 		}
-		key := day.Format("2006-01-02")
+		key := day.Format(metricDayLayout)
 		if byMemberDay[r.Author] == nil {
 			byMemberDay[r.Author] = map[string]int{}
 		}
 		byMemberDay[r.Author][key] += r.Amount
+	}
+
+	// A stored day is the member's whole day, not an increment (#411). It
+	// replaces their posts for that day, so a connection that also logs a metric
+	// by hand cannot count the same steps twice. An explicit zero still wins:
+	// the source said the member did none.
+	storedParams := dbx.Params{
+		"pair":      pairID,
+		"metric":    metric,
+		"since_day": time.Now().AddDate(0, 0, -streakHorizonDays).In(loc).Format(metricDayLayout),
+	}
+	storedQuery := metricDayRowQuery
+	if userID != "" {
+		storedQuery = personalMetricDayRowQuery
+		storedParams["user"] = userID
+	}
+	var stored []metricDayAmountRow
+	if err := app.DB().NewQuery(storedQuery).Bind(storedParams).All(&stored); err == nil {
+		for _, r := range stored {
+			if _, err := time.Parse(metricDayLayout, r.Day); err != nil {
+				continue
+			}
+			if byMemberDay[r.User] == nil {
+				byMemberDay[r.User] = map[string]int{}
+			}
+			byMemberDay[r.User][r.Day] = r.Amount
+		}
 	}
 
 	totals := make(map[string]int, len(byMemberDay))

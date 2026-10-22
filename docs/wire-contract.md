@@ -785,6 +785,50 @@ sends), else 2000 ml. When nobody has stored a target the parameter alone decide
 as before. An older server omits `water_targets`; clients treat that as "targets
 stay on the device".
 
+### Metric streaks (per tracked metric)
+
+The recap also carries `metric_streaks`, one entry per non-water metric anybody in
+the connection has given a goal to (steps, exercise, or a custom kind):
+
+```json
+"metric_streaks": [
+  { "metric": "steps", "current": 3, "best": 7, "goal": 20000, "mine_goal": 10000,
+    "mine": { "current": 2, "best": 4 } }
+]
+```
+
+`goal` is the sum of the members' stored goals, with a member who stored none
+counting at the metric's built-in default; `mine_goal` is the caller's own. The
+rule is the water streak's: a day counts when the combined amount reached the
+goal, the run ends at yesterday or today, and the horizon is 180 days. Water is
+never repeated here — it keeps `water_streak` and `water_streak_mine`. An older
+server omits the field, which clients read as an empty list.
+
+`POST /api/peard/metric/target` with `{ "pair": "X", "metric": "steps",
+"minimum": 0, "goal": 10000 }` sets the **caller's own** target for that metric;
+`0, 0` clears it. Targets are whole numbers in `0…1,000,000`, the minimum no
+higher than the goal. `403` for a connection you are not in.
+
+### Metric days (external totals)
+
+A moment is one event with one amount. A source outside the timeline — Apple
+Health today — reports a running daily total instead, so it upserts one row per
+member, metric and day:
+
+`PUT /api/peard/metric/day` with `{ "pair": "X", "metric": "steps",
+"day": "2026-10-22", "amount": 8400, "source": "health" }` → `{ "ok": true, … }`.
+
+`day` is the caller's own calendar day (`YYYY-MM-DD`), `amount` a whole number in
+`0…1,000,000`, `source` free text up to 20 characters (`health` when omitted).
+The user comes from the session, so a caller can only write their own row;
+repeating the call for the same day updates it rather than adding a second.
+`400` for a malformed day or amount, `403` for a connection you are not in.
+
+A stored day **replaces** that member's posts for the same metric and day in
+both the widget feed's `metrics` and the recap's `metric_streaks` — the device is
+reporting the member's whole day, not an increment, so a connection that also
+logs the metric by hand cannot count it twice.
+
 `POST /api/peard/water/target` with `{ "pair": "X", "minimum": 1200, "recommended": 2500 }`
 → `{ "ok": true, "minimum": 1200, "recommended": 2500 }` sets the **caller's own**
 targets and nothing else (the user comes from the session). Both are whole ml in

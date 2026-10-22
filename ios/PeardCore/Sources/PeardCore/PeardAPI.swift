@@ -238,6 +238,31 @@ public extension APIClient {
         )
     }
 
+    /// `PUT /api/peard/metric/day` — upserts this member's total for one metric
+    /// on one local day (#411).
+    ///
+    /// One row per (pair, user, metric, day), so syncing twice on the same day
+    /// is the same write, not two amounts. The day is the member's own calendar
+    /// day (`yyyy-MM-dd`), because that is the unit a daily goal is measured in.
+    func setMetricDay(
+        pairID: String,
+        metric: EventKind,
+        day: String,
+        amount: Int,
+        source: String = "health"
+    ) async throws {
+        try await putIgnoringResponse(
+            path: "/api/peard/metric/day",
+            typedFields: [
+                "pair": .string(pairID),
+                "metric": .string(metric.rawValue),
+                "day": .string(day),
+                "amount": .int(amount),
+                "source": .string(source),
+            ]
+        )
+    }
+
     /// `POST /api/peard/connections/seen` — marks this connection read up to now.
     ///
     /// The server stamps its own clock rather than accepting one from here: the
