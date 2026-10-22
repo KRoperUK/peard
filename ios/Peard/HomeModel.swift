@@ -353,8 +353,15 @@ final class HomeModel {
 
     /// The goal the settings stepper shows: this user's own, or the metric's
     /// built-in default until they set one.
+    ///
+    /// Zero is how the store records "turned off", so it is not a goal. Reading
+    /// it as one made the toggle write zero straight back on the next tap,
+    /// leaving the switch immediately unselected.
     func metricGoal(for definition: MetricDefinition) -> Int {
-        metricGoals[definition.slug.rawValue] ?? definition.defaultGoal
+        guard let goal = metricGoals[definition.slug.rawValue], goal > 0 else {
+            return definition.defaultGoal
+        }
+        return goal
     }
 
     /// Turns a metric on or off by writing this user's own target. Off sends
