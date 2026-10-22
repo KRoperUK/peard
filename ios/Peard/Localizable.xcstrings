@@ -243,6 +243,9 @@
         }
       }
     },
+    "%@ streak ended — best was %lld days hitting the goal" : {
+
+    },
     "%@ to the %@ goal" : {
       "localizations" : {
         "de" : {
@@ -465,6 +468,12 @@
             "value" : "%@Última actualización: %@."
           }
         },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "%@Dernière mise à jour le %@."
+          }
+        },
         "it" : {
           "stringUnit" : {
             "state" : "needs_review",
@@ -506,6 +515,9 @@
           }
         }
       }
+    },
+    "%lld days hitting your %@ goal" : {
+
     },
     "%lld days hitting your water goal" : {
       "localizations" : {
@@ -843,6 +855,9 @@
         }
       }
     },
+    "1 day hitting your %@ goal" : {
+
+    },
     "1 day hitting your water goal" : {
       "localizations" : {
         "de" : {
@@ -1153,6 +1168,9 @@
           }
         }
       }
+    },
+    "A daily goal for steps, exercise and the like. Your goal is shared with the connection, where it is summed with everybody else's. Apple Health is read-only: turning one on asks for access, and denying it leaves the metric to log by hand." : {
+
     },
     "A year ago today" : {
       "localizations" : {
