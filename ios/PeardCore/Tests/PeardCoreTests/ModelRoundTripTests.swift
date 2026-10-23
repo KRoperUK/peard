@@ -296,6 +296,48 @@ final class ModelRoundTripTests: XCTestCase {
         XCTAssertTrue(feed.metrics.isEmpty)
     }
 
+    // The per-member breakdown decodes so partners can compete: each row carries
+    // its own amount, goal, name, and whether it is the caller (#386).
+    func testWidgetFeedDecodesTheMetricMembersBreakdown() throws {
+        let json = Data(#"""
+        {"state":"ok","metrics":[
+          {"slug":"steps","label":"Steps","emoji":"👟","unit":"count","today":16000,"goal":20000,
+           "members":[
+             {"name":"Ada","amount":9000,"goal":10000,"isYou":true},
+             {"name":"Grace","amount":7000,"goal":10000,"isYou":false}
+           ]}
+        ]}
+        """#.utf8)
+        let feed = try decoder.decode(WidgetFeed.self, from: json)
+        let steps = try XCTUnwrap(feed.metrics.first { $0.slug == "steps" })
+        XCTAssertEqual(steps.members.count, 2)
+
+        let you = try XCTUnwrap(steps.members.first)
+        XCTAssertTrue(you.isYou)
+        XCTAssertEqual(you.name, "Ada")
+        XCTAssertEqual(you.amount, 9000)
+        XCTAssertEqual(you.progress.goal, 10000)
+        XCTAssertFalse(you.progress.isGoalMet)
+
+        let partner = steps.members[1]
+        XCTAssertFalse(partner.isYou)
+        XCTAssertEqual(partner.amount, 7000)
+    }
+
+    // An older server omits `members`; the summary still decodes with the
+    // combined today/goal and an empty breakdown.
+    func testWidgetFeedMetricWithoutMembersDecodesAsEmptyBreakdown() throws {
+        let json = Data(#"""
+        {"state":"ok","metrics":[
+          {"slug":"steps","label":"Steps","emoji":"👟","unit":"count","today":6000,"goal":10000}
+        ]}
+        """#.utf8)
+        let feed = try decoder.decode(WidgetFeed.self, from: json)
+        let steps = try XCTUnwrap(feed.metrics.first)
+        XCTAssertTrue(steps.members.isEmpty)
+        XCTAssertEqual(steps.today, 6000)
+    }
+
     func testAuthResponseDecodesUserRecord() throws {
         let json = Data("""
         {"token":"tok","record":{"id":"u1","email":"a@b.c","display_name":"Ada","verified":true}}

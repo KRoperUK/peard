@@ -553,7 +553,7 @@ func feedHandler(app core.App) func(e *core.RequestEvent) error {
 			// today's amount and the summed goal (#386) — the generalisation of
 			// the water block to steps, exercise and the like. Additive: the
 			// `water` block above is unchanged for older clients.
-			"metrics": metricSummaries(app, chosenPair, today, todayDay),
+			"metrics": metricSummaries(app, chosenPair, userID, today, todayDay),
 			// The connection's "any moment" day streak, for the watch's streak
 			// complication (#378) — the same figure the recap shows and the
 			// "at risk" reminder (#361) is about.
@@ -888,7 +888,14 @@ var builtinMetrics = []metricSpec{
 //
 // Water keeps its own dedicated `water` block in the feed unchanged; this is
 // additive, so an older client reading only `water` sees no difference.
-func metricSummaries(app core.App, pairID, today, todayDay string) []map[string]any {
+//
+// Each summary also carries a `members` array — one row per connection member
+// with their own amount today, their goal, their display name, and whether the
+// row is the caller — so the app can break a metric down per person and let
+// partners compete (#386). The array is ordered caller-first, then by amount
+// descending, so a leaderboard reads top-down. It is additive: a client that
+// only reads `today`/`goal` sees the combined figures exactly as before.
+func metricSummaries(app core.App, pairID, callerID, today, todayDay string) []map[string]any {
 	members, merr := app.FindRecordsByFilter("pair_members", "pair = {:pair}", "", maxMembers, 0,
 		dbx.Params{"pair": pairID})
 	if merr != nil {
@@ -913,16 +920,23 @@ func metricSummaries(app core.App, pairID, today, todayDay string) []map[string]
 			}
 		}
 
-		amount := 0
+		// Per-member amount: a stored day supersedes that member's own posts,
+		// else sum their posts. Keyed by user id so it can be attributed below.
+		amountByUser := map[string]int{}
 		for _, p := range posts {
-			// A stored day supersedes that member's own posts for the day.
-			if _, stored := storedByUser[p.GetString("author")]; stored {
+			author := p.GetString("author")
+			if _, stored := storedByUser[author]; stored {
 				continue
 			}
-			amount += p.GetInt("amount")
+			amountByUser[author] += p.GetInt("amount")
 		}
-		for _, stored := range storedByUser {
-			amount += stored
+		for user, stored := range storedByUser {
+			amountByUser[user] = stored
+		}
+
+		amount := 0
+		for _, a := range amountByUser {
+			amount += a
 		}
 
 		rows, terr := app.FindRecordsByFilter("metric_targets",
@@ -946,25 +960,46 @@ func metricSummaries(app core.App, pairID, today, todayDay string) []map[string]
 
 		goal := 0
 		stored := false
+		memberRows := make([]map[string]any, 0, len(members))
 		for _, mrec := range members {
-			if g, ok := goalByUser[mrec.GetString("user")]; ok {
+			uid := mrec.GetString("user")
+			memberGoal := spec.DefaultGoal
+			if g, ok := goalByUser[uid]; ok {
+				memberGoal = g
 				goal += g
 				stored = true
 			} else {
 				goal += spec.DefaultGoal
 			}
+			user, _ := app.FindRecordById("users", uid)
+			memberRows = append(memberRows, map[string]any{
+				"name":   displayName(user),
+				"amount": amountByUser[uid],
+				"goal":   memberGoal,
+				"isYou":  uid == callerID,
+			})
 		}
 		if !stored {
 			goal = spec.DefaultGoal
 		}
 
+		// Caller first, then most steps first: the breakdown reads as a
+		// leaderboard with "you" anchored at the top.
+		sort.SliceStable(memberRows, func(i, j int) bool {
+			if memberRows[i]["isYou"].(bool) != memberRows[j]["isYou"].(bool) {
+				return memberRows[i]["isYou"].(bool)
+			}
+			return memberRows[i]["amount"].(int) > memberRows[j]["amount"].(int)
+		})
+
 		out = append(out, map[string]any{
-			"slug":  spec.Slug,
-			"label": spec.Label,
-			"emoji": spec.Emoji,
-			"unit":  spec.Unit,
-			"today": amount,
-			"goal":  goal,
+			"slug":    spec.Slug,
+			"label":   spec.Label,
+			"emoji":   spec.Emoji,
+			"unit":    spec.Unit,
+			"today":   amount,
+			"goal":    goal,
+			"members": memberRows,
 		})
 	}
 	if len(out) == 0 {

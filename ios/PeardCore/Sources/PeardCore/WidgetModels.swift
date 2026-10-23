@@ -268,21 +268,67 @@ public struct WidgetFeed: Codable, Hashable, Sendable {
         public let unitRaw: String
         public let today: Int
         public let goal: Int
+        /// Each connection member's own amount today against their own goal
+        /// (#386), so the app can break the metric down per person and let
+        /// partners compete. Caller-first, then most amount first — a
+        /// leaderboard with "you" anchored on top. Empty on a server that
+        /// predates the breakdown; the combined `today`/`goal` still stand.
+        public let members: [Member]
 
         public var id: String { slug }
 
+        /// One member's share of a metric today: their amount against their own
+        /// goal (not the summed connection goal), their display name, and whether
+        /// this row is the caller.
+        public struct Member: Codable, Hashable, Sendable, Identifiable {
+            public let name: String
+            public let amount: Int
+            public let goal: Int
+            public let isYou: Bool
+
+            public var id: String { (isYou ? "you·" : "") + name }
+
+            public init(name: String, amount: Int, goal: Int, isYou: Bool) {
+                self.name = name
+                self.amount = amount
+                self.goal = goal
+                self.isYou = isYou
+            }
+
+            /// This member's day measured against their own goal, for a ring.
+            public var progress: MetricProgress {
+                MetricProgress(amount: amount, minimum: 0, goal: goal)
+            }
+        }
+
         enum CodingKeys: String, CodingKey {
-            case slug, label, emoji, today, goal
+            case slug, label, emoji, today, goal, members
             case unitRaw = "unit"
         }
 
-        public init(slug: String, label: String, emoji: String, unitRaw: String, today: Int, goal: Int) {
+        public init(
+            slug: String, label: String, emoji: String, unitRaw: String,
+            today: Int, goal: Int, members: [Member] = []
+        ) {
             self.slug = slug
             self.label = label
             self.emoji = emoji
             self.unitRaw = unitRaw
             self.today = today
             self.goal = goal
+            self.members = members
+        }
+
+        public init(from decoder: Decoder) throws {
+            let c = try decoder.container(keyedBy: CodingKeys.self)
+            slug = try c.decode(String.self, forKey: .slug)
+            label = try c.decode(String.self, forKey: .label)
+            emoji = try c.decode(String.self, forKey: .emoji)
+            unitRaw = try c.decode(String.self, forKey: .unitRaw)
+            today = try c.decode(Int.self, forKey: .today)
+            goal = try c.decode(Int.self, forKey: .goal)
+            // Lenient: an older server omits the per-member breakdown entirely.
+            members = (try? c.decode([Member].self, forKey: .members)) ?? []
         }
 
         public var unit: MetricUnit { MetricUnit(storedValue: unitRaw) }

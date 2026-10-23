@@ -66,6 +66,18 @@ struct MetricProgressRow: View {
                 Text(Self.detail(progress, definition: definition))
                     .font(.caption2)
                     .foregroundStyle(PearColor.textTertiary)
+
+                // Per-person breakdown so partners can compete (#386). Only
+                // shown once there is more than one member to compare; a solo
+                // connection's single row would just restate the total above.
+                if summary.members.count > 1 {
+                    VStack(alignment: .leading, spacing: 3) {
+                        ForEach(summary.members) { member in
+                            MetricMemberRow(member: member, definition: definition)
+                        }
+                    }
+                    .padding(.top, 2)
+                }
             }
         }
         .padding(.vertical, 2)
@@ -87,6 +99,36 @@ struct MetricProgressRow: View {
         }
         return String(
             localized: "\(definition.readout(progress.remaining, locale: locale)) to the \(definition.readout(progress.goal, locale: locale)) goal"
+        )
+    }
+}
+
+/// One person's line in a metric's breakdown: their name (with "you" called
+/// out), their amount so far, and a short gloss of how they stand against their
+/// own goal — so the two members of a connection can see who is ahead (#386).
+struct MetricMemberRow: View {
+    let member: WidgetFeed.MetricSummary.Member
+    let definition: MetricDefinition
+
+    var body: some View {
+        HStack(alignment: .firstTextBaseline, spacing: 6) {
+            Text(member.isYou ? String(localized: "You") : member.name)
+                .font(.caption2.weight(member.isYou ? .semibold : .regular))
+                .foregroundStyle(member.isYou ? PearColor.textPrimary : PearColor.textSecondary)
+                .lineLimit(1)
+            if member.progress.isGoalMet {
+                Text("· goal met")
+                    .font(.caption2)
+                    .foregroundStyle(PearColor.accent)
+            }
+            Spacer(minLength: 4)
+            Text(definition.readout(member.amount))
+                .font(.caption2.monospacedDigit())
+                .foregroundStyle(PearColor.textSecondary)
+        }
+        .accessibilityElement(children: .ignore)
+        .accessibilityLabel(
+            "\(member.isYou ? String(localized: "You") : member.name): \(definition.readout(member.amount)) of \(definition.readout(member.goal))"
         )
     }
 }
