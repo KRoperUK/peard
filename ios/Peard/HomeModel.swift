@@ -260,8 +260,12 @@ final class HomeModel {
         } catch let error as APIError where error.status == 404 {
             // A server that predates per-person targets: they stay on this device,
             // as they always did, and the streak is counted against the one the
-            // recap request sends.
+            // recap request sends. Nothing to reconcile — and re-fetching the
+            // recap here would run `adoptWaterTargets`, whose re-push guard is
+            // timing-sensitive, so on a slow runner it could fire a second write
+            // against a route that just 404'd. Return instead: no route, no retry.
             waterTargetsNeedPushing = false
+            return
         } catch {
             // Offline, or the server said no. The local copy stands; the next recap
             // tries again rather than letting the server's old number win.
