@@ -351,6 +351,34 @@ final class HomeModel {
         return metrics.contains { $0.slug == definition.slug.rawValue }
     }
 
+    /// Whether *this* person tracks the metric — their own goal is set, not just
+    /// somebody else in the connection.
+    ///
+    /// The settings toggle binds to this, not `isMetricTracked`: a metric a
+    /// partner turned on used to read as already-on for everyone, so a member who
+    /// had never granted Apple Health access had no way to — the toggle was
+    /// already on, so flipping it did nothing, and the only workaround was to
+    /// turn it off and back on. Binding to the per-person state means each member
+    /// opts in for themselves, which is also what triggers their own Health
+    /// authorisation (#411).
+    func isMetricTrackedByMe(_ definition: MetricDefinition) -> Bool {
+        (metricGoals[definition.slug.rawValue] ?? 0) > 0
+    }
+
+    /// True when the connection already tracks the metric but this person does
+    /// not — so settings can explain why it is listed yet their switch is off,
+    /// and invite them to join in (and grant Health access) for themselves.
+    func isMetricTrackedByOthersOnly(_ definition: MetricDefinition) -> Bool {
+        !isMetricTrackedByMe(definition)
+            && metrics.contains { $0.slug == definition.slug.rawValue }
+    }
+
+    /// Whether Apple Health can fill this metric on this device — the invite to
+    /// connect Health is pointless for a hand-logged metric or on an iPad.
+    func healthCanFill(_ definition: MetricDefinition) -> Bool {
+        health.supports(definition.slug)
+    }
+
     /// The goal the settings stepper shows: this user's own, or the metric's
     /// built-in default until they set one.
     ///
@@ -451,9 +479,16 @@ final class HomeModel {
 
     /// Asks Health for read access when a metric is turned on. Denial changes
     /// nothing else: the metric still works by logging an amount by hand.
+    ///
+    /// On a grant, pushes today's totals straight away rather than waiting for
+    /// the next foreground refresh — so a member who has just joined a metric
+    /// (and granted Health) sees their figure appear now.
     func enableHealthSync(for definition: MetricDefinition) async {
         guard health.supports(definition.slug) else { return }
-        _ = await health.requestAuthorization(for: [definition.slug])
+        let granted = await health.requestAuthorization(for: [definition.slug])
+        if granted {
+            await syncHealthMetrics()
+        }
     }
 
     /// Pushes today's totals for every tracked health metric (#411).

@@ -95,4 +95,58 @@ final class MetricTrackingTests: XCTestCase {
         XCTAssertTrue(reopened.isMetricTracked(steps))
         XCTAssertEqual(reopened.metricGoal(for: steps), steps.defaultGoal)
     }
+
+    /// Per-person tracking (#411): having my own goal is what counts for the
+    /// settings toggle, not whether the connection tracks it. With no goal set I
+    /// do not track it myself even if a partner does.
+    func testTrackingByMeFollowsMyOwnGoalNotTheConnection() {
+        XCTAssertFalse(model.isMetricTrackedByMe(steps))
+
+        model.setMetricTracked(true, definition: steps)
+        XCTAssertTrue(model.isMetricTrackedByMe(steps))
+
+        model.setMetricTracked(false, definition: steps)
+        XCTAssertFalse(model.isMetricTrackedByMe(steps))
+    }
+
+    /// `healthCanFill` reflects the provider: a device with no Health support
+    /// (iPad / the disabled stub) cannot fill the metric, so settings offers no
+    /// Health connect.
+    func testHealthCanFillFollowsTheProvider() {
+        XCTAssertFalse(model.healthCanFill(steps), "the disabled provider supports nothing")
+
+        let withHealth = HomeModel(app: app, pairID: "pair1", health: StubHealthMetrics())
+        XCTAssertTrue(withHealth.healthCanFill(steps))
+    }
+
+    /// The reported bug's fix: a member joining a metric gets their Health
+    /// authorisation asked for, and on a grant their total is pushed straight
+    /// away rather than waiting for the next foreground refresh.
+    func testEnablingHealthSyncAsksForAuthAndPushesImmediately() async {
+        HealthStubProtocol.reset()
+        let health = StubHealthMetrics()
+        health.totals = [steps.slug: 8200]
+
+        let healthApp = AppModel(
+            config: PeardConfig(serverURL: URL(string: "http://stub.peard.test")!, googleClientID: ""),
+            sessionStore: sessionStore,
+            sharedStore: shared,
+            sendQueue: SendQueue(store: FilePendingSendStore(url: queueURL)),
+            momentInbox: MomentInbox(url: queueURL.appendingPathExtension("inbox")),
+            connectionCache: FileConnectionCache(url: queueURL.appendingPathExtension("cache")),
+            session: HealthStubProtocol.makeSession()
+        )
+        await healthApp.attachSendQueue()
+        let healthModel = HomeModel(app: healthApp, pairID: "pair1", health: health)
+        // This member joins the metric for themselves.
+        healthModel.setMetricTracked(true, definition: steps)
+
+        await healthModel.enableHealthSync(for: steps)
+
+        XCTAssertTrue(health.authorised.contains(steps.slug), "joining must ask for Health access")
+        let pushed = HealthStubProtocol.dayPuts.contains {
+            ($0["amount"] as? NSNumber)?.intValue == 8200
+        }
+        XCTAssertTrue(pushed, "a grant must push today's total straight away")
+    }
 }
