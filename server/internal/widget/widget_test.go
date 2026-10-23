@@ -413,6 +413,52 @@ func TestFeedCarriesTrackedMetrics(t *testing.T) {
 	}
 }
 
+// Each metric block breaks down per member so partners can compete (#386):
+// every member has their own amount and goal, the caller is marked and sorted
+// first, and the rest follow by amount descending.
+func TestFeedMetricBreaksDownPerMember(t *testing.T) {
+	w := newFeedWorld(t)
+	w.newMetricPost(t, w.alice, "steps", 4000) // caller
+	w.newMetricPost(t, w.bob, "steps", 9000)   // ahead of the caller
+	w.setMetricTarget(t, w.alice, "steps", 8000)
+	w.setMetricTarget(t, w.bob, "steps", 12000)
+
+	steps := metricBlock(w.feedMetrics(t), "steps")
+	if steps == nil {
+		t.Fatal("feed carried no steps metric block")
+	}
+	members, ok := steps["members"].([]any)
+	if !ok || len(members) != 2 {
+		t.Fatalf("members = %v, want 2 rows", steps["members"])
+	}
+
+	// Caller (Alice) is first even though Bob logged more.
+	you := members[0].(map[string]any)
+	if you["isYou"] != true {
+		t.Errorf("first row isYou = %v, want the caller first", you["isYou"])
+	}
+	if you["name"] != "Alice" {
+		t.Errorf("caller name = %v, want Alice", you["name"])
+	}
+	if got := int(you["amount"].(float64)); got != 4000 {
+		t.Errorf("caller amount = %d, want 4000", got)
+	}
+	if got := int(you["goal"].(float64)); got != 8000 {
+		t.Errorf("caller goal = %d, want 8000 (their own, not the summed goal)", got)
+	}
+
+	partner := members[1].(map[string]any)
+	if partner["isYou"] != false {
+		t.Errorf("partner isYou = %v, want false", partner["isYou"])
+	}
+	if got := int(partner["amount"].(float64)); got != 9000 {
+		t.Errorf("partner amount = %d, want 9000", got)
+	}
+	if got := int(partner["goal"].(float64)); got != 12000 {
+		t.Errorf("partner goal = %d, want 12000", got)
+	}
+}
+
 // A metric nobody tracks is left out, so the client never draws an empty ring.
 func TestFeedOmitsUntrackedMetrics(t *testing.T) {
 	w := newFeedWorld(t)
