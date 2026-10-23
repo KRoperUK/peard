@@ -197,6 +197,10 @@ final class PerPersonWaterTargetFlowTests: XCTestCase {
         RecapStubProtocol.targetStatus = 404
         model.updateWaterConfig { $0.setRecommended(2800) }
         await eventually { RecapStubProtocol.targetPosts.count >= 1 }
+        // Two settles: a 404 must not reconcile against the recap, so any
+        // erroneous second write (the slow-runner flake this guards) has ample
+        // time to land before the count is asserted.
+        await settle()
         await settle()
 
         XCTAssertEqual(model.waterConfig.recommended, 2800)
