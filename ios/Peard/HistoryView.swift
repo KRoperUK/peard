@@ -211,24 +211,18 @@ struct HistoryView: View {
     /// one person's photos would be plainly untrue.
     private var emptyState: some View {
         VStack(spacing: 10) {
-            Text("🍐").font(.system(size: 48)).accessibilityHidden(true)
-            Text(model.filter.isActive ? String(localized: "Nothing matches that") : String(localized: "Nothing here yet"))
-                .font(.headline)
-                .foregroundStyle(PearColor.textPrimary)
-            Text(model.filter.isActive
-                ? String(localized: "No moments for \(model.filterSummary ?? String(localized: "that filter")) in this connection.")
-                : String(localized: "Moments you and everyone else log will build up here."))
-                .font(.subheadline)
-                .foregroundStyle(PearColor.textSecondary)
-                .multilineTextAlignment(.center)
-            if model.filter.isActive {
-                Button("Show everything") {
+            EmptyStateView(
+                symbol: model.filter.isActive ? "line.3.horizontal.decrease.circle" : "clock.arrow.circlepath",
+                title: model.filter.isActive ? String(localized: "Nothing matches that") : String(localized: "Nothing here yet"),
+                message: model.filter.isActive
+                    ? String(localized: "No moments for \(model.filterSummary ?? String(localized: "that filter")) in this connection.")
+                    : String(localized: "Moments you and everyone else log will build up here."),
+                actionTitle: model.filter.isActive ? String(localized: "Show everything") : nil,
+                action: model.filter.isActive ? {
                     searchText = ""
                     Task { await model.apply(.none) }
-                }
-                .font(.footnote.bold())
-                .foregroundStyle(PearColor.accent)
-            }
+                } : nil
+            )
             if let error = model.error {
                 Text(error)
                     .font(.footnote)
