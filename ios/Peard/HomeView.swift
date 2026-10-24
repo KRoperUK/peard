@@ -568,10 +568,14 @@ struct HomeView: View {
                             .trim(from: 0, to: model.quickSendProgress)
                             .stroke(PearColor.accent, style: StrokeStyle(lineWidth: 3, lineCap: .round))
                             .rotationEffect(.degrees(-90))
-                        Text(send.moment.emoji).font(.footnote)
+                        Text(send.moment.emoji).font(.subheadline)
                     }
-                    .frame(width: 28, height: 28)
+                    .frame(width: 34, height: 34)
+                    .scaleEffect(reduceMotion ? 1 : (model.quickSendProgress > 0.85 ? 1.12 : 1))
                     .animation(reduceMotion ? nil : .linear(duration: 0.1), value: model.quickSendProgress)
+                    // A soft tick as the window drains to its last stretch, so the
+                    // automatic send is felt coming, not just seen (#423).
+                    .sensoryFeedback(.increase, trigger: model.quickSendProgress > 0.85)
                     .accessibilityHidden(true)
 
                     // Stacked rather than side by side: the caption and the
