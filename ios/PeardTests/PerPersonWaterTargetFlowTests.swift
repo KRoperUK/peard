@@ -48,6 +48,11 @@ final class PerPersonWaterTargetFlowTests: XCTestCase {
     }
 
     override func tearDown() async throws {
+        // Let this test's own water-target push chain finish before the stub is
+        // reset and the model dropped: a push task that outlives the test would
+        // otherwise post against the NEXT test's shared RecapStubProtocol and
+        // inflate its targetPosts count (the flake behind #419).
+        await model?.awaitPendingWaterTargetPushForTesting()
         for suffix in ["", ".inbox", ".cache"] {
             try? FileManager.default.removeItem(at: URL(fileURLWithPath: queueURL.path + suffix))
         }
@@ -196,12 +201,10 @@ final class PerPersonWaterTargetFlowTests: XCTestCase {
     func testARouteThatIs404KeepsTheTargetOnTheDevice() async {
         RecapStubProtocol.targetStatus = 404
         model.updateWaterConfig { $0.setRecommended(2800) }
-        await eventually { RecapStubProtocol.targetPosts.count >= 1 }
-        // Two settles: a 404 must not reconcile against the recap, so any
-        // erroneous second write (the slow-runner flake this guards) has ample
-        // time to land before the count is asserted.
-        await settle()
-        await settle()
+        // Deterministic: wait for this model's own push chain to drain rather
+        // than guessing with a sleep. A 404 must not reconcile against the recap,
+        // so it must write exactly once.
+        await model.awaitPendingWaterTargetPushForTesting()
 
         XCTAssertEqual(model.waterConfig.recommended, 2800)
         XCTAssertEqual(RecapStubProtocol.targetPosts.count, 1, "not retried against a server that has no route")

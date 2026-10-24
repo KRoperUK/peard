@@ -33,11 +33,29 @@ struct MetricProgressSection: View {
     }
 }
 
-/// One metric's day: how much so far, a bar toward the goal, and what is left.
+/// One metric's day: how much so far, a bar toward the goal, and — in a
+/// connection of more than one — a two-tone split showing who logged what, drawn
+/// the same way `MomentBreakdownRow` splits a moment so the two presentations do
+/// not drift (#386).
 struct MetricProgressRow: View {
     let summary: WidgetFeed.MetricSummary
 
     private var definition: MetricDefinition { summary.definition }
+
+    /// This user's own amount today, the accent side of the split bar.
+    private var mine: Int { summary.members.first { $0.isYou }?.amount ?? 0 }
+    /// Everybody else's amount today, summed — the muted side.
+    private var others: Int { summary.members.filter { !$0.isYou }.reduce(0) { $0 + $1.amount } }
+    /// Drawn only when there is more than one person to compare; a solo
+    /// connection's single row would just restate the total above.
+    private var showsSplit: Bool { summary.members.count > 1 }
+
+    /// The other side's label: the sole partner's name in a pair, or a generic
+    /// word in a group, mirroring how a moment row names the non-caller side.
+    private var othersLabel: String {
+        let them = summary.members.filter { !$0.isYou }
+        return them.count == 1 ? them[0].name : String(localized: "Others")
+    }
 
     var body: some View {
         let progress = summary.progress
@@ -67,24 +85,73 @@ struct MetricProgressRow: View {
                     .font(.caption2)
                     .foregroundStyle(PearColor.textTertiary)
 
-                // Per-person breakdown so partners can compete (#386). Only
-                // shown once there is more than one member to compare; a solo
-                // connection's single row would just restate the total above.
-                if summary.members.count > 1 {
-                    VStack(alignment: .leading, spacing: 3) {
-                        ForEach(summary.members) { member in
-                            MetricMemberRow(member: member, definition: definition)
-                        }
-                    }
-                    .padding(.top, 2)
+                // Who logged what, the same two-tone bar and "You 9,000 · Ari
+                // 7,000" line a moment row uses — the split is the point of a
+                // metric in a connection that competes on it.
+                if showsSplit {
+                    shareBar
+                    Text(splitText)
+                        .font(.caption2)
+                        .foregroundStyle(PearColor.textTertiary)
                 }
             }
         }
         .padding(.vertical, 2)
         .accessibilityElement(children: .ignore)
-        .accessibilityLabel(
-            "\(summary.label): \(definition.readout(summary.today)) of \(definition.readout(summary.goal))"
+        .accessibilityLabel(accessibilityText)
+    }
+
+    /// Two-tone, mine against theirs, each side a fraction of the larger so the
+    /// busier side fills — the same `BreakdownBarFractions` a moment row uses.
+    private var shareBar: some View {
+        GeometryReader { geometry in
+            let width = geometry.size.width
+            let bar = BreakdownBarFractions(mine: mine, others: others, busiest: max(mine, others))
+            HStack(spacing: mine > 0 && others > 0 ? 1 : 0) {
+                Capsule()
+                    .fill(PearColor.accent)
+                    .frame(width: bar.mine * width)
+                Capsule()
+                    .fill(PearColor.accent.opacity(0.35))
+                    .frame(width: bar.others * width)
+                Spacer(minLength: 0)
+            }
+            .frame(height: 5)
+        }
+        .frame(height: 5)
+        .background(PearColor.divider.opacity(0.4), in: Capsule())
+        .accessibilityHidden(true)
+    }
+
+    /// "You 9,000 · Ari 7,000", in the metric's own unit — naming only the sides
+    /// that logged something, exactly as a moment row's split does.
+    private var splitText: String {
+        Self.split(mine: mine, others: others, othersLabel: othersLabel, definition: definition)
+    }
+
+    /// Pulled out so the wording can be asserted without rendering.
+    static func split(
+        mine: Int,
+        others: Int,
+        othersLabel: String,
+        definition: MetricDefinition,
+        locale: Locale = .current
+    ) -> String {
+        let you = String(localized: "You")
+        func amount(_ v: Int) -> String { definition.readout(v, locale: locale) }
+        switch (mine, others) {
+        case (0, 0): return String(localized: "none today")
+        case (let m, 0): return String(localized: "\(you) \(amount(m))")
+        case (0, let o): return String(localized: "\(othersLabel) \(amount(o))")
+        case (let m, let o): return String(localized: "\(you) \(amount(m)) · \(othersLabel) \(amount(o))")
+        }
+    }
+
+    private var accessibilityText: String {
+        let headline = String(
+            localized: "\(summary.label): \(definition.readout(summary.today)) of \(definition.readout(summary.goal))"
         )
+        return showsSplit ? "\(headline). \(splitText)." : headline
     }
 
     /// What is left, in the metric's own unit — or that the goal is met. Whole
@@ -99,36 +166,6 @@ struct MetricProgressRow: View {
         }
         return String(
             localized: "\(definition.readout(progress.remaining, locale: locale)) to the \(definition.readout(progress.goal, locale: locale)) goal"
-        )
-    }
-}
-
-/// One person's line in a metric's breakdown: their name (with "you" called
-/// out), their amount so far, and a short gloss of how they stand against their
-/// own goal — so the two members of a connection can see who is ahead (#386).
-struct MetricMemberRow: View {
-    let member: WidgetFeed.MetricSummary.Member
-    let definition: MetricDefinition
-
-    var body: some View {
-        HStack(alignment: .firstTextBaseline, spacing: 6) {
-            Text(member.isYou ? String(localized: "You") : member.name)
-                .font(.caption2.weight(member.isYou ? .semibold : .regular))
-                .foregroundStyle(member.isYou ? PearColor.textPrimary : PearColor.textSecondary)
-                .lineLimit(1)
-            if member.progress.isGoalMet {
-                Text("· goal met")
-                    .font(.caption2)
-                    .foregroundStyle(PearColor.accent)
-            }
-            Spacer(minLength: 4)
-            Text(definition.readout(member.amount))
-                .font(.caption2.monospacedDigit())
-                .foregroundStyle(PearColor.textSecondary)
-        }
-        .accessibilityElement(children: .ignore)
-        .accessibilityLabel(
-            "\(member.isYou ? String(localized: "You") : member.name): \(definition.readout(member.amount)) of \(definition.readout(member.goal))"
         )
     }
 }
