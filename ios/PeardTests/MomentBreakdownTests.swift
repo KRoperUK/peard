@@ -290,6 +290,36 @@ final class MomentBreakdownTests: XCTestCase {
         )
     }
 
+    /// The per-person split reads like a moment row's: "You N · Ari N" in the
+    /// metric's own unit, naming only the sides that logged something (#386).
+    func testTheMetricSplitNamesOnlyTheSidesThatLogged() {
+        let steps = MetricCatalogue.steps
+        XCTAssertEqual(
+            MetricProgressRow.split(mine: 9000, others: 7000, othersLabel: "Ari", definition: steps, locale: gb),
+            "You 9,000 steps · Ari 7,000 steps"
+        )
+        XCTAssertEqual(
+            MetricProgressRow.split(mine: 9000, others: 0, othersLabel: "Ari", definition: steps, locale: gb),
+            "You 9,000 steps"
+        )
+        XCTAssertEqual(
+            MetricProgressRow.split(mine: 0, others: 7000, othersLabel: "Ari", definition: steps, locale: gb),
+            "Ari 7,000 steps"
+        )
+        XCTAssertEqual(
+            MetricProgressRow.split(mine: 0, others: 0, othersLabel: "Ari", definition: steps, locale: gb),
+            "none today"
+        )
+    }
+
+    /// The split bar's two sides are fractions of the busier one, the same
+    /// `BreakdownBarFractions` a moment row uses — so the leader's side fills.
+    func testTheMetricSplitBarScalesToTheBusierSide() {
+        let bar = BreakdownBarFractions(mine: 9000, others: 7000, busiest: 9000)
+        XCTAssertEqual(bar.mine, 1.0, accuracy: 0.0001)
+        XCTAssertEqual(bar.others, 7000.0 / 9000.0, accuracy: 0.0001)
+    }
+
     func testTheWaterSectionRendersWithProgress() async throws {
         await drink(500)
         let section = WaterTodaySection(tallies: model.momentTallies, config: .standard, mineLabel: "You", othersLabel: "Ari")

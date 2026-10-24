@@ -250,6 +250,20 @@ final class HomeModel {
         }
     }
 
+    #if DEBUG
+    /// Awaits the water-target push chain until nothing is in flight, so a test
+    /// can let its own writes finish before asserting — and, in `tearDown`, so a
+    /// push task does not outlive the test and post against the next test's
+    /// shared stub. Loops because a push's recap can enqueue a follow-up push
+    /// (`adoptWaterTargets`). Not a product path: `sync()` already orders writes.
+    func awaitPendingWaterTargetPushForTesting() async {
+        while waterTargetPushesInFlight > 0 {
+            await waterTargetPush?.value
+            await Task.yield()
+        }
+    }
+    #endif
+
     private func sendWaterTargets() async {
         let config = waterConfig
         do {
