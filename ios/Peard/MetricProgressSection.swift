@@ -106,20 +106,22 @@ struct MetricProgressRow: View {
         .accessibilityLabel(accessibilityText)
     }
 
-    /// Two-tone, mine against theirs, each side a fraction of the larger so the
-    /// busier side fills — the same `BreakdownBarFractions` a moment row uses.
+    /// Two-tone, mine against theirs, as a share of the full bar — the two
+    /// segments split the width between them (a 100%-stacked bar), so the row
+    /// shows who contributed more without ever overflowing the card.
     private var shareBar: some View {
         GeometryReader { geometry in
-            let width = geometry.size.width
-            let bar = BreakdownBarFractions(mine: mine, others: others, busiest: max(mine, others))
-            HStack(spacing: mine > 0 && others > 0 ? 1 : 0) {
+            let gap: CGFloat = (mine > 0 && others > 0) ? 1 : 0
+            let available = max(geometry.size.width - gap, 0)
+            let total = mine + others
+            let mineWidth = total > 0 ? available * CGFloat(mine) / CGFloat(total) : 0
+            HStack(spacing: gap) {
                 Capsule()
                     .fill(PearColor.accent)
-                    .frame(width: bar.mine * width)
+                    .frame(width: mineWidth)
                 Capsule()
                     .fill(PearColor.accent.opacity(0.35))
-                    .frame(width: bar.others * width)
-                Spacer(minLength: 0)
+                    .frame(width: available - mineWidth)
             }
             .frame(height: 5)
         }
