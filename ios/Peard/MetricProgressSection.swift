@@ -97,6 +97,11 @@ struct MetricProgressRow: View {
             }
         }
         .padding(.vertical, 2)
+        // A one-shot burst and a success tick the moment this metric's goal is
+        // met (#421). Reduce Motion draws no particles; the "Goal met" badge in
+        // the detail line stays the durable signal either way.
+        .overlay { CelebrationBurst(isActive: summary.progress.isGoalMet) }
+        .sensoryFeedback(.success, trigger: summary.progress.isGoalMet)
         .accessibilityElement(children: .ignore)
         .accessibilityLabel(accessibilityText)
     }
