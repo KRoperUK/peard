@@ -305,10 +305,11 @@ struct HomeView: View {
                 }
                 Spacer(minLength: 0)
             } else {
-                Text("🍐").font(.system(size: 44)).accessibilityHidden(true)
-                Text("No moments yet — send a pear!")
-                    .font(.subheadline)
-                    .foregroundStyle(PearColor.textSecondary)
+                EmptyStateView(
+                    symbol: "hand.tap",
+                    title: String(localized: "No moments yet"),
+                    message: String(localized: "Tap a moment below to send your first pear.")
+                )
                 Spacer(minLength: 0)
             }
         }
