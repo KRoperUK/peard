@@ -9,6 +9,8 @@ struct HistoryView: View {
     @State private var editing: Post?
     @State private var deleting: Post?
     @State private var viewing: Post?
+    /// Ties a timeline photo thumbnail to the viewer for the zoom (#424).
+    @Namespace private var photoZoom
     /// A moment still waiting to send that is being edited or deleted. Kept apart
     /// from `editing` and `deleting`: those act on a server record through the
     /// API, and a queued send has none (#313).
@@ -77,6 +79,7 @@ struct HistoryView: View {
                 authorLabel: model.authorLabel(for: post),
                 timestamp: model.time(for: post)
             )
+            .photoZoomDestination(id: post.id, in: photoZoom)
         }
         // A swipe is easy to do by accident on a list you are scrolling, and this
         // one cannot be undone, so it asks. The sheet has its own confirmation
@@ -322,6 +325,7 @@ struct HistoryView: View {
                 .onTapGesture {
                     if post.hasMedia { viewing = post }
                 }
+                .photoZoomSource(id: post.id, in: photoZoom)
 
             VStack(alignment: .leading, spacing: 2) {
                 HStack(spacing: 5) {

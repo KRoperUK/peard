@@ -54,11 +54,21 @@ struct PhotoViewer: View {
 
     private var isZoomedIn: Bool { zoom > 1.01 }
 
+    /// How far a dismiss drag has got, 0…1, while not zoomed in — used to fade
+    /// the backdrop and shrink the photo so the swipe-to-dismiss feels like
+    /// Photos rather than a flat slide (#424). Zoomed in, a drag pans instead,
+    /// so there is no dismiss progress.
+    private var dismissDragProgress: CGFloat {
+        guard !isZoomedIn, offset.height > 0 else { return 0 }
+        return min(offset.height / 240, 1)
+    }
+
     var body: some View {
         ZStack {
             // Black rather than the app's cream: everything here is the photo,
             // and a warm background tints how the photo reads.
             Color.black.ignoresSafeArea()
+                .opacity(1 - dismissDragProgress * 0.6)
 
             photo
 
@@ -136,7 +146,7 @@ struct PhotoViewer: View {
             loaded
                 .resizable()
                 .scaledToFit()
-                .scaleEffect(zoom)
+                .scaleEffect(zoom * (1 - dismissDragProgress * 0.15))
                 .offset(offset)
                 .gesture(magnification)
                 .gesture(drag)

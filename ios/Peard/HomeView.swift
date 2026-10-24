@@ -31,6 +31,9 @@ struct HomeView: View {
     @State private var photoMoment: Moment?
     @State private var showMomentSheet = false
     @State private var viewingPhoto: Post?
+    /// Namespace tying a photo thumbnail to the full-screen viewer for the zoom
+    /// transition (#424).
+    @Namespace private var photoZoom
     @State private var showRewind = false
     /// The day the "a year ago today" card was last dismissed, as yyyy-MM-dd,
     /// so closing it hides it until tomorrow rather than for good.
@@ -99,6 +102,7 @@ struct HomeView: View {
                 authorLabel: model.authorLabel(for: post),
                 timestamp: ElapsedTime.label(for: post.happenedAt)
             )
+            .photoZoomDestination(id: post.id, in: photoZoom)
         }
         .pearAnimation(value: model.toast ?? "")
         .alert(item: $model.alert)
@@ -336,6 +340,7 @@ struct HomeView: View {
             // photo, the thumbnail is the smallest part of the screen and the
             // one people actually want to see.
             .onTapGesture { viewingPhoto = post }
+            .photoZoomSource(id: post.id, in: photoZoom)
             .accessibilityLabel("Photo from \(model.authorLabel(for: post))")
             .accessibilityHint("Opens the photo full screen")
             .accessibilityAddTraits(.isButton)
