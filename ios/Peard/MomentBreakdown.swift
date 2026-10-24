@@ -393,9 +393,12 @@ struct MomentBreakdownSection: View {
                     .font(.footnote)
                     .foregroundStyle(PearColor.textSecondary)
             } else if kinds.isEmpty {
-                Text(MomentBreakdownCopy.empty(window, callToAction: String(localized: "Tap one on the home screen to start.")))
-                    .font(.footnote)
-                    .foregroundStyle(PearColor.textSecondary)
+                EmptyStateView(
+                    symbol: "sparkles",
+                    title: String(localized: "Nothing logged yet"),
+                    message: MomentBreakdownCopy.empty(window, callToAction: String(localized: "Tap a moment on the home screen to start."))
+                )
+                .listRowBackground(Color.clear)
             } else {
                 ForEach(kinds) { kind in
                     MomentBreakdownRow(

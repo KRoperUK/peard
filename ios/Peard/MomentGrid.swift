@@ -130,7 +130,7 @@ struct MomentGrid: View {
             }
             .contentShape(RoundedRectangle(cornerRadius: 14))
         }
-        .buttonStyle(.plain)
+        .buttonStyle(PressableTileStyle())
         // Long-press to pin: a gesture, so the grid stays one tap per moment,
         // and a pinned tile then stays where it was put.
         .contextMenu {
@@ -219,5 +219,24 @@ struct MomentGrid: View {
         .disabled(isBusy)
         .accessibilityLabel("More moments")
         .accessibilityHint("Pick a recommended moment, or invent one")
+    }
+}
+
+/// A tile that dips and springs back under the finger, so logging a moment —
+/// the app's core gesture — has physical feedback rather than none (#422). The
+/// scale is dropped under Reduce Motion, which leaves the press still legible
+/// through the button's own highlight and the haptic the model plays on tap.
+struct PressableTileStyle: ButtonStyle {
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
+
+    func makeBody(configuration: Configuration) -> some View {
+        configuration.label
+            .scaleEffect(scale(configuration.isPressed))
+            .animation(reduceMotion ? nil : .spring(response: 0.3, dampingFraction: 0.6), value: configuration.isPressed)
+    }
+
+    private func scale(_ pressed: Bool) -> CGFloat {
+        guard pressed, !reduceMotion else { return 1 }
+        return 0.93
     }
 }

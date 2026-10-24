@@ -97,6 +97,11 @@ struct MetricProgressRow: View {
             }
         }
         .padding(.vertical, 2)
+        // A one-shot burst and a success tick the moment this metric's goal is
+        // met (#421). Reduce Motion draws no particles; the "Goal met" badge in
+        // the detail line stays the durable signal either way.
+        .overlay { CelebrationBurst(isActive: summary.progress.isGoalMet) }
+        .sensoryFeedback(.success, trigger: summary.progress.isGoalMet)
         .accessibilityElement(children: .ignore)
         .accessibilityLabel(accessibilityText)
     }
@@ -139,11 +144,20 @@ struct MetricProgressRow: View {
     ) -> String {
         let you = String(localized: "You")
         func amount(_ v: Int) -> String { definition.readout(v, locale: locale) }
+        // A crown on the leading side when both logged and it is not a tie, so
+        // "who's ahead" reads without relying on the bar's length or colour —
+        // legible in grayscale and spoken by VoiceOver (#426).
+        let crown = "👑"
         switch (mine, others) {
         case (0, 0): return String(localized: "none today")
         case (let m, 0): return String(localized: "\(you) \(amount(m))")
         case (0, let o): return String(localized: "\(othersLabel) \(amount(o))")
-        case (let m, let o): return String(localized: "\(you) \(amount(m)) · \(othersLabel) \(amount(o))")
+        case (let m, let o) where m > o:
+            return String(localized: "\(you) \(amount(m)) \(crown) · \(othersLabel) \(amount(o))")
+        case (let m, let o) where o > m:
+            return String(localized: "\(you) \(amount(m)) · \(othersLabel) \(amount(o)) \(crown)")
+        case (let m, let o):
+            return String(localized: "\(you) \(amount(m)) · \(othersLabel) \(amount(o))")
         }
     }
 

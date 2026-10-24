@@ -48,6 +48,10 @@ struct MainTabView: View {
                 .tabItem { Label("Settings", systemImage: "gearshape.fill") }
         }
         .tint(PearColor.accent)
+        // A light selection tick when the tab changes, so moving around the app
+        // is felt as well as seen (#422) — matching the haptics the rest of the
+        // core loop already plays.
+        .sensoryFeedback(.selection, trigger: selection)
         // A notification tap points at a specific moment, and the hero is where
         // that moment is shown — so it has to bring Home forward, or the tap would
         // appear to do nothing while the app sat on Settings.

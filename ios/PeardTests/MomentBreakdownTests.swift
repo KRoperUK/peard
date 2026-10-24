@@ -291,12 +291,22 @@ final class MomentBreakdownTests: XCTestCase {
     }
 
     /// The per-person split reads like a moment row's: "You N · Ari N" in the
-    /// metric's own unit, naming only the sides that logged something (#386).
+    /// metric's own unit, naming only the sides that logged something, and
+    /// crowning the leader so "who's ahead" reads without colour (#386, #426).
     func testTheMetricSplitNamesOnlyTheSidesThatLogged() {
         let steps = MetricCatalogue.steps
         XCTAssertEqual(
             MetricProgressRow.split(mine: 9000, others: 7000, othersLabel: "Ari", definition: steps, locale: gb),
-            "You 9,000 steps · Ari 7,000 steps"
+            "You 9,000 steps 👑 · Ari 7,000 steps"
+        )
+        XCTAssertEqual(
+            MetricProgressRow.split(mine: 6000, others: 7000, othersLabel: "Ari", definition: steps, locale: gb),
+            "You 6,000 steps · Ari 7,000 steps 👑"
+        )
+        XCTAssertEqual(
+            MetricProgressRow.split(mine: 7000, others: 7000, othersLabel: "Ari", definition: steps, locale: gb),
+            "You 7,000 steps · Ari 7,000 steps",
+            "a tie crowns nobody"
         )
         XCTAssertEqual(
             MetricProgressRow.split(mine: 9000, others: 0, othersLabel: "Ari", definition: steps, locale: gb),
