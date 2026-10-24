@@ -72,4 +72,15 @@ final class RecapMetricStreakTests: XCTestCase {
         XCTAssertFalse(custom.definition.label.isEmpty)
         XCTAssertFalse(custom.definition.emoji.isEmpty)
     }
+
+    /// Streak milestones are the days worth a celebration (#421): a week, a
+    /// month, a hundred, a year — and nothing in between.
+    func testStreakMilestones() {
+        for day in [7, 30, 100, 365] {
+            XCTAssertTrue(RecapSection.isStreakMilestone(day), "\(day) is a milestone")
+        }
+        for day in [0, 1, 6, 8, 29, 99, 364, 366] {
+            XCTAssertFalse(RecapSection.isStreakMilestone(day), "\(day) is not a milestone")
+        }
+    }
 }

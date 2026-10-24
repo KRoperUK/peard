@@ -67,6 +67,16 @@ struct RecapSection: View {
         } header: {
             Text("Last 7 days")
         }
+        // A burst when the connection's streak lands on a milestone (#421): the
+        // days people actually screenshot. Reduce Motion draws nothing; the
+        // streak row still says the number.
+        .overlay { CelebrationBurst(isActive: Self.isStreakMilestone(recap.streak.current)) }
+        .sensoryFeedback(.success, trigger: Self.isStreakMilestone(recap.streak.current))
+    }
+
+    /// The streak days worth celebrating — a week, a month, a hundred, a year.
+    static func isStreakMilestone(_ current: Int) -> Bool {
+        [7, 30, 100, 365].contains(current)
     }
 
     // MARK: Rows

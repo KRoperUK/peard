@@ -311,6 +311,11 @@ struct WaterTodaySection: View {
                     }
                 }
                 .accessibilityElement(children: .combine)
+                // The same burst a met metric goal gets (#421): hitting the water
+                // goal is the achievement water has always been missing a moment
+                // for. Reduce Motion draws no particles; the badge stays.
+                .overlay { CelebrationBurst(isActive: progress.isRecommendedMet) }
+                .sensoryFeedback(.success, trigger: progress.isRecommendedMet)
             } header: {
                 Text("Water")
             }
