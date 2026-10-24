@@ -66,6 +66,11 @@ final class ReactionDrainFlowTests: XCTestCase {
         // The test drives the transitions by hand; a real path update arriving
         // underneath it would make the result a race.
         app.reachability.stop()
+        // `attachSendQueue` → `reachability.start()` can kick a flush on the
+        // host's real (online) network. Let it finish before any test seeds the
+        // queue, or that startup flush races the drain under test and
+        // `flushSendQueue`'s in-flight guard drops the one we assert on (#384).
+        await app.quiesceFlushForTesting()
     }
 
     override func tearDown() async throws {
@@ -95,7 +100,7 @@ final class ReactionDrainFlowTests: XCTestCase {
         // Down, then back up.
         app.reachability.simulatePathUpdate(isOnline: false)
         app.reachability.simulatePathUpdate(isOnline: true)
-        await waitUntil { ReactionDrainStubProtocol.reactionPosts == 1 }
+        await app.quiesceFlushForTesting()
 
         XCTAssertEqual(
             ReactionDrainStubProtocol.reactionPosts, 1,
@@ -113,12 +118,12 @@ final class ReactionDrainFlowTests: XCTestCase {
 
         app.reachability.simulatePathUpdate(isOnline: false)
         app.reachability.simulatePathUpdate(isOnline: true)
-        await waitUntil { ReactionDrainStubProtocol.reactionPosts == 1 }
+        await app.quiesceFlushForTesting()
 
         // Down and up again.
         app.reachability.simulatePathUpdate(isOnline: false)
         app.reachability.simulatePathUpdate(isOnline: true)
-        await pause()
+        await app.quiesceFlushForTesting()
 
         XCTAssertEqual(
             ReactionDrainStubProtocol.reactionPosts, 1,
@@ -141,15 +146,6 @@ final class ReactionDrainFlowTests: XCTestCase {
     }
 
     // MARK: Helpers
-
-    /// Polls until the condition holds, for the detached task the reachability
-    /// handler spawns — bounded so a regression fails rather than hangs.
-    private func waitUntil(_ condition: () -> Bool) async {
-        for _ in 0..<200 {
-            if condition() { return }
-            try? await Task.sleep(nanoseconds: 10_000_000)
-        }
-    }
 
     /// Lets anything already started finish, for the negative assertions.
     private func pause() async {

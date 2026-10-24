@@ -105,6 +105,33 @@ extension AppModel {
         }
     }
 
+    #if DEBUG
+    /// Awaits any in-flight flush and settles until none is pending, so a test
+    /// can let the flush kicked by `reachability.start()` finish before it drives
+    /// its own transitions — otherwise that startup flush races the one under
+    /// test, and `flushSendQueue`'s `flushTask == nil` guard silently drops the
+    /// second (the #384 flake).
+    ///
+    /// The reachability handler schedules the flush on a detached
+    /// `Task { @MainActor in … }`, so `flushTask` is not set the instant a path
+    /// update fires. Yield first to let that task run and set it, then await; a
+    /// flush can chain another, so loop until the queue has been quiet across a
+    /// couple of yields.
+    func quiesceFlushForTesting() async {
+        var quietRuns = 0
+        for _ in 0..<400 {
+            if let task = flushTask {
+                quietRuns = 0
+                await task.value
+            } else {
+                quietRuns += 1
+                if quietRuns >= 3 { return }
+                await Task.yield()
+            }
+        }
+    }
+    #endif
+
     /// Awaits a flush. Used where the caller wants the result before redrawing.
     ///
     /// `refreshingHome: false` is for a caller about to re-read the home
