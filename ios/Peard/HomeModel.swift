@@ -1160,10 +1160,10 @@ final class HomeModel {
         await app.retryStalledSends()
     }
 
-    /// Discards the queue after the user decides the moments are no longer worth
-    /// sending.
+    /// Discards this connection's queued sends after the user decides the
+    /// moments are no longer worth sending.
     func discardPendingSends() async {
-        await app.discardPendingSends()
+        await app.discardPendingSends(forConnection: pairID)
     }
 
     // MARK: Custom moments

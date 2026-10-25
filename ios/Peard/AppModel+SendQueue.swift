@@ -210,11 +210,14 @@ extension AppModel {
         await flushSendQueueAndWait()
     }
 
-    /// Discards everything queued. Offered when a send has given up, because the
-    /// alternative — a moment that can never be delivered sitting there forever —
-    /// is worse than losing it deliberately.
-    func discardPendingSends() async {
-        await sendQueue.removeAll()
+    /// Discards one connection's queued sends. Offered when a send has given up,
+    /// because the alternative — a moment that can never be delivered sitting
+    /// there forever — is worse than losing it deliberately. Scoped to the
+    /// connection whose Settings offers it: other connections' moments and
+    /// photos survive, and the prune below keeps their files for the same
+    /// reason it drops this connection's.
+    func discardPendingSends(forConnection pairID: String) async {
+        await sendQueue.removeAll(forPair: pairID)
         await refreshPendingSends()
         prunePendingPhotos()
     }

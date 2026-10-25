@@ -190,6 +190,14 @@ public actor SendQueue {
         persist()
     }
 
+    /// Discards one connection's sends, keeping every other connection's.
+    /// For the "Discard them" action in that connection's Settings, which must
+    /// not take the whole device queue with it.
+    public func removeAll(forPair pairID: String) async {
+        sends.removeAll { $0.pairID == pairID }
+        persist()
+    }
+
     /// Drops sends older than `maxAge`, returning how many went.
     @discardableResult
     public func prune(now: Date = Date()) async -> Int {
