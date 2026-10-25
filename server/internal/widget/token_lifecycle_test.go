@@ -7,6 +7,7 @@ import (
 	"strings"
 	"testing"
 	"time"
+	"unicode/utf8"
 
 	"github.com/pocketbase/dbx"
 	"github.com/pocketbase/pocketbase/tools/types"
@@ -149,6 +150,27 @@ func TestMintCapsAnOverlongLabel(t *testing.T) {
 	token := w.mintWithBody(t, w.alice.Id, `{"label":"`+long+`"}`)
 	if got := len(w.labelOf(t, token)); got != 60 {
 		t.Errorf("label length = %d, want it capped at 60", got)
+	}
+}
+
+// The cap cuts on a character boundary: splitting a multi-byte character
+// stores invalid text that later shows as a replacement character in the
+// devices list (#441).
+func TestMintCapsALabelOnACharacterBoundary(t *testing.T) {
+	w := newFeedWorld(t)
+	// Byte 60 lands inside the first multi-byte character, so a byte cut
+	// splits it.
+	long := strings.Repeat("x", 59) + strings.Repeat("é", 20)
+	token := w.mintWithBody(t, w.alice.Id, `{"label":"`+long+`"}`)
+	got := w.labelOf(t, token)
+	if !utf8.ValidString(got) {
+		t.Fatalf("stored label is not valid UTF-8: %q", got)
+	}
+	if n := utf8.RuneCountInString(got); n != 60 {
+		t.Errorf("label is %d characters, want it capped at 60", n)
+	}
+	if strings.ContainsRune(got, utf8.RuneError) {
+		t.Errorf("label contains a replacement character: %q", got)
 	}
 }
 

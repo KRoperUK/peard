@@ -313,8 +313,11 @@ func issueTokenHandler(app core.App) func(e *core.RequestEvent) error {
 		label := strings.TrimSpace(body.Label)
 		if label == "" {
 			label = "ios-widget"
-		} else if len(label) > 60 {
-			label = label[:60]
+		} else if runes := []rune(label); len(runes) > 60 {
+			// By character, not by byte: a byte cut can split a multi-byte
+			// character and store invalid text, which later shows as a
+			// replacement character in the devices list (#441).
+			label = string(runes[:60])
 		}
 
 		col, err := app.FindCollectionByNameOrId("widget_tokens")
