@@ -902,6 +902,19 @@ func metricSummaries(app core.App, pairID, callerID, today, todayDay string) []m
 		return nil
 	}
 
+	// Each member's display name, resolved once for the whole request and
+	// reused by every metric block: looking them up per metric turned one
+	// refresh into members × metrics user reads (#440).
+	names := make(map[string]string, len(members))
+	for _, mrec := range members {
+		uid := mrec.GetString("user")
+		if _, done := names[uid]; done {
+			continue
+		}
+		user, _ := app.FindRecordById("users", uid)
+		names[uid] = displayName(user)
+	}
+
 	out := make([]map[string]any, 0, len(builtinMetrics))
 	for _, spec := range builtinMetrics {
 		posts, err := app.FindRecordsByFilter("posts",
@@ -971,9 +984,8 @@ func metricSummaries(app core.App, pairID, callerID, today, todayDay string) []m
 			} else {
 				goal += spec.DefaultGoal
 			}
-			user, _ := app.FindRecordById("users", uid)
 			memberRows = append(memberRows, map[string]any{
-				"name":   displayName(user),
+				"name":   names[uid],
 				"amount": amountByUser[uid],
 				"goal":   memberGoal,
 				"isYou":  uid == callerID,
