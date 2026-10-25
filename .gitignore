@@ -87,3 +87,9 @@ vendor/bundle/
 
 # --- agent / editor local state ---
 .kiro/specs/**/.config.kiro
+# Machine-local agent/assistant state: permissions, IDE settings, logs.
+# Project steering (.kiro/steering/) stays committed.
+.claude/settings.local.json
+.commandcode/
+.kiro/settings/
+.vega/
