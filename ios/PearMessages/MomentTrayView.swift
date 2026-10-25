@@ -77,12 +77,10 @@ struct MomentTrayView: View {
     private var stickers: some View {
         ScrollView(.horizontal, showsIndicators: false) {
             HStack(spacing: 12) {
-                ForEach(PearStickers.all) { item in
-                    if let sticker = PearStickers.sticker(item) {
-                        StickerCell(sticker: sticker)
-                            .frame(width: 96, height: 96)
-                            .accessibilityLabel(item.description)
-                    }
+                ForEach(PearStickers.cached, id: \.item.id) { entry in
+                    StickerCell(sticker: entry.sticker)
+                        .frame(width: 96, height: 96)
+                        .accessibilityLabel(entry.item.description)
                 }
             }
             .padding(.horizontal, 16)

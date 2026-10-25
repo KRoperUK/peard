@@ -24,6 +24,13 @@ enum PearStickers {
         guard let url = Bundle.main.url(forResource: item.name, withExtension: "png") else { return nil }
         return try? MSSticker(contentsOfFileURL: url, localizedDescription: item.description)
     }
+
+    /// The whole set, built once: each sticker reads and decodes its file,
+    /// and rebuilding all five on every render turned the tray into disk
+    /// I/O per frame (#450).
+    static let cached: [(item: Item, sticker: MSSticker)] = all.compactMap { item in
+        sticker(item).map { (item, $0) }
+    }
 }
 
 /// One sticker, as Messages draws them: tap to put it in the compose field, or

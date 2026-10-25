@@ -82,6 +82,28 @@ private struct PhotoDropLockScreenView: View {
     }
 }
 
+/// Display-size thumbnails, decoded once per post: the cached file is a full
+/// photo, and decoding all of it on every render for a 44-point thumb is
+/// what made the island stutter on updates (#450).
+private enum PhotoDropThumbnails {
+    private static let cache = NSCache<NSString, UIImage>()
+
+    static func image(forPost postID: String, size: CGFloat) -> UIImage? {
+        let key = "\(postID)@\(Int(size))" as NSString
+        if let cached = cache.object(forKey: key) { return cached }
+        guard let url = PhotoDropCache.url(forPost: postID) else { return nil }
+        // Three times the point size: every current phone renders at 2x or 3x,
+        // and a thumbnail is cheap enough that the 2x ones can have the spare
+        // pixels rather than the cache keying on scale as well.
+        guard let thumbnail = SharedPhoto.downsampled(at: url, maxPixelSize: max(Int(size * 3), 1)) else {
+            return nil
+        }
+        let image = UIImage(cgImage: thumbnail)
+        cache.setObject(image, forKey: key)
+        return image
+    }
+}
+
 /// The cached thumbnail, or a 📸 when the extension has not saved it yet.
 private struct PhotoDropThumbnail: View {
     let postID: String
@@ -89,8 +111,7 @@ private struct PhotoDropThumbnail: View {
 
     var body: some View {
         Group {
-            if let url = PhotoDropCache.url(forPost: postID),
-               let image = UIImage(contentsOfFile: url.path) {
+            if let image = PhotoDropThumbnails.image(forPost: postID, size: size) {
                 Image(uiImage: image)
                     .resizable()
                     .scaledToFill()

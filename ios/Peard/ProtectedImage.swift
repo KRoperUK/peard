@@ -27,8 +27,23 @@ struct ProtectedImage<Placeholder: View, Failure: View>: View {
     let serverURL: URL
     /// Path with any query already on it — `?thumb=512x512` is the usual one.
     let path: String
-    @ViewBuilder let placeholder: () -> Placeholder
-    @ViewBuilder let failure: () -> Failure
+    /// Built in `init`, not on every render: neither ever changes for the
+    /// life of this view, so storing the closures re-ran them each time body
+    /// evaluated (#450).
+    let placeholder: Placeholder
+    let failure: Failure
+
+    init(
+        serverURL: URL,
+        path: String,
+        @ViewBuilder placeholder: () -> Placeholder,
+        @ViewBuilder failure: () -> Failure
+    ) {
+        self.serverURL = serverURL
+        self.path = path
+        self.placeholder = placeholder()
+        self.failure = failure()
+    }
 
     @State private var image: UIImage?
     @State private var unavailable = false
@@ -48,7 +63,7 @@ struct ProtectedImage<Placeholder: View, Failure: View>: View {
                 // the file may have arrived since (a sync that had not finished,
                 // a token that has since minted), so one tap re-attempts the
                 // load rather than leaving a dead placeholder (#365).
-                failure()
+                failure
                     .overlay(alignment: .bottomTrailing) {
                         Image(systemName: "arrow.clockwise.circle.fill")
                             .font(.caption)
@@ -62,7 +77,7 @@ struct ProtectedImage<Placeholder: View, Failure: View>: View {
                     .accessibilityLabel("Photo failed to load")
                     .accessibilityHint("Double tap to try again")
             } else {
-                placeholder()
+                placeholder
             }
         }
         .task(id: taskID) { await load() }
