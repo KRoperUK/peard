@@ -38,6 +38,24 @@ final class ReactionQueueTests: XCTestCase {
         PendingReaction(postID: post, userID: user, kind: kind, tappedAt: tappedAt)
     }
 
+    /// What the drain sent, visible across the actor boundary without a data
+    /// race: the `send` closure is `@Sendable`, so it cannot close over a
+    /// mutable local.
+    private final class SentBox: @unchecked Sendable {
+        private let lock = NSLock()
+        private var fields: [[String: String]] = []
+
+        func record(_ next: [String: String]) {
+            lock.lock(); defer { lock.unlock() }
+            fields.append(next)
+        }
+
+        var all: [[String: String]] {
+            lock.lock(); defer { lock.unlock() }
+            return fields
+        }
+    }
+
     // MARK: Enqueue
 
     func testEnqueuePersistsImmediately() async {
@@ -77,12 +95,12 @@ final class ReactionQueueTests: XCTestCase {
         let store = MemoryStore([reaction(post: "p1"), reaction(post: "p2")])
         let queue = ReactionQueue(store: store)
 
-        var sent: [[String: String]] = []
-        let delivered = await queue.drain { fields in sent.append(fields) }
+        let sent = SentBox()
+        let delivered = await queue.drain { sent.record($0) }
 
         XCTAssertEqual(delivered, 2)
         XCTAssertTrue(store.stored.isEmpty, "a delivered reaction is removed, not retried forever")
-        XCTAssertEqual(Set(sent.map { $0["post"] }), ["p1", "p2"])
+        XCTAssertEqual(Set(sent.all.map { $0["post"] }), ["p1", "p2"])
     }
 
     // A retryable failure (no signal) keeps the reaction for the next launch.
@@ -119,11 +137,11 @@ final class ReactionQueueTests: XCTestCase {
         let store = MemoryStore([old])
         let queue = ReactionQueue(store: store)
 
-        var sent = 0
-        let delivered = await queue.drain { _ in sent += 1 }
+        let sent = SentBox()
+        let delivered = await queue.drain { sent.record($0) }
 
         XCTAssertEqual(delivered, 0)
-        XCTAssertEqual(sent, 0, "a day-old reaction is not sent")
+        XCTAssertEqual(sent.all.count, 0, "a day-old reaction is not sent")
         XCTAssertTrue(store.stored.isEmpty, "and it is dropped, not kept")
     }
 
