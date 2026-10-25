@@ -261,4 +261,23 @@ final class MomentInboxTests: XCTestCase {
     func testAPhotoIDNeverBecomesAPath() {
         XCTAssertEqual(inbox.photoURL(for: "../../etc/passwd").deletingLastPathComponent(), inbox.photoDirectory)
     }
+
+    // MARK: Session teardown
+
+    /// Sign-out and account deletion leave nothing for the next account to
+    /// absorb: entries, their photos, and any photo no entry names.
+    func testClearEmptiesTheInboxAndItsPhotos() throws {
+        inbox.append(shared(), photo: jpeg)
+        inbox.append(moment(id: "plain"))
+        let orphan = inbox.photoURL(for: "gone")
+        try FileManager.default.createDirectory(at: inbox.photoDirectory, withIntermediateDirectories: true)
+        try jpeg.write(to: orphan)
+
+        inbox.clear()
+
+        XCTAssertTrue(inbox.load().isEmpty)
+        XCTAssertNil(inbox.loadPhoto(for: "s1"))
+        XCTAssertFalse(FileManager.default.fileExists(atPath: orphan.path))
+        XCTAssertFalse(FileManager.default.fileExists(atPath: inbox.photoDirectory.path))
+    }
 }

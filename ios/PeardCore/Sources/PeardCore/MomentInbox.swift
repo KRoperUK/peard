@@ -242,6 +242,17 @@ public struct MomentInbox: Sendable {
         }
     }
 
+    /// Empties the inbox and its photo folder, including any photo no entry
+    /// names. For session teardown: whatever the extensions left waiting
+    /// belongs to the account going away, and must not be absorbed as the
+    /// next account's.
+    public func clear() {
+        coordinate(.writing) {
+            write([])
+        }
+        try? FileManager.default.removeItem(at: photoDirectory)
+    }
+
     // MARK: File access
 
     private enum Access { case reading, writing }

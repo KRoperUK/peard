@@ -51,6 +51,9 @@ extension AppModel {
         // the deleted account's, and leaving them in the App Group container is
         // exactly what deleting an account is meant to prevent.
         prunePendingPhotos()
+        // And whatever the extensions left waiting goes with it, or the next
+        // account to use the device would absorb and post it as their own.
+        momentInbox.clear()
         sessionStore.clear()
         widgetSync.clear()
         forgetCachedConnections()
@@ -100,6 +103,9 @@ extension AppModel {
         await sendQueue.removeAll()
         await refreshPendingSends()
         prunePendingPhotos()
+        // The extensions' leftovers belong to this session too: without this,
+        // the next sign-in absorbs them and posts them as the new account's.
+        momentInbox.clear()
         sessionStore.clear()
         widgetSync.clear()
         forgetCachedConnections()
