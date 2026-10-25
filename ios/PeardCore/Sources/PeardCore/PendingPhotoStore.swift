@@ -41,11 +41,30 @@ public struct PendingPhotoStore: Sendable {
         try? Data(contentsOf: url(for: sendID))
     }
 
-    /// Deletes every photo whose send is not in `keep`.
-    public func removeAll(except keep: Set<String>) {
-        let files = (try? FileManager.default.contentsOfDirectory(at: directory, includingPropertiesForKeys: nil)) ?? []
+    /// Deletes one send's photo, for an explicit deletion. Immediate, with no
+    /// grace period: the send is known gone rather than merely unseen by a
+    /// flush that finished mid-queueing.
+    public func remove(for sendID: String) {
+        try? FileManager.default.removeItem(at: url(for: sendID))
+    }
+
+    /// Deletes every photo whose send is not in `keep`, except ones written
+    /// within `gracePeriod`.
+    ///
+    /// A photo is saved to disk just before its send is queued, and a flush
+    /// finishing between the two sees the send as absent. Without the grace
+    /// period that flush's cleanup deletes the file, and the next flush drops
+    /// the moment as permanently missing — a photo taken while a flush is
+    /// finishing must survive until its send is visible (#435).
+    public func removeAll(except keep: Set<String>, gracePeriod: TimeInterval = 60, now: Date = Date()) {
+        let files = (try? FileManager.default.contentsOfDirectory(
+            at: directory,
+            includingPropertiesForKeys: [.contentModificationDateKey]
+        )) ?? []
         let kept = Set(keep.map { url(for: $0).lastPathComponent })
         for file in files where !kept.contains(file.lastPathComponent) {
+            let written = try? file.resourceValues(forKeys: [.contentModificationDateKey]).contentModificationDate
+            if let written, now.timeIntervalSince(written) < gracePeriod { continue }
             try? FileManager.default.removeItem(at: file)
         }
     }

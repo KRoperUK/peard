@@ -69,11 +69,52 @@ final class PendingPhotoTests: XCTestCase {
     func testAPhotoIsKeptUntilItsSendIsGone() throws {
         try store.save(Data("jpeg".utf8), for: "keep-me")
         try store.save(Data("jpeg".utf8), for: "sent-already")
+        try backdate("sent-already", by: 3600)
 
         store.removeAll(except: ["keep-me"])
 
         XCTAssertEqual(store.load(for: "keep-me"), Data("jpeg".utf8))
         XCTAssertNil(store.load(for: "sent-already"))
+    }
+
+    /// A photo is written to disk just before its send is queued. A flush
+    /// finishing between the two sees the send as absent; without the grace
+    /// period its cleanup deletes the file, and the next flush drops the
+    /// moment as permanently missing (#435).
+    func testAFreshPhotoSurvivesAPruneThatCannotSeeItsSend() throws {
+        try store.save(Data("jpeg".utf8), for: "just-written")
+
+        store.removeAll(except: [])
+
+        XCTAssertEqual(store.load(for: "just-written"), Data("jpeg".utf8))
+    }
+
+    /// The grace period only protects the just-written: a stale file with no
+    /// send is still rubbish, and still goes.
+    func testAnOldPhotoWithoutASendIsStillPruned() throws {
+        try store.save(Data("jpeg".utf8), for: "stale")
+        try backdate("stale", by: 3600)
+
+        store.removeAll(except: [])
+
+        XCTAssertNil(store.load(for: "stale"))
+    }
+
+    /// An explicit deletion takes the photo now: the grace period is for a
+    /// flush that finished mid-queueing, not for a send known gone.
+    func testRemoveForDeletesImmediately() throws {
+        try store.save(Data("jpeg".utf8), for: "gone")
+
+        store.remove(for: "gone")
+
+        XCTAssertNil(store.load(for: "gone"))
+    }
+
+    private func backdate(_ sendID: String, by seconds: TimeInterval) throws {
+        try FileManager.default.setAttributes(
+            [.modificationDate: Date().addingTimeInterval(-seconds)],
+            ofItemAtPath: store.url(for: sendID).path
+        )
     }
 
     func testASendIDNeverBecomesAPath() {

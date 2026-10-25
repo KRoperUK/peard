@@ -49,8 +49,10 @@ extension AppModel {
         await refreshPendingSends()
         // The queue is empty now, so this removes every queued photo: they were
         // the deleted account's, and leaving them in the App Group container is
-        // exactly what deleting an account is meant to prevent.
-        prunePendingPhotos()
+        // exactly what deleting an account is meant to prevent. Immediate —
+        // the grace period is for a flush that finished mid-queueing, not for
+        // a session that is over.
+        pendingPhotos.removeAll(except: [], gracePeriod: 0)
         // And whatever the extensions left waiting goes with it, or the next
         // account to use the device would absorb and post it as their own.
         momentInbox.clear()
@@ -102,7 +104,9 @@ extension AppModel {
         // account cannot post under anyway.
         await sendQueue.removeAll()
         await refreshPendingSends()
-        prunePendingPhotos()
+        // Immediate, not the pruner: nothing of this session's is left for a
+        // later flush to clean up.
+        pendingPhotos.removeAll(except: [], gracePeriod: 0)
         // The extensions' leftovers belong to this session too: without this,
         // the next sign-in absorbs them and posts them as the new account's.
         momentInbox.clear()
