@@ -142,7 +142,7 @@ extension DeepLinkTests {
     /// server: a dev address is no use to whoever receives the message.
     func testTheSharedLinkUsesThePublicHost() {
         XCTAssertEqual(
-            DeepLink.inviteLink(code: "ABC123").absoluteString,
+            DeepLink.inviteLink(code: "ABC123")?.absoluteString,
             "https://peard.kroper.uk/c/ABC123"
         )
     }
@@ -159,6 +159,25 @@ extension DeepLinkTests {
 
         XCTAssertTrue(invite.shareMessage.contains("https://peard.kroper.uk/c/ABC123"))
         XCTAssertFalse(invite.shareMessage.contains("peard://"))
+    }
+
+    /// A hostile code — typed or pasted with spaces — must not crash link
+    /// building: it is percent-encoded into a link that still parses.
+    func testAHostileCodeIsEncodedRatherThanCrashing() {
+        let link = DeepLink.inviteLink(code: "AB C/12")
+        XCTAssertEqual(link?.absoluteString, "https://peard.kroper.uk/c/AB%20C/12")
+    }
+
+    /// And the share message survives one too, still carrying the code.
+    func testTheShareMessageSurvivesAHostileCode() {
+        let invite = PairInvite(
+            code: "AB C",
+            expires: Date(timeIntervalSince1970: 0),
+            deepLink: "peard://pair/ABC123"
+        )
+
+        XCTAssertTrue(invite.shareMessage.contains("AB C"))
+        XCTAssertTrue(invite.shareMessage.contains("https://peard.kroper.uk/c/AB%20C"))
     }
 }
 

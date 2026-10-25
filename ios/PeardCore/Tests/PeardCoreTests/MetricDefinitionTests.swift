@@ -81,6 +81,14 @@ final class MetricDefinitionTests: XCTestCase {
         XCTAssertEqual(custom.unit, .count)
     }
 
+    func testCustomFallbackEmoji() {
+        let missing = MetricCatalogue.resolve(EventKind(rawValue: "mystery"))
+        XCTAssertEqual(missing.emoji, MomentCatalogue.fallbackEmoji)
+
+        let blank = MetricCatalogue.resolve(EventKind(rawValue: "mystery"), emoji: "")
+        XCTAssertEqual(blank.emoji, MomentCatalogue.fallbackEmoji)
+    }
+
     func testReadoutUsesLabelForBareCounts() {
         XCTAssertEqual(MetricCatalogue.steps.readout(8000, locale: gb), "8,000 steps")
         XCTAssertEqual(MetricCatalogue.exercise.readout(30, locale: gb), "30 min")

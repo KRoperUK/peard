@@ -822,10 +822,11 @@ public struct PairInvite: Codable, Hashable, Sendable {
     /// configured server, because a dev address is no use to whoever receives
     /// the message.
     public var shareMessage: String {
-        let link = DeepLink.inviteLink(code: code).absoluteString
-        return isGroupInvite
-            ? "Join my group on Pear'd! Code: \(code)\n\(link)"
-            : "Pear up with me on Pear'd! Code: \(code)\n\(link)"
+        let intro = isGroupInvite ? "Join my group on Pear'd!" : "Pear up with me on Pear'd!"
+        guard let link = DeepLink.inviteLink(code: code)?.absoluteString else {
+            return "\(intro) Code: \(code)"
+        }
+        return "\(intro) Code: \(code)\n\(link)"
     }
 }
 
