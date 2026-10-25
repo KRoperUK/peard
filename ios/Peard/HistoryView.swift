@@ -325,20 +325,8 @@ struct HistoryView: View {
             // Only the thumbnail opens the photo, not the whole row: the row is
             // also the swipe and long-press target, and a tap that opened a
             // full-screen view from anywhere on it would fire every time
-            // somebody meant to start a swipe. A real button on photo posts
-            // rather than a tap gesture, so Switch Control and Voice Control
-            // can activate it too (#448).
-            Group {
-                if post.hasMedia {
-                    Button { viewing = post } label: {
-                        thumbnail(for: post)
-                    }
-                    .buttonStyle(.plain)
-                } else {
-                    thumbnail(for: post)
-                }
-            }
-            .photoZoomSource(id: post.id, in: photoZoom)
+            // somebody meant to start a swipe.
+            thumbnailButton(for: post)
 
             VStack(alignment: .leading, spacing: 2) {
                 HStack(spacing: 5) {
@@ -493,6 +481,22 @@ struct HistoryView: View {
         if !time.isEmpty { parts.append(time) }
         if let reactions = model.spokenReactions(for: post) { parts.append(reactions) }
         return parts.joined(separator: ", ")
+    }
+
+    /// A real button on photo posts rather than a tap gesture, so Switch
+    /// Control and Voice Control can activate it too (#448).
+    private func thumbnailButton(for post: Post) -> some View {
+        Group {
+            if post.hasMedia {
+                Button { viewing = post } label: {
+                    thumbnail(for: post)
+                }
+                .buttonStyle(.plain)
+            } else {
+                thumbnail(for: post)
+            }
+        }
+        .photoZoomSource(id: post.id, in: photoZoom)
     }
 
     @ViewBuilder
