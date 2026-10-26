@@ -89,7 +89,7 @@ public struct TimelineFilter: Hashable, Sendable {
     public func searching(_ text: String, catalogue: [Moment]) -> TimelineFilter {
         let trimmed = text.trimmingCharacters(in: .whitespacesAndNewlines)
         let kinds = trimmed.isEmpty ? [] : catalogue
-            .filter { $0.label.range(of: trimmed, options: [.caseInsensitive, .diacriticInsensitive]) != nil }
+            .filter { $0.label.localizedStandardContains(trimmed) }
             .map(\.kind.rawValue)
         var copy = self
         copy.search = trimmed

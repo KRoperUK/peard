@@ -465,7 +465,8 @@ private struct PhotoCommentSheet: View {
                     .accessibilityLabel("Comment")
 
                 if text.count > 200 {
-                    Text("\(PostNote.limit - text.count) characters left")
+                    let left = PostNote.limit - text.count
+                    Text(left == 1 ? String(localized: "1 character left") : String(localized: "\(left) characters left"))
                         .font(.caption)
                         .foregroundStyle(PearColor.textTertiary)
                 }

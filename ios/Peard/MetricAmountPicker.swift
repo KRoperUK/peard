@@ -105,12 +105,12 @@ struct MetricAmountPicker: View {
         .padding(.horizontal, 10)
         .frame(minHeight: 44)
         .background(PearColor.surface, in: RoundedRectangle(cornerRadius: 12))
-        .overlay(
+        .overlay {
             RoundedRectangle(cornerRadius: 12)
                 .strokeBorder(
                     !custom.isEmpty && !isPreset && amount != nil ? PearColor.accent : .clear,
                     lineWidth: 2
                 )
-        )
+        }
     }
 }

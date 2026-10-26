@@ -66,10 +66,10 @@ struct MomentRenameSheet: View {
             ZStack {
                 RoundedRectangle(cornerRadius: 12)
                     .fill(PearColor.surface)
-                    .overlay(
+                    .overlay {
                         RoundedRectangle(cornerRadius: 12)
                             .strokeBorder(emojiFieldFocused ? PearColor.accent : .clear, lineWidth: 2)
-                    )
+                    }
                 EmojiField(emoji: $emoji, isFocused: emojiFieldFocused)
                     .frame(width: 56, height: 44)
             }

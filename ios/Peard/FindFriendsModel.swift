@@ -137,7 +137,7 @@ final class FindFriendsModel {
     }
 
     private static func matches(_ haystack: String, _ needle: String) -> Bool {
-        haystack.range(of: needle, options: [.caseInsensitive, .diacriticInsensitive]) != nil
+        haystack.localizedStandardContains(needle)
     }
 
     // MARK: Inviting

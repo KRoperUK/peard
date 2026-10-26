@@ -150,7 +150,7 @@ final class ReactionDrainFlowTests: XCTestCase {
     /// Lets anything already started finish, for the negative assertions.
     private func pause() async {
         for _ in 0..<10 {
-            try? await Task.sleep(nanoseconds: 10_000_000)
+            try? await Task.sleep(for: .milliseconds(10))
         }
     }
 }

@@ -56,8 +56,6 @@ public extension Color {
 }
 
 #if canImport(UIKit)
-import UIKit
-
 extension UIColor {
     convenience init(rgb value: UInt32) {
         self.init(

@@ -42,10 +42,10 @@ struct InviteSheet: View {
                             .foregroundStyle(PearColor.accent)
                             .padding(.vertical, 10)
                             .padding(.horizontal, 20)
-                            .overlay(
+                            .overlay {
                                 RoundedRectangle(cornerRadius: 10)
                                     .strokeBorder(PearColor.accent)
-                            )
+                            }
                     }
 
                     // From the server's answer rather than a number typed here: the

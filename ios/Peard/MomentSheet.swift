@@ -60,12 +60,8 @@ struct MomentSheet: View {
             // stray tap on a row this narrow is not enough.
             .confirmationDialog(
                 removing.map { String(localized: "Remove \($0.emoji) \($0.label)?") } ?? "",
-                isPresented: Binding(
-                    get: { removing != nil },
-                    set: { if !$0 { removing = nil } }
-                ),
-                titleVisibility: .visible,
-                presenting: removing
+                item: $removing,
+                titleVisibility: .visible
             ) { moment in
                 Button("Remove for everyone", role: .destructive) {
                     Task { await model.removeCustom(moment: moment) }
@@ -96,10 +92,10 @@ struct MomentSheet: View {
                 ZStack {
                     RoundedRectangle(cornerRadius: 12)
                         .fill(PearColor.surface)
-                        .overlay(
+                        .overlay {
                             RoundedRectangle(cornerRadius: 12)
                                 .strokeBorder(emojiFieldFocused ? PearColor.accent : .clear, lineWidth: 2)
-                        )
+                        }
                     EmojiField(emoji: $emoji, isFocused: emojiFieldFocused)
                         .frame(width: 56, height: 44)
                 }

@@ -984,7 +984,7 @@ final class HomeModel {
         countdownTask?.cancel()
         countdownTask = Task { [weak self] in
             while !Task.isCancelled {
-                try? await Task.sleep(nanoseconds: 100_000_000)
+                try? await Task.sleep(for: .milliseconds(100))
                 guard !Task.isCancelled else { return }
                 guard let self, let send = self.quickSend else { return }
                 let now = Date()
@@ -1415,7 +1415,7 @@ final class HomeModel {
         toastTask?.cancel()
         toast = text
         toastTask = Task { [weak self] in
-            try? await Task.sleep(nanoseconds: 1_500_000_000)
+            try? await Task.sleep(for: .milliseconds(1500))
             guard !Task.isCancelled else { return }
             self?.toast = nil
         }

@@ -89,35 +89,25 @@ struct HistoryView: View {
         // shows as a sheet along the bottom of the screen — far from the row
         // being deleted, and easy to read as belonging to the whole timeline
         // (issue #296).
-        .alert(
-            "Delete this moment?",
-            isPresented: Binding(get: { deleting != nil }, set: { if !$0 { deleting = nil } })
-        ) {
+        .alert("Delete this moment?", item: $deleting) { post in
             Button("Delete", role: .destructive) {
-                if let post = deleting {
-                    deleting = nil
-                    Task { await model.delete(post) }
-                }
+                deleting = nil
+                Task { await model.delete(post) }
             }
             Button("Cancel", role: .cancel) { deleting = nil }
-        } message: {
+        } message: { _ in
             Text("It goes from the shared timeline and stops counting towards the tallies.")
         }
         // The same alert for a moment that has not been sent: centred, and
         // worded for what is true of it — nobody else has seen it, so nothing
         // leaves a shared timeline or a tally.
-        .alert(
-            "Delete this moment?",
-            isPresented: Binding(get: { deletingQueued != nil }, set: { if !$0 { deletingQueued = nil } })
-        ) {
+        .alert("Delete this moment?", item: $deletingQueued) { send in
             Button("Delete", role: .destructive) {
-                if let send = deletingQueued {
-                    deletingQueued = nil
-                    Task { await app.deletePendingSend(id: send.id) }
-                }
+                deletingQueued = nil
+                Task { await app.deletePendingSend(id: send.id) }
             }
             Button("Cancel", role: .cancel) { deletingQueued = nil }
-        } message: {
+        } message: { _ in
             Text("It hasn't been sent yet, so it is removed from this phone and will not be sent. This cannot be undone.")
         }
     }

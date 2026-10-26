@@ -542,7 +542,7 @@ final class QuickSendFlowTests: XCTestCase {
     private func settle() async {
         for _ in 0..<20 {
             await Task.yield()
-            try? await Task.sleep(nanoseconds: 10_000_000)
+            try? await Task.sleep(for: .milliseconds(10))
             if model.quickSend?.isHeld != true, await queue.count > 0 { return }
         }
     }

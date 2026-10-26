@@ -296,7 +296,7 @@ struct PearWidgetEntryView: View {
                     Image(systemName: symbol)
                         .font(.caption.bold())
                         .foregroundStyle(pendingLog.outcome == .failed ? PearColor.error : PearColor.accent)
-                        .background(Circle().fill(PearColor.background))
+                        .background { Circle().fill(PearColor.background) }
                         .offset(x: 6, y: 4)
                 }
             }

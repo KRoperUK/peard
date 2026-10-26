@@ -112,10 +112,10 @@ struct MomentEditSheet: View {
                             moment.kind == kind ? PearColor.accent.opacity(0.22) : Color.clear,
                             in: RoundedRectangle(cornerRadius: 10)
                         )
-                        .overlay(
+                        .overlay {
                             RoundedRectangle(cornerRadius: 10)
                                 .strokeBorder(moment.kind == kind ? PearColor.accent : .clear)
-                        )
+                        }
                     }
                     .buttonStyle(.plain)
                     .accessibilityLabel(moment.label)
@@ -153,7 +153,8 @@ struct MomentEditSheet: View {
             Text(post.type == .photo ? String(localized: "Caption") : String(localized: "Note"))
         } footer: {
             if note.count > 200 {
-                Text("\(PostNote.limit - note.count) characters left")
+                let left = PostNote.limit - note.count
+                Text(left == 1 ? String(localized: "1 character left") : String(localized: "\(left) characters left"))
             } else {
                 Text("Leave it empty to take the note back.")
             }

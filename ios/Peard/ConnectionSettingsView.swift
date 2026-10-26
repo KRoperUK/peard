@@ -29,7 +29,7 @@ struct ConnectionSettingsView: View {
     @State private var editingQueued: PendingSend?
     @State private var deletingQueued: PendingSend?
     @State private var isExporting = false
-    @State private var exportFileURL: URL?
+    @State private var exportedFile: ShareableFile?
     @State private var exportError: String?
     @State private var discoverable = false
     @State private var phoneText = ""
@@ -94,31 +94,18 @@ struct ConnectionSettingsView: View {
             .sheet(isPresented: $showInviteSheet) {
                 InviteSheet(pairID: model.pairID, connectionTitle: model.connectionTitle)
             }
-            .sheet(isPresented: Binding(
-                get: { exportFileURL != nil },
-                set: { if !$0 { exportFileURL = nil } }
-            )) {
-                if let exportFileURL {
-                    ActivityView(activityItems: [exportFileURL])
-                }
+            .sheet(item: $exportedFile) { file in
+                ActivityView(activityItems: [file.url])
             }
-            .alert(
-                "Export failed",
-                isPresented: Binding(get: { exportError != nil }, set: { if !$0 { exportError = nil } }),
-                presenting: exportError
-            ) { _ in
+            .alert("Export failed", item: $exportError) { _ in
                 Button("OK") {}
             } message: { message in
                 Text(message)
             }
             .confirmationDialog(
                 removalPrompt,
-                isPresented: Binding(
-                    get: { memberPendingRemoval != nil },
-                    set: { if !$0 { memberPendingRemoval = nil } }
-                ),
-                titleVisibility: .visible,
-                presenting: memberPendingRemoval
+                item: $memberPendingRemoval,
+                titleVisibility: .visible
             ) { member in
                 Button("Remove", role: .destructive) {
                     Task {
@@ -414,18 +401,13 @@ struct ConnectionSettingsView: View {
             .sheet(item: $editingQueued) { send in
                 QueuedSendEditSheet(send: send, moments: model.moments)
             }
-            .alert(
-                "Delete this moment?",
-                isPresented: Binding(get: { deletingQueued != nil }, set: { if !$0 { deletingQueued = nil } })
-            ) {
+            .alert("Delete this moment?", item: $deletingQueued) { send in
                 Button("Delete", role: .destructive) {
-                    if let send = deletingQueued {
-                        deletingQueued = nil
-                        Task { await app.deletePendingSend(id: send.id) }
-                    }
+                    deletingQueued = nil
+                    Task { await app.deletePendingSend(id: send.id) }
                 }
                 Button("Cancel", role: .cancel) { deletingQueued = nil }
-            } message: {
+            } message: { _ in
                 Text("It hasn't been sent yet, so it is removed from this phone and will not be sent. This cannot be undone.")
             }
         }
@@ -729,7 +711,7 @@ struct ConnectionSettingsView: View {
                 let data = try await app.api.data(path: "/api/peard/export")
                 try data.write(to: url, options: .atomic)
             }
-            exportFileURL = url
+            exportedFile = ShareableFile(url: url)
         } catch {
             exportError = APIError.userMessage(for: error)
         }

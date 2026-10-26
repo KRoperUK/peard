@@ -34,7 +34,7 @@ struct ConnectionRail: View {
 
     var body: some View {
         ScrollViewReader { proxy in
-            ScrollView(.horizontal, showsIndicators: false) {
+            ScrollView(.horizontal) {
                 HStack(alignment: .top, spacing: 14) {
                     ForEach(connections) { connection in
                         item(for: connection)
@@ -45,6 +45,7 @@ struct ConnectionRail: View {
                 .padding(.horizontal, 20)
                 .padding(.vertical, 2)
             }
+            .scrollIndicators(.hidden)
             // Not animated: the rail is drawn while the whole home screen is
             // changing connection, and a scroll animation on top of that reads as
             // the list lurching.
@@ -115,7 +116,7 @@ struct ConnectionRail: View {
             .padding(.horizontal, 4)
             .frame(minWidth: badgeSide, minHeight: badgeSide)
             .background(PearColor.accent, in: Capsule())
-            .overlay(Capsule().strokeBorder(PearColor.background, lineWidth: 1.5))
+            .overlay { Capsule().strokeBorder(PearColor.background, lineWidth: 1.5) }
             .offset(x: 4, y: -2)
             .accessibilityHidden(true)
     }

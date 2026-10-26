@@ -58,7 +58,7 @@ struct MomentTrayView: View {
                 summary
                 // Scrolls because a connection may have published a dozen moments
                 // and Messages gives the tray about as much height as one row.
-                ScrollView(.horizontal, showsIndicators: false) {
+                ScrollView(.horizontal) {
                     HStack(spacing: 12) {
                         ForEach(model.moments) { moment in
                             button(for: moment)
@@ -66,6 +66,7 @@ struct MomentTrayView: View {
                     }
                     .padding(.horizontal, 16)
                 }
+                .scrollIndicators(.hidden)
                 statusLine
             case .stickers:
                 stickers
@@ -75,7 +76,7 @@ struct MomentTrayView: View {
     }
 
     private var stickers: some View {
-        ScrollView(.horizontal, showsIndicators: false) {
+        ScrollView(.horizontal) {
             HStack(spacing: 12) {
                 ForEach(PearStickers.all) { item in
                     if let sticker = PearStickers.sticker(item) {
@@ -87,6 +88,7 @@ struct MomentTrayView: View {
             }
             .padding(.horizontal, 16)
         }
+        .scrollIndicators(.hidden)
     }
 
     /// Somebody else's bubble, tapped: their moment, offered back. Only when

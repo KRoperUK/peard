@@ -376,9 +376,9 @@ struct HomeView: View {
                                 // the reaction looks like as well as saying it
                                 // is yours.
                                 .background(PearColor.background, in: Circle())
-                                .overlay(
+                                .overlay {
                                     Circle().strokeBorder(isMine ? PearColor.accent : .clear, lineWidth: 1.5)
-                                )
+                                }
                         }
                         .buttonStyle(.plain)
                         .accessibilityLabel(
@@ -559,7 +559,8 @@ struct HomeView: View {
                 .accessibilityLabel("Moment note")
 
             if model.noteText.count > 200 {
-                Text("\(PostNote.limit - model.noteText.count) characters left")
+                let left = PostNote.limit - model.noteText.count
+                Text(left == 1 ? String(localized: "1 character left") : String(localized: "\(left) characters left"))
                     .font(.caption2)
                     .foregroundStyle(model.noteText.count >= PostNote.limit ? PearColor.error : PearColor.textTertiary)
                     .frame(maxWidth: .infinity, alignment: .trailing)
@@ -770,11 +771,7 @@ extension View {
     func alert(item: Binding<HomeModel.AlertContent?>) -> some View {
         alert(
             item.wrappedValue?.title ?? "",
-            isPresented: Binding(
-                get: { item.wrappedValue != nil },
-                set: { if !$0 { item.wrappedValue = nil } }
-            ),
-            presenting: item.wrappedValue
+            item: item
         ) { _ in
             Button("OK", role: .cancel) { item.wrappedValue = nil }
         } message: { content in

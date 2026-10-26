@@ -83,7 +83,7 @@ struct AvatarPickerRow: View {
                         if isWorking {
                             Color.black.opacity(0.35)
                                 .clipShape(Circle())
-                                .overlay(ProgressView().tint(.white))
+                                .overlay { ProgressView().tint(.white) }
                         }
                     }
 

@@ -221,7 +221,8 @@ struct PhotoMomentSheet: View {
                 .accessibilityLabel("Caption")
 
             if caption.count > 200 {
-                Text("\(PostNote.limit - caption.count) characters left")
+                let left = PostNote.limit - caption.count
+                Text(left == 1 ? String(localized: "1 character left") : String(localized: "\(left) characters left"))
                     .font(.caption)
                     .foregroundStyle(PearColor.textTertiary)
             }

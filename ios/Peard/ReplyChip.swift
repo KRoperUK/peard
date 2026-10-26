@@ -42,7 +42,7 @@ struct ReplyChip: View {
             .padding(.horizontal, 6)
             .padding(.vertical, 2)
             .background(PearColor.surface, in: Capsule())
-            .overlay(Capsule().strokeBorder(PearColor.divider))
+            .overlay { Capsule().strokeBorder(PearColor.divider) }
             // The pill stays compact; the 44 points are tap area, not chrome.
             .frame(minHeight: 44)
         }

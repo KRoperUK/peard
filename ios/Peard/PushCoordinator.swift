@@ -189,7 +189,7 @@ final class PushCoordinator {
 
     /// Upserts the `devices` record for this device (Requirement 18.3, 18.4).
     func register(deviceToken: Data) async {
-        let token = deviceToken.map { String(format: "%02x", $0) }.joined()
+        let token = deviceToken.hexString
         guard let userID = session.userID, !userID.isEmpty else { return }
         store.devicePushToken = token
 

@@ -114,7 +114,7 @@ struct ProtectedImage<Placeholder: View, Failure: View>: View {
                 break
             }
             if attempt < maxAttempts - 1 {
-                try? await Task.sleep(nanoseconds: backoff(attempt))
+                try? await Task.sleep(for: .seconds(backoff(attempt)))
             }
             // Out of attempts: leave it retryable (placeholder), do not latch —
             // a later reappearance re-runs load() and may well succeed.
@@ -169,9 +169,8 @@ struct ProtectedImage<Placeholder: View, Failure: View>: View {
 
     /// Growing delay between retries: ~0.3s, ~0.9s. Short enough that a photo
     /// that recovers does so while the row is still on screen.
-    private func backoff(_ attempt: Int) -> UInt64 {
-        let seconds = 0.3 * pow(3, Double(attempt))
-        return UInt64(seconds * 1_000_000_000)
+    private func backoff(_ attempt: Int) -> Double {
+        0.3 * pow(3, Double(attempt))
     }
 }
 

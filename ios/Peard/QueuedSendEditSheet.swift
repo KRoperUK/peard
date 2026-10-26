@@ -116,10 +116,10 @@ struct QueuedSendEditSheet: View {
                 selected ? PearColor.accent.opacity(0.22) : Color.clear,
                 in: RoundedRectangle(cornerRadius: 10)
             )
-            .overlay(
+            .overlay {
                 RoundedRectangle(cornerRadius: 10)
                     .strokeBorder(selected ? PearColor.accent : .clear)
-            )
+            }
         }
         .buttonStyle(.plain)
         .accessibilityLabel(moment.label)
@@ -144,7 +144,8 @@ struct QueuedSendEditSheet: View {
             Text(isCaption ? String(localized: "Caption") : String(localized: "Note"))
         } footer: {
             if note.count > 200 {
-                Text("\(PostNote.limit - note.count) characters left")
+                let left = PostNote.limit - note.count
+                Text(left == 1 ? String(localized: "1 character left") : String(localized: "\(left) characters left"))
             }
         }
     }

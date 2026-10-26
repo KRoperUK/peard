@@ -220,13 +220,13 @@ final class AuthCoordinator {
 
     /// Requirement 6.2 — a fresh raw nonce per attempt.
     static func randomNonce(byteCount: Int = 32) -> String {
-        randomBytes(byteCount).map { String(format: "%02x", $0) }.joined()
+        randomBytes(byteCount).hexString
     }
 
     /// Lower-case hexadecimal SHA-256, the form the server expects to match
     /// against Apple's echoed `nonce` claim.
     static func sha256Hex(_ value: String) -> String {
-        SHA256.hash(data: Data(value.utf8)).map { String(format: "%02x", $0) }.joined()
+        SHA256.hash(data: Data(value.utf8)).hexString
     }
 
     /// Requirement 7.2 — PKCE verifier and S256 challenge.
