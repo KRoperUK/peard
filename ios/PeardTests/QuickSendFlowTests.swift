@@ -668,9 +668,15 @@ final class QuickSendInterruptTests: XCTestCase {
         for _ in 0..<250 where GatedFlushProtocol.postCreates < count {
             try? await Task.sleep(nanoseconds: 20_000_000)
         }
-        // The request answered is not the flush settled: let the queue record
-        // the delivery before asserting on it.
-        for _ in 0..<20 { await Task.yield() }
+        // The request answered is not the flush settled: the queue records the
+        // delivery on a later hop (URLSession → actor → file write), and twenty
+        // blind yields do not always span it under load — main CI saw one send
+        // still queued here. Wait for the drained state itself, which is also
+        // what every caller asserts, so a genuine stall still fails below.
+        for _ in 0..<250 {
+            if await queue.count == 0 { return }
+            try? await Task.sleep(nanoseconds: 20_000_000)
+        }
     }
 
     /// Waits for a request to reach the stub while the gate is shut — proof a
