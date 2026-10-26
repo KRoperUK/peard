@@ -356,12 +356,22 @@ struct WaterProgressBar: View {
             .accessibilityHidden(true)
 
             if progress.isRecommendedMet {
-                Label("Goal met", systemImage: "checkmark.circle.fill")
-                    .font(.caption2.bold())
-                    .foregroundStyle(PearColor.onAccent)
-                    .padding(.horizontal, 6)
-                    .padding(.vertical, 2)
-                    .background(PearColor.accent, in: Capsule())
+                // Laid out by hand like `MomentChip` rather than as a `Label`:
+                // the label's full-size icon carries symbol padding that made
+                // the text sit off-centre in the pill (#456).
+                HStack(spacing: 3) {
+                    Image(systemName: "checkmark.circle.fill")
+                        .imageScale(.small)
+                    Text("Goal met")
+                        .lineLimit(1)
+                }
+                .font(.caption2.bold())
+                .foregroundStyle(PearColor.onAccent)
+                .padding(.horizontal, 6)
+                .padding(.vertical, 2)
+                .background(PearColor.accent, in: Capsule())
+                .fixedSize()
+                .accessibilityLabel("Goal met")
             } else {
                 Text(MomentBreakdownCopy.waterProgress(progress, unit: unit))
                     .font(.caption2)
