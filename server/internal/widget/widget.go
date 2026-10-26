@@ -313,8 +313,11 @@ func issueTokenHandler(app core.App) func(e *core.RequestEvent) error {
 		label := strings.TrimSpace(body.Label)
 		if label == "" {
 			label = "ios-widget"
-		} else if len(label) > 60 {
-			label = label[:60]
+		} else if runes := []rune(label); len(runes) > 60 {
+			// By character, not by byte: a byte cut can split a multi-byte
+			// character and store invalid text, which later shows as a
+			// replacement character in the devices list (#441).
+			label = string(runes[:60])
 		}
 
 		col, err := app.FindCollectionByNameOrId("widget_tokens")
@@ -902,6 +905,19 @@ func metricSummaries(app core.App, pairID, callerID, today, todayDay string) []m
 		return nil
 	}
 
+	// Each member's display name, resolved once for the whole request and
+	// reused by every metric block: looking them up per metric turned one
+	// refresh into members × metrics user reads (#440).
+	names := make(map[string]string, len(members))
+	for _, mrec := range members {
+		uid := mrec.GetString("user")
+		if _, done := names[uid]; done {
+			continue
+		}
+		user, _ := app.FindRecordById("users", uid)
+		names[uid] = displayName(user)
+	}
+
 	out := make([]map[string]any, 0, len(builtinMetrics))
 	for _, spec := range builtinMetrics {
 		posts, err := app.FindRecordsByFilter("posts",
@@ -971,9 +987,8 @@ func metricSummaries(app core.App, pairID, callerID, today, todayDay string) []m
 			} else {
 				goal += spec.DefaultGoal
 			}
-			user, _ := app.FindRecordById("users", uid)
 			memberRows = append(memberRows, map[string]any{
-				"name":   displayName(user),
+				"name":   names[uid],
 				"amount": amountByUser[uid],
 				"goal":   memberGoal,
 				"isYou":  uid == callerID,

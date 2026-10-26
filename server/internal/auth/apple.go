@@ -40,10 +40,12 @@ import (
 	"github.com/pocketbase/pocketbase/core"
 )
 
-const (
-	appleIssuer  = "https://appleid.apple.com"
-	appleJWKSURL = appleIssuer + "/auth/keys"
-)
+const appleIssuer = "https://appleid.apple.com"
+
+// appleJWKSURL is where the signing keys are fetched. A variable solely so
+// tests can point it at an httptest server, like appleBaseURL; nothing in
+// production reassigns it.
+var appleJWKSURL = appleIssuer + "/auth/keys"
 
 // Register binds the custom auth routes.
 func Register(app core.App) {
@@ -312,10 +314,32 @@ var (
 )
 
 func applePublicKey(kid string) (*rsa.PublicKey, error) {
-	keys, err := appleKeys()
+	keys, err := appleKeys(false)
+	if err == nil {
+		if key, kerr := keyFromSet(keys, kid); kerr == nil {
+			return key, nil
+		}
+	}
+	// An unknown kid is what a rotation looks like from here: Apple has
+	// published keys this cache has never seen, so fetch once before giving
+	// up rather than failing every sign-in until the cache expires (#439).
+	fresh, err := appleKeys(true)
 	if err != nil {
+		// The refetch failed too. A key the old set still holds verifies
+		// against it — an unreachable Apple must not lock out a token it
+		// would have accepted — and anything else fails against that set,
+		// cleanly.
+		if stale := staleKeys(); len(stale) > 0 {
+			return keyFromSet(stale, kid)
+		}
 		return nil, err
 	}
+	return keyFromSet(fresh, kid)
+}
+
+// keyFromSet resolves one kid to its RSA public key, or reports cleanly that
+// no set holds it.
+func keyFromSet(keys []jwksKey, kid string) (*rsa.PublicKey, error) {
 	for _, k := range keys {
 		if k.Kid != kid || k.Kty != "RSA" {
 			continue
@@ -337,13 +361,18 @@ func applePublicKey(kid string) (*rsa.PublicKey, error) {
 	return nil, errors.New("no matching Apple key for kid " + kid)
 }
 
-func appleKeys() ([]jwksKey, error) {
-	keysMu.RLock()
-	if len(keysCache) > 0 && time.Since(keysCached) < 24*time.Hour {
-		defer keysMu.RUnlock()
-		return keysCache, nil
+// appleKeys returns the cached set while it is fresh, or fetches it when
+// forced or stale. A fetch error is returned as-is; the stale-set fallback
+// lives in applePublicKey, which is the only caller.
+func appleKeys(force bool) ([]jwksKey, error) {
+	if !force {
+		keysMu.RLock()
+		if len(keysCache) > 0 && time.Since(keysCached) < 24*time.Hour {
+			defer keysMu.RUnlock()
+			return keysCache, nil
+		}
+		keysMu.RUnlock()
 	}
-	keysMu.RUnlock()
 
 	resp, err := httpClient.Get(appleJWKSURL)
 	if err != nil {
@@ -369,4 +398,12 @@ func appleKeys() ([]jwksKey, error) {
 	keysCached = time.Now()
 	keysMu.Unlock()
 	return doc.Keys, nil
+}
+
+// staleKeys is whatever the cache holds, fresh or not, for the failed-fetch
+// fallback. A copy, so the caller never sees a set replaced under it.
+func staleKeys() []jwksKey {
+	keysMu.RLock()
+	defer keysMu.RUnlock()
+	return append([]jwksKey(nil), keysCache...)
 }
