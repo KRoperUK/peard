@@ -60,8 +60,12 @@ struct MomentSheet: View {
             // stray tap on a row this narrow is not enough.
             .confirmationDialog(
                 removing.map { String(localized: "Remove \($0.emoji) \($0.label)?") } ?? "",
-                item: $removing,
-                titleVisibility: .visible
+                isPresented: Binding(
+                    get: { removing != nil },
+                    set: { if !$0 { removing = nil } }
+                ),
+                titleVisibility: .visible,
+                presenting: removing
             ) { moment in
                 Button("Remove for everyone", role: .destructive) {
                     Task { await model.removeCustom(moment: moment) }

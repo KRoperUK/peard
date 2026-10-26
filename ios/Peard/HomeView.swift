@@ -771,7 +771,11 @@ extension View {
     func alert(item: Binding<HomeModel.AlertContent?>) -> some View {
         alert(
             item.wrappedValue?.title ?? "",
-            item: item
+            isPresented: Binding(
+                get: { item.wrappedValue != nil },
+                set: { if !$0 { item.wrappedValue = nil } }
+            ),
+            presenting: item.wrappedValue
         ) { _ in
             Button("OK", role: .cancel) { item.wrappedValue = nil }
         } message: { content in

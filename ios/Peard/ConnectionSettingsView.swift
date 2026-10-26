@@ -97,15 +97,23 @@ struct ConnectionSettingsView: View {
             .sheet(item: $exportedFile) { file in
                 ActivityView(activityItems: [file.url])
             }
-            .alert("Export failed", item: $exportError) { _ in
+            .alert(
+                "Export failed",
+                isPresented: Binding(get: { exportError != nil }, set: { if !$0 { exportError = nil } }),
+                presenting: exportError
+            ) { _ in
                 Button("OK") {}
             } message: { message in
                 Text(message)
             }
             .confirmationDialog(
                 removalPrompt,
-                item: $memberPendingRemoval,
-                titleVisibility: .visible
+                isPresented: Binding(
+                    get: { memberPendingRemoval != nil },
+                    set: { if !$0 { memberPendingRemoval = nil } }
+                ),
+                titleVisibility: .visible,
+                presenting: memberPendingRemoval
             ) { member in
                 Button("Remove", role: .destructive) {
                     Task {
@@ -401,13 +409,18 @@ struct ConnectionSettingsView: View {
             .sheet(item: $editingQueued) { send in
                 QueuedSendEditSheet(send: send, moments: model.moments)
             }
-            .alert("Delete this moment?", item: $deletingQueued) { send in
+            .alert(
+                "Delete this moment?",
+                isPresented: Binding(get: { deletingQueued != nil }, set: { if !$0 { deletingQueued = nil } })
+            ) {
                 Button("Delete", role: .destructive) {
-                    deletingQueued = nil
-                    Task { await app.deletePendingSend(id: send.id) }
+                    if let send = deletingQueued {
+                        deletingQueued = nil
+                        Task { await app.deletePendingSend(id: send.id) }
+                    }
                 }
                 Button("Cancel", role: .cancel) { deletingQueued = nil }
-            } message: { _ in
+            } message: {
                 Text("It hasn't been sent yet, so it is removed from this phone and will not be sent. This cannot be undone.")
             }
         }

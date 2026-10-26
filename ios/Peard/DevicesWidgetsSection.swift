@@ -36,8 +36,12 @@ struct DevicesWidgetsSection: View {
         .task { await load() }
         .confirmationDialog(
             revocationPrompt,
-            item: $pendingRevocation,
-            titleVisibility: .visible
+            isPresented: Binding(
+                get: { pendingRevocation != nil },
+                set: { if !$0 { pendingRevocation = nil } }
+            ),
+            titleVisibility: .visible,
+            presenting: pendingRevocation
         ) { token in
             Button("Revoke", role: .destructive) {
                 Task { await revoke(token) }
@@ -48,7 +52,11 @@ struct DevicesWidgetsSection: View {
                 Text("This is the widget on this device. It stops updating until you next open the app.")
             }
         }
-        .alert("Couldn't revoke", item: $revokeError) { _ in
+        .alert(
+            "Couldn't revoke",
+            isPresented: Binding(get: { revokeError != nil }, set: { if !$0 { revokeError = nil } }),
+            presenting: revokeError
+        ) { _ in
             Button("OK") {}
         } message: { message in
             Text(message)

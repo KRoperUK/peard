@@ -42,7 +42,11 @@ struct MomentsExportSection: View {
         .sheet(item: $exportedFile) { file in
             ActivityView(activityItems: [file.url])
         }
-        .alert("Export failed", item: $error) { _ in
+        .alert(
+            "Export failed",
+            isPresented: Binding(get: { error != nil }, set: { if !$0 { error = nil } }),
+            presenting: error
+        ) { _ in
             Button("OK") {}
         } message: { message in
             Text(message)
