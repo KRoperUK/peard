@@ -5,6 +5,7 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"strings"
+	"sync"
 	"testing"
 	"time"
 
@@ -117,6 +118,77 @@ func TestMetricDayRefusesANonMember(t *testing.T) {
 	status, _ := w.putMetricDay(t, w.outsiderTok, w.pair.Id, "steps", utcDay(0), 1000)
 	if status != http.StatusForbidden {
 		t.Errorf("status = %d, want 403", status)
+	}
+}
+
+// A future row sorts newest in the recap, faking a current streak of one and
+// breaking the real run — so a day later than the caller's local today is
+// refused. (The caller here has no device zone stored, so their today is UTC.)
+func TestMetricDayRefusesAFutureDay(t *testing.T) {
+	w := newWorld(t)
+	status, body := w.putMetricDay(t, w.aliceTok, w.pair.Id, "steps", utcDay(1), 1000)
+	if status != http.StatusBadRequest {
+		t.Errorf("status = %d, want 400 (%s)", status, body)
+	}
+	if _, found := w.storedDay(t, w.alice.Id, w.pair.Id, "steps", utcDay(1)); found {
+		t.Error("a future day was stored")
+	}
+}
+
+// A metric nobody tracks is stored and counted by nothing, so the route only
+// takes a built-in or a metric the connection has a target for.
+func TestMetricDayRefusesAnUnknownMetric(t *testing.T) {
+	w := newWorld(t)
+	status, _ := w.putMetricDay(t, w.aliceTok, w.pair.Id, "furlongs", utcDay(0), 1000)
+	if status != http.StatusBadRequest {
+		t.Errorf("status = %d, want 400", status)
+	}
+}
+
+// …while a connection's own metric with a target stored syncs like a built-in.
+func TestMetricDayAcceptsATrackedCustomMetric(t *testing.T) {
+	w := newWorld(t)
+	if status, body := w.postMetricTarget(t, w.aliceTok, w.pair.Id, "dog_walk", 0, 5); status != http.StatusOK {
+		t.Fatalf("post target: %d %s", status, body)
+	}
+	status, body := w.putMetricDay(t, w.aliceTok, w.pair.Id, "dog_walk", utcDay(0), 3)
+	if status != http.StatusOK {
+		t.Fatalf("put metric day: %d %s", status, body)
+	}
+	amount, found := w.storedDay(t, w.alice.Id, w.pair.Id, "dog_walk", utcDay(0))
+	if !found || amount != 3 {
+		t.Errorf("stored amount = %d (found %v), want 3", amount, found)
+	}
+}
+
+// Two devices syncing the same day at once collide on the one-row-per-day
+// index; both must succeed as the same stored total, with no 500.
+func TestMetricDayConcurrentWritesBothSucceed(t *testing.T) {
+	w := newWorld(t)
+	const writers = 200
+	start := make(chan struct{})
+	codes := make([]int, writers)
+	var wg sync.WaitGroup
+	for i := 0; i < writers; i++ {
+		wg.Add(1)
+		go func(i int) {
+			defer wg.Done()
+			<-start
+			status, _ := w.putMetricDay(t, w.aliceTok, w.pair.Id, "steps", utcDay(0), 8400)
+			codes[i] = status
+		}(i)
+	}
+	close(start)
+	wg.Wait()
+
+	for i, code := range codes {
+		if code != http.StatusOK {
+			t.Errorf("writer %d: status = %d, want 200", i, code)
+		}
+	}
+	amount, found := w.storedDay(t, w.alice.Id, w.pair.Id, "steps", utcDay(0))
+	if !found || amount != 8400 {
+		t.Errorf("stored amount = %d (found %v), want the synced 8400", amount, found)
 	}
 }
 
