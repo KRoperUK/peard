@@ -93,7 +93,7 @@ final class RewindTests: XCTestCase {
         let send = PendingSend(pairID: "x", authorID: "a", kind: .beer, emoji: "🍺", label: "Beer",
                                queuedAt: logged, happenedAt: at)
 
-        let wire = try XCTUnwrap(send.postFields["happened_at"])
+        let wire = try XCTUnwrap(send.postFields(now: logged)["happened_at"])
         let parsed = try XCTUnwrap(ISO8601DateFormatter.withFractionalSeconds.date(from: wire))
         XCTAssertEqual(parsed.timeIntervalSince(at), 0, accuracy: 0.001)
     }
@@ -132,6 +132,28 @@ final class RewindTests: XCTestCase {
     func testASendOlderThanTheWindowLandsOnArrival() {
         let send = PendingSend(pairID: "x", authorID: "a", kind: .beer, emoji: "🍺", label: "Beer", queuedAt: logged)
         XCTAssertNil(send.postFields(now: logged.addingTimeInterval(25 * 3600))["happened_at"])
+    }
+
+    /// A rewind that waited in the queue past the window goes without its
+    /// picked time — landing on arrival, unmarked — rather than being refused
+    /// and dropped as a permanent failure.
+    func testAnAgedRewindIsSentWithoutItsTime() {
+        let send = PendingSend(pairID: "x", authorID: "a", kind: .beer, emoji: "🍺", label: "Beer",
+                               queuedAt: logged, happenedAt: logged.addingTimeInterval(-2 * 3600))
+        let fields = send.postFields(now: logged.addingTimeInterval(25 * 3600))
+
+        XCTAssertNil(fields["happened_at"])
+        XCTAssertNil(fields["rewound"])
+    }
+
+    /// Still inside the window, the picked time and the chip both survive.
+    func testAFreshRewindKeepsItsTime() {
+        let send = PendingSend(pairID: "x", authorID: "a", kind: .beer, emoji: "🍺", label: "Beer",
+                               queuedAt: logged, happenedAt: logged.addingTimeInterval(-2 * 3600))
+        let fields = send.postFields(now: logged.addingTimeInterval(20 * 3600))
+
+        XCTAssertNotNil(fields["happened_at"])
+        XCTAssertEqual(fields["rewound"], "true")
     }
 
     func testAPostThatArrivedLateIsNotRewound() throws {

@@ -945,10 +945,13 @@ final class HomeModel {
                 Task { await commitQuickSend() }
                 return
             }
-            Task {
-                await commitQuickSend()
-                begin(moment: moment)
-            }
+            // The commit waits on the network, and the new countdown must not
+            // wait with it: it starts now, while the first goes out behind it.
+            // Otherwise backgrounding mid-flush finds nothing to commit, and a
+            // third tap is overwritten when the flush finally lands (#436).
+            let note = PostNote.normalised(noteText)
+            begin(moment: moment)
+            Task { await commit(pending, note: note) }
             return
         }
         begin(moment: moment)
@@ -1108,13 +1111,20 @@ final class HomeModel {
         guard let send = quickSend else { return }
         countdownTask?.cancel()
         countdownTask = nil
-        let moment = send.moment
         // Normalised here as well as capped in the field: a note of nothing but
         // whitespace is no note, and the server's limit is enforced whichever
         // path reached this point.
         let note = PostNote.normalised(noteText)
         quickSend = nil
         noteText = ""
+        await commit(send, note: note)
+    }
+
+    /// Queues `send` and flushes, without touching the countdown state. Split
+    /// from `commitQuickSend` so a tap that interrupts one countdown with
+    /// another can start the new one first and commit the old one behind it.
+    private func commit(_ send: QuickSend, note: String) async {
+        let moment = send.moment
         busy = .moment(moment.kind)
         defer { busy = nil }
 
@@ -1160,10 +1170,10 @@ final class HomeModel {
         await app.retryStalledSends()
     }
 
-    /// Discards the queue after the user decides the moments are no longer worth
-    /// sending.
+    /// Discards this connection's queued sends after the user decides the
+    /// moments are no longer worth sending.
     func discardPendingSends() async {
-        await app.discardPendingSends()
+        await app.discardPendingSends(forConnection: pairID)
     }
 
     // MARK: Custom moments

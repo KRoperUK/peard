@@ -74,8 +74,15 @@ public enum DeepLink: Equatable, Sendable {
     /// shares the public https form even when it is pointed at a dev server,
     /// which is what somebody receiving the message needs — a link to
     /// 192.168.x.y is no use to them at all.
-    public static func inviteLink(code: String) -> URL {
-        URL(string: "https://\(webHost)/\(invitePath)/\(code)")!
+    /// `nil` when the code cannot form a link at all. Built with
+    /// `URLComponents` so a hostile code — typed or pasted with spaces —
+    /// is percent-encoded rather than crashing link building.
+    public static func inviteLink(code: String) -> URL? {
+        var components = URLComponents()
+        components.scheme = "https"
+        components.host = webHost
+        components.path = "/\(invitePath)/\(code)"
+        return components.url
     }
 }
 

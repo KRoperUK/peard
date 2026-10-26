@@ -549,6 +549,24 @@ final class SendQueueTests: XCTestCase {
         XCTAssertEqual(fields["event_kind"], "beer")
     }
 
+    // MARK: Discarding one connection's sends
+
+    /// "Discard them" belongs to the connection whose Settings shows it: only
+    /// that connection's sends go, and the rest — and the file — are untouched.
+    func testRemoveAllForPairKeepsOtherConnectionsSends() async {
+        let store = MemoryStore()
+        let queue = SendQueue(store: store)
+        await queue.enqueue(send(id: "a1", pair: "p1"))
+        await queue.enqueue(send(id: "a2", pair: "p1"))
+        await queue.enqueue(send(id: "b1", pair: "p2"))
+
+        await queue.removeAll(forPair: "p1")
+
+        let remaining = await queue.pending.map(\.id)
+        XCTAssertEqual(remaining, ["b1"])
+        XCTAssertEqual(store.stored.map(\.id), ["b1"])
+    }
+
     // MARK: Backoff
 
     func testBackoffGrowsAndIsCapped() {

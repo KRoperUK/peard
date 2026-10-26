@@ -136,7 +136,7 @@ public enum MetricCatalogue {
         return MetricDefinition(
             slug: slug,
             label: label ?? MomentSlug.humanised(slug),
-            emoji: emoji?.isEmpty == false ? emoji! : MomentCatalogue.fallbackEmoji,
+            emoji: emoji.flatMap { $0.isEmpty ? nil : $0 } ?? MomentCatalogue.fallbackEmoji,
             unit: unit,
             defaultMinimum: 0,
             defaultGoal: max(goal ?? 1, 1),

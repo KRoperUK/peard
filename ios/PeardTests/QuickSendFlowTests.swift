@@ -547,3 +547,219 @@ final class QuickSendFlowTests: XCTestCase {
         }
     }
 }
+
+/// Tapping while a commit is still flushing (#436).
+///
+/// The commit waits on the network, and the next countdown must not wait with
+/// it: the second tap starts counting down at once, backgrounding mid-flush
+/// still commits it, and a third tap commits the second rather than being
+/// overwritten by it. The API under test is deliberately slow — a gate the
+/// test holds shut — so the flush is provably still in flight at each step.
+@MainActor
+final class QuickSendInterruptTests: XCTestCase {
+    private var app: AppModel!
+    private var model: HomeModel!
+    private var queue: SendQueue!
+    private var storeURL: URL!
+    private var sessionStore: KeychainSessionStore!
+
+    private static let pairID = "pair1"
+
+    override func setUp() async throws {
+        try await super.setUp()
+        GatedFlushProtocol.reset()
+        storeURL = URL(fileURLWithPath: NSTemporaryDirectory())
+            .appendingPathComponent("peard-interrupt-\(UUID().uuidString).json")
+        queue = SendQueue(store: FilePendingSendStore(url: storeURL))
+        sessionStore = KeychainSessionStore(service: "peard-interrupt-test-\(UUID().uuidString)")
+        sessionStore.clear()
+        // A flush is skipped entirely without one, and the point here is a
+        // flush stuck mid-flight.
+        try sessionStore.save(token: "token", userID: "me")
+        app = AppModel(
+            sessionStore: sessionStore,
+            sendQueue: queue,
+            session: GatedFlushProtocol.makeSession()
+        )
+        await app.attachSendQueue()
+        app.reachability.stop()
+        await app.quiesceFlushForTesting()
+        model = HomeModel(app: app, pairID: Self.pairID)
+    }
+
+    override func tearDown() async throws {
+        GatedFlushProtocol.open()
+        try? FileManager.default.removeItem(at: storeURL)
+        sessionStore?.clear()
+        sessionStore = nil
+        model = nil
+        app = nil
+        queue = nil
+        try await super.tearDown()
+    }
+
+    private var beer: Moment {
+        MomentCatalogue.builtin.first { $0.kind == .beer }!
+    }
+
+    private var coffee: Moment {
+        MomentCatalogue.builtin.first { $0.kind == .coffee }!
+    }
+
+    /// The second countdown starts at once, while the first commit's flush is
+    /// still stuck behind the gate — not after it.
+    func testTappingWhileACommitIsFlushingStartsTheNextCountdownAtOnce() async {
+        GatedFlushProtocol.close()
+        model.tap(moment: beer)
+        model.tap(moment: coffee)
+
+        XCTAssertEqual(
+            model.quickSend?.moment.kind, .coffee,
+            "the second countdown must start without waiting for the first flush"
+        )
+
+        GatedFlushProtocol.open()
+        await waitForPosts(1)
+
+        let remaining = await queue.count
+        XCTAssertEqual(remaining, 0, "the first moment went out once the API answered")
+        XCTAssertEqual(model.quickSend?.moment.kind, .coffee, "and the second is still counting down")
+    }
+
+    /// Backgrounding mid-flush commits what is counting down — which is only
+    /// the second moment if its countdown started without waiting. The
+    /// background commit lands while the first flush is provably still behind
+    /// the gate, so it cannot have waited for it.
+    func testBackgroundingDuringTheFlushCommitsTheSecond() async {
+        GatedFlushProtocol.close()
+        model.tap(moment: beer)
+        model.tap(moment: coffee)
+        await waitForArrival()
+
+        await model.commitPendingSendOnBackground()
+
+        GatedFlushProtocol.open()
+        await waitForPosts(2)
+
+        let remaining = await queue.count
+        XCTAssertEqual(remaining, 0, "both moments went out")
+        XCTAssertNil(model.quickSend)
+    }
+
+    /// A third tap commits the second instead of being overwritten by it when
+    /// the first flush finally lands.
+    func testAThirdTapCommitsTheSecond() async {
+        GatedFlushProtocol.close()
+        model.tap(moment: beer)
+        model.tap(moment: coffee)
+        model.tap(moment: beer)
+
+        XCTAssertEqual(model.quickSend?.moment.kind, .beer)
+
+        GatedFlushProtocol.open()
+        await waitForPosts(2)
+
+        let remaining = await queue.count
+        XCTAssertEqual(remaining, 0, "the first two moments went out")
+        XCTAssertEqual(model.quickSend?.moment.kind, .beer, "the third is still counting down")
+    }
+
+    private func waitForPosts(_ count: Int) async {
+        for _ in 0..<250 where GatedFlushProtocol.postCreates < count {
+            try? await Task.sleep(nanoseconds: 20_000_000)
+        }
+        // The request answered is not the flush settled: let the queue record
+        // the delivery before asserting on it.
+        for _ in 0..<20 { await Task.yield() }
+    }
+
+    /// Waits for a request to reach the stub while the gate is shut — proof a
+    /// flush is mid-flight rather than merely scheduled.
+    private func waitForArrival() async {
+        for _ in 0..<250 where GatedFlushProtocol.arrivedRequests < 1 {
+            try? await Task.sleep(nanoseconds: 20_000_000)
+        }
+    }
+}
+
+/// An API that holds every request shut until the test opens the gate, so a
+/// flush can be held provably mid-flight. Answers post creates with the record
+/// PocketBase would echo, so a held flush completes normally once opened.
+final class GatedFlushProtocol: URLProtocol {
+    private static let lock = NSLock()
+    nonisolated(unsafe) private static var shut = false
+    nonisolated(unsafe) private static var posts = 0
+    nonisolated(unsafe) private static var arrived = 0
+
+    static func close() {
+        lock.lock(); defer { lock.unlock() }
+        shut = true
+    }
+
+    static func open() {
+        lock.lock(); defer { lock.unlock() }
+        shut = false
+    }
+
+    static func reset() {
+        lock.lock(); defer { lock.unlock() }
+        shut = false
+        posts = 0
+        arrived = 0
+    }
+
+    static var postCreates: Int {
+        lock.lock(); defer { lock.unlock() }
+        return posts
+    }
+
+    /// Requests seen, including ones still held behind the gate.
+    static var arrivedRequests: Int {
+        lock.lock(); defer { lock.unlock() }
+        return arrived
+    }
+
+    private static var isShut: Bool {
+        lock.lock(); defer { lock.unlock() }
+        return shut
+    }
+
+    static func makeSession() -> URLSession {
+        let configuration = URLSessionConfiguration.ephemeral
+        configuration.protocolClasses = [GatedFlushProtocol.self]
+        return URLSession(configuration: configuration)
+    }
+
+    override class func canInit(with request: URLRequest) -> Bool { true }
+    override class func canonicalRequest(for request: URLRequest) -> URLRequest { request }
+
+    override func startLoading() {
+        Self.lock.lock()
+        Self.arrived += 1
+        Self.lock.unlock()
+        // Held shut, up to a timeout: a gate the test forgot to open must fail
+        // its assertions, not hang the suite.
+        for _ in 0..<500 where Self.isShut {
+            Thread.sleep(forTimeInterval: 0.02)
+        }
+
+        let isPostCreate = request.httpMethod == "POST"
+            && (request.url?.path.contains("posts") ?? false)
+        Self.lock.lock()
+        if isPostCreate { Self.posts += 1 }
+        Self.lock.unlock()
+
+        let json = #"{"id":"p1","pair":"pair1","author":"me","type":"event","event_kind":"beer"}"#
+        let response = HTTPURLResponse(
+            url: request.url!,
+            statusCode: 200,
+            httpVersion: "HTTP/1.1",
+            headerFields: ["Content-Type": "application/json"]
+        )!
+        client?.urlProtocol(self, didReceive: response, cacheStoragePolicy: .notAllowed)
+        client?.urlProtocol(self, didLoad: Data(json.utf8))
+        client?.urlProtocolDidFinishLoading(self)
+    }
+
+    override func stopLoading() {}
+}

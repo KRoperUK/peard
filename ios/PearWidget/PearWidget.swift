@@ -196,6 +196,10 @@ struct PearWidgetEntryView: View {
 
     let entry: PearEntry
 
+    /// The one in-app destination the widget links to, parsed once: a `Link`
+    /// needs a non-optional URL, and this literal always parses.
+    private static let homeURL = URL(string: "peard://home")!
+
     /// In a group the name matters as much as the person, so both are shown.
     private var attribution: String {
         guard let groupName = entry.groupName else { return entry.partnerName }
@@ -268,7 +272,7 @@ struct PearWidgetEntryView: View {
         VStack(spacing: 6) {
             // Only the moment area opens the app; the buttons must stay tappable,
             // and a widgetURL on the whole widget would swallow them.
-            Link(destination: URL(string: "peard://home")!) {
+            Link(destination: Self.homeURL) {
                 if let pendingLog = entry.pendingLog {
                     pendingBadge(for: pendingLog)
                 } else {

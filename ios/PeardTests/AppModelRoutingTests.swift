@@ -335,6 +335,19 @@ final class AppModelRoutingTests: XCTestCase {
         XCTAssertEqual(app.phase, .auth)
     }
 
+    /// "Discard them" belongs to the connection whose Settings shows it: the
+    /// other connection's queued moment survives, in the queue and on screen.
+    func testDiscardKeepsOtherConnectionsSends() async {
+        await app.enqueue(sample(pair: "p1"))
+        await app.enqueue(sample(pair: "p2"))
+
+        await app.discardPendingSends(forConnection: "p1")
+
+        let remaining = await queue.pending.map(\.pairID)
+        XCTAssertEqual(remaining, ["p2"])
+        XCTAssertEqual(app.pendingSends.map(\.pairID), ["p2"])
+    }
+
     // MARK: Account deletion
 
     /// A delete the server never confirmed must leave push alone. It used to

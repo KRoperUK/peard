@@ -145,7 +145,9 @@ public struct PendingSend: Codable, Hashable, Sendable, Identifiable {
     /// when it was drunk rather than when the signal came back — and without the
     /// chip, because nobody filled it in after the fact. One that has waited
     /// longer than the server accepts a time for is sent without one and lands
-    /// on arrival, as it always did, rather than being refused and lost.
+    /// on arrival, as it always did, rather than being refused and lost — and a
+    /// rewind that aged past the window in the queue goes the same way, chip
+    /// and all, since the server would refuse the stale time outright.
     public func postFields(now: Date) -> [String: String] {
         var fields = [
             "pair": pairID,
@@ -159,10 +161,10 @@ public struct PendingSend: Codable, Hashable, Sendable, Identifiable {
         if postType == .event { fields["event_kind"] = kind.rawValue }
         if let replyTo { fields["reply_to"] = replyTo }
         if postType == .event, let amount { fields["amount"] = String(amount) }
-        if let happenedAt {
+        if let happenedAt, now.timeIntervalSince(happenedAt) < Rewind.lateSendWindow {
             fields["happened_at"] = Rewind.wireString(happenedAt)
             fields["rewound"] = "true"
-        } else {
+        } else if happenedAt == nil {
             let waited = now.timeIntervalSince(queuedAt)
             if waited > Rewind.threshold, waited < Rewind.lateSendWindow {
                 fields["happened_at"] = Rewind.wireString(queuedAt)
