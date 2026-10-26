@@ -244,16 +244,16 @@ struct MomentTrayView: View {
                     if model.status == .logging(moment.id) {
                         ProgressView()
                     } else {
-                        Text(moment.emoji).font(.system(size: 30))
+                        Text(moment.emoji).font(.title)
                     }
                 }
-                .frame(height: 36)
+                .frame(minHeight: 36)
                 Text(moment.label)
                     .font(.caption2)
                     .foregroundStyle(PearColor.textSecondary)
                     .lineLimit(1)
             }
-            .frame(width: 76)
+            .frame(minWidth: 76)
             .padding(.vertical, 8)
         }
         .buttonStyle(.plain)

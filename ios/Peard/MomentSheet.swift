@@ -109,6 +109,10 @@ struct MomentSheet: View {
                     labelFocused = false
                     emojiFieldFocused = true
                 }
+                // Announced as a button — a double-tap fires the gesture above.
+                // Not wrapped in one: the tile *is* the field, and a button
+                // would swallow its taps.
+                .accessibilityAddTraits(.isButton)
                 .accessibilityLabel("Moment emoji, currently \(emoji)")
                 .accessibilityHint("Opens the emoji keyboard")
 

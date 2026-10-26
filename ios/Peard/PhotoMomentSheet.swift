@@ -157,7 +157,7 @@ struct PhotoMomentSheet: View {
                 Image(systemName: "rotate.right")
                     .font(.body.weight(.medium))
                     .foregroundStyle(PearColor.textPrimary)
-                    .frame(width: 44, height: 32)
+                    .frame(minWidth: 44, minHeight: 44)
                     .background(PearColor.surface, in: RoundedRectangle(cornerRadius: 8))
             }
             .buttonStyle(.plain)
@@ -174,7 +174,7 @@ struct PhotoMomentSheet: View {
                     Image(systemName: "arrow.counterclockwise")
                         .font(.body.weight(.medium))
                         .foregroundStyle(PearColor.textPrimary)
-                        .frame(width: 44, height: 32)
+                        .frame(minWidth: 44, minHeight: 44)
                         .background(PearColor.surface, in: RoundedRectangle(cornerRadius: 8))
                 }
                 .buttonStyle(.plain)

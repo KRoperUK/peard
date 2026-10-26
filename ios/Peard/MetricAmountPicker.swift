@@ -87,7 +87,7 @@ struct MetricAmountPicker: View {
                 .focused($customFocused)
                 .multilineTextAlignment(.trailing)
                 .frame(minWidth: 40)
-                .accessibilityLabel("Custom amount in \(unit.spokenName)")
+                .accessibilityLabel("Custom amount in \(unit.spokenName(label: definition.label))")
                 .onChange(of: custom) { _, text in
                     // Digits only, bounded so a paste cannot overflow; the
                     // metric's own ceiling is what `parse` enforces.

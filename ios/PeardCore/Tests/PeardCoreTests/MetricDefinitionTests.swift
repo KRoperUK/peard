@@ -55,6 +55,15 @@ final class MetricDefinitionTests: XCTestCase {
         XCTAssertEqual(MetricUnit(storedValue: "millilitres"), .millilitres)
     }
 
+    /// A bare count has no noun of its own, so the spoken name comes from the
+    /// caller's label — "steps" for Steps, but "flights" for Flights (#452).
+    func testSpokenNameUsesTheCallersLabelForCounts() {
+        XCTAssertEqual(MetricUnit.count.spokenName(label: "Steps"), "steps")
+        XCTAssertEqual(MetricUnit.count.spokenName(label: "Flights"), "flights")
+        XCTAssertEqual(MetricUnit.minutes.spokenName(label: "Exercise"), "minutes")
+        XCTAssertEqual(MetricUnit.millilitres.spokenName(label: "Water"), "millilitres")
+    }
+
     // MARK: MetricDefinition / MetricCatalogue
 
     func testWaterBuiltinMatchesWaterAmountDefaults() {

@@ -20,6 +20,7 @@ struct PrivacyConsentView: View {
     /// The points' icons, scaled with the text beside them (issue #4).
     @ScaledMetric(relativeTo: .subheadline) private var iconSize: CGFloat = 18
     @ScaledMetric(relativeTo: .subheadline) private var iconColumn: CGFloat = 26
+    @ScaledMetric(relativeTo: .largeTitle) private var heroSize: CGFloat = 56
 
     var body: some View {
         VStack(spacing: 0) {
@@ -48,7 +49,7 @@ struct PrivacyConsentView: View {
     private var header: some View {
         VStack(alignment: .leading, spacing: 12) {
             Text("🍐")
-                .font(.system(size: 56))
+                .font(.system(size: heroSize))
                 .accessibilityHidden(true)
             Text(app.isFirstPrivacyPrompt ? String(localized: "Before you sign in") : String(localized: "We've updated our privacy policy"))
                 .font(.title.bold())

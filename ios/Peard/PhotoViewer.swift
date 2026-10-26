@@ -45,6 +45,8 @@ struct PhotoViewer: View {
     @State private var showCamera = false
     @State private var replyPhoto: CapturedPhoto?
 
+    @ScaledMetric(relativeTo: .largeTitle) private var failureEmojiSize: CGFloat = 44
+
     /// Built at load time rather than up front, because the token has to be
     /// fetched: `posts.media` is protected, and the path alone is a 404.
     private func url(token: String, thumb: PhotoThumb?) -> URL? {
@@ -151,10 +153,13 @@ struct PhotoViewer: View {
                 .gesture(magnification)
                 .gesture(drag)
                 .onTapGesture(count: 2) { toggleZoom() }
+                // The double-tap zoom, as a named action: a gesture alone is
+                // nothing to VoiceOver (#452).
+                .accessibilityAction(named: "Zoom") { toggleZoom() }
                 .accessibilityLabel("Photo from \(authorLabel)")
         } else if failed {
             VStack(spacing: 10) {
-                Text("📷").font(.system(size: 44)).accessibilityHidden(true)
+                Text("📷").font(.system(size: failureEmojiSize)).accessibilityHidden(true)
                 Text("This photo couldn't be loaded.")
                     .font(.subheadline)
                     .foregroundStyle(.white.opacity(0.8))
@@ -281,6 +286,7 @@ struct PhotoViewer: View {
                     .padding(10)
                     .background(.black.opacity(0.4), in: Circle())
             }
+            .frame(minWidth: 44, minHeight: 44)
             .accessibilityLabel("Close")
 
             Spacer()
@@ -315,6 +321,7 @@ struct PhotoViewer: View {
                         .padding(10)
                         .background(.black.opacity(0.4), in: Circle())
                 }
+                .frame(minWidth: 44, minHeight: 44)
                 .accessibilityLabel("Share this photo")
 
                 Button {
@@ -326,6 +333,7 @@ struct PhotoViewer: View {
                         .padding(10)
                         .background(.black.opacity(0.4), in: Circle())
                 }
+                .frame(minWidth: 44, minHeight: 44)
                 .accessibilityLabel("Save to Photos")
             }
         }

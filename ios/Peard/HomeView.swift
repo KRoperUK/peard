@@ -34,6 +34,8 @@ struct HomeView: View {
     /// Namespace tying a photo thumbnail to the full-screen viewer for the zoom
     /// transition (#424).
     @Namespace private var photoZoom
+    @ScaledMetric(relativeTo: .largeTitle) private var heroEmojiSize: CGFloat = 44
+    @ScaledMetric(relativeTo: .title) private var heroFailureSize: CGFloat = 32
     @State private var showRewind = false
     /// The day the "a year ago today" card was last dismissed, as yyyy-MM-dd,
     /// so closing it hides it until tomorrow rather than for good.
@@ -327,26 +329,30 @@ struct HomeView: View {
         // `hasMedia` rather than `type == .photo`: a moment can carry a photo
         // now, and keying on the type would draw its emoji and hide the picture.
         if post.hasMedia, let path = post.mediaThumbnailPath(app.listPhotoThumb) {
-            ProtectedImage(serverURL: model.serverURL, path: path) {
-                ProgressView()
-            } failure: {
-                Text("📷").font(.system(size: 32)).accessibilityHidden(true)
+            // A real button rather than a tap gesture with a button trait
+            // painted on: only one of those activates under Switch Control
+            // and Voice Control (#452).
+            Button { viewingPhoto = post } label: {
+                ProtectedImage(serverURL: model.serverURL, path: path) {
+                    ProgressView()
+                } failure: {
+                    Text("📷").font(.system(size: heroFailureSize)).accessibilityHidden(true)
+                }
+                .scaledToFill()
+                .frame(width: 72, height: 72)
+                .clipShape(RoundedRectangle(cornerRadius: 12))
             }
-            .scaledToFill()
-            .frame(width: 72, height: 72)
-            .clipShape(RoundedRectangle(cornerRadius: 12))
-            .contentShape(RoundedRectangle(cornerRadius: 12))
+            .buttonStyle(.plain)
             // The hero is the most recent thing that landed, and if it is a
             // photo, the thumbnail is the smallest part of the screen and the
             // one people actually want to see.
-            .onTapGesture { viewingPhoto = post }
+            .contentShape(RoundedRectangle(cornerRadius: 12))
             .photoZoomSource(id: post.id, in: photoZoom)
             .accessibilityLabel("Photo from \(model.authorLabel(for: post))")
             .accessibilityHint("Opens the photo full screen")
-            .accessibilityAddTraits(.isButton)
         } else {
             Text(model.emoji(for: post))
-                .font(.system(size: 44))
+                .font(.system(size: heroEmojiSize))
                 .frame(width: 72, height: 72)
                 .accessibilityLabel(model.label(for: post.eventKind))
         }
