@@ -13,7 +13,7 @@ struct MomentsExportSection: View {
     let model: HomeModel
 
     @State private var isExporting = false
-    @State private var fileURL: URL?
+    @State private var exportedFile: ShareableFile?
     @State private var error: String?
 
     /// Bigger than the timeline's 30: nobody is reading these as they arrive,
@@ -39,10 +39,8 @@ struct MomentsExportSection: View {
         } footer: {
             Text("Every moment in \(model.connectionTitle) as a spreadsheet: when, who, what, and any note.")
         }
-        .sheet(isPresented: Binding(get: { fileURL != nil }, set: { if !$0 { fileURL = nil } })) {
-            if let fileURL {
-                ActivityView(activityItems: [fileURL])
-            }
+        .sheet(item: $exportedFile) { file in
+            ActivityView(activityItems: [file.url])
         }
         .alert(
             "Export failed",
@@ -74,7 +72,7 @@ struct MomentsExportSection: View {
             try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
             let url = directory.appendingPathComponent(MomentsCSV.fileName(connectionTitle: model.connectionTitle))
             try Data(csv.utf8).write(to: url, options: .atomic)
-            fileURL = url
+            exportedFile = ShareableFile(url: url)
         } catch let error as APIError where error.isCancellation {
             // Settings was closed mid-export. Nobody is waiting for an answer.
         } catch {

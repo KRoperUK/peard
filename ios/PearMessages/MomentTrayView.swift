@@ -58,7 +58,7 @@ struct MomentTrayView: View {
                 summary
                 // Scrolls because a connection may have published a dozen moments
                 // and Messages gives the tray about as much height as one row.
-                ScrollView(.horizontal, showsIndicators: false) {
+                ScrollView(.horizontal) {
                     HStack(spacing: 12) {
                         ForEach(model.moments) { moment in
                             button(for: moment)
@@ -66,6 +66,7 @@ struct MomentTrayView: View {
                     }
                     .padding(.horizontal, 16)
                 }
+                .scrollIndicators(.hidden)
                 statusLine
             case .stickers:
                 stickers
@@ -75,7 +76,7 @@ struct MomentTrayView: View {
     }
 
     private var stickers: some View {
-        ScrollView(.horizontal, showsIndicators: false) {
+        ScrollView(.horizontal) {
             HStack(spacing: 12) {
                 ForEach(PearStickers.cached, id: \.item.id) { entry in
                     StickerCell(sticker: entry.sticker)
@@ -85,6 +86,7 @@ struct MomentTrayView: View {
             }
             .padding(.horizontal, 16)
         }
+        .scrollIndicators(.hidden)
     }
 
     /// Somebody else's bubble, tapped: their moment, offered back. Only when
@@ -242,16 +244,16 @@ struct MomentTrayView: View {
                     if model.status == .logging(moment.id) {
                         ProgressView()
                     } else {
-                        Text(moment.emoji).font(.system(size: 30))
+                        Text(moment.emoji).font(.title)
                     }
                 }
-                .frame(height: 36)
+                .frame(minHeight: 36)
                 Text(moment.label)
                     .font(.caption2)
                     .foregroundStyle(PearColor.textSecondary)
                     .lineLimit(1)
             }
-            .frame(width: 76)
+            .frame(minWidth: 76)
             .padding(.vertical, 8)
         }
         .buttonStyle(.plain)

@@ -91,7 +91,7 @@ final class RecapWaterStreakFlowTests: XCTestCase {
 
         model.updateWaterConfig { $0.setRecommended(3000) }
         for _ in 0..<50 where RecapStubProtocol.recapRequests == before {
-            try? await Task.sleep(nanoseconds: 20_000_000)
+            try? await Task.sleep(for: .milliseconds(20))
         }
 
         XCTAssertEqual(RecapStubProtocol.recapRequests, before + 1)
@@ -104,7 +104,7 @@ final class RecapWaterStreakFlowTests: XCTestCase {
         let before = RecapStubProtocol.recapRequests
 
         model.updateWaterConfig { $0.addPreset(250) }
-        try? await Task.sleep(nanoseconds: 100_000_000)
+        try? await Task.sleep(for: .milliseconds(100))
 
         XCTAssertEqual(RecapStubProtocol.recapRequests, before)
     }

@@ -31,7 +31,7 @@ public extension MomentInbox {
                 remove(ids: [moment.id])
             }
         }
-        return load().filter(\.isPlainMoment).count
+        return load().count(where: \.isPlainMoment)
     }
 }
 

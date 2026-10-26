@@ -466,11 +466,10 @@ final class HistoryModel {
     /// label of the moment it is — mirroring the server's note/kind match so a
     /// search for "coffee" finds a queued coffee as it would a sent one.
     private func pendingMatchesSearch(_ send: PendingSend) -> Bool {
-        let options: String.CompareOptions = [.caseInsensitive, .diacriticInsensitive]
-        if send.note.range(of: filter.search, options: options) != nil { return true }
+        if send.note.localizedStandardContains(filter.search) { return true }
         if filter.searchKinds.contains(send.kind.rawValue) { return true }
         let label = MomentCatalogue.label(for: send.kind, customKinds: customKinds)
-        return label.range(of: filter.search, options: options) != nil
+        return label.localizedStandardContains(filter.search)
     }
 
     /// True for a timeline row that is a moment queued on this device, not yet

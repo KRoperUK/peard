@@ -29,7 +29,7 @@ struct ConnectionSettingsView: View {
     @State private var editingQueued: PendingSend?
     @State private var deletingQueued: PendingSend?
     @State private var isExporting = false
-    @State private var exportFileURL: URL?
+    @State private var exportedFile: ShareableFile?
     @State private var exportError: String?
     @State private var discoverable = false
     @State private var phoneText = ""
@@ -94,13 +94,8 @@ struct ConnectionSettingsView: View {
             .sheet(isPresented: $showInviteSheet) {
                 InviteSheet(pairID: model.pairID, connectionTitle: model.connectionTitle)
             }
-            .sheet(isPresented: Binding(
-                get: { exportFileURL != nil },
-                set: { if !$0 { exportFileURL = nil } }
-            )) {
-                if let exportFileURL {
-                    ActivityView(activityItems: [exportFileURL])
-                }
+            .sheet(item: $exportedFile) { file in
+                ActivityView(activityItems: [file.url])
             }
             .alert(
                 "Export failed",
@@ -729,7 +724,7 @@ struct ConnectionSettingsView: View {
                 let data = try await app.api.data(path: "/api/peard/export")
                 try data.write(to: url, options: .atomic)
             }
-            exportFileURL = url
+            exportedFile = ShareableFile(url: url)
         } catch {
             exportError = APIError.userMessage(for: error)
         }

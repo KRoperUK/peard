@@ -50,7 +50,7 @@ private struct MomentChip: View {
         .padding(.horizontal, 6)
         .padding(.vertical, 2)
         .background(PearColor.surface, in: Capsule())
-        .overlay(Capsule().strokeBorder(PearColor.divider))
+        .overlay { Capsule().strokeBorder(PearColor.divider) }
         .fixedSize()
         .accessibilityElement(children: .ignore)
     }

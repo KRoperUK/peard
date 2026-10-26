@@ -68,23 +68,18 @@ struct MomentBreakdownRow: View {
 
     /// Two-tone, so who logged them is visible without reading the numbers.
     ///
-    /// `GeometryReader` because the widths are fractions of whatever the row turns
-    /// out to be, and a proportional split of available space is the one thing
-    /// stack layout will not do.
+    /// The segments are fractions of the row, which stack layout will not do —
+    /// hence the container-relative frames rather than a `GeometryReader`.
     private var shareBar: some View {
-        GeometryReader { geometry in
-            let width = geometry.size.width
-            let bar = BreakdownBarFractions(mine: mine, others: others, busiest: busiest)
-            HStack(spacing: mine > 0 && others > 0 ? 1 : 0) {
-                Capsule()
-                    .fill(PearColor.accent)
-                    .frame(width: bar.mine * width)
-                Capsule()
-                    .fill(PearColor.accent.opacity(0.35))
-                    .frame(width: bar.others * width)
-                Spacer(minLength: 0)
-            }
-            .frame(height: 5)
+        let bar = BreakdownBarFractions(mine: mine, others: others, busiest: busiest)
+        return HStack(spacing: mine > 0 && others > 0 ? 1 : 0) {
+            Capsule()
+                .fill(PearColor.accent)
+                .containerRelativeFrame(.horizontal) { width, _ in bar.mine * width }
+            Capsule()
+                .fill(PearColor.accent.opacity(0.35))
+                .containerRelativeFrame(.horizontal) { width, _ in bar.others * width }
+            Spacer(minLength: 0)
         }
         .frame(height: 5)
         .background(PearColor.divider.opacity(0.4), in: Capsule())
@@ -141,7 +136,7 @@ struct MomentBreakdownPicker: View {
         }
         .pickerStyle(.segmented)
         .accessibilityLabel("Tally period")
-        .onChange(of: window) { Haptics.play(.changedPeriod) }
+        .sensoryFeedback(.selection, trigger: window)
     }
 }
 
@@ -343,27 +338,40 @@ struct WaterProgressBar: View {
 
     var body: some View {
         VStack(alignment: .leading, spacing: 4) {
-            GeometryReader { geometry in
-                let width = geometry.size.width
-                ZStack(alignment: .leading) {
-                    Capsule().fill(PearColor.divider.opacity(0.4))
-                    Capsule().fill(fill).frame(width: progress.fraction * width)
-                    Rectangle()
-                        .fill(PearColor.textSecondary)
-                        .frame(width: 2, height: 9)
-                        .offset(x: progress.minimumFraction * width - 1)
-                }
+            ZStack(alignment: .leading) {
+                Capsule().fill(PearColor.divider.opacity(0.4))
+                Capsule().fill(fill)
+                    .containerRelativeFrame(.horizontal) { width, _ in progress.fraction * width }
+                // The minimum marker sits centred on its fraction: the frame
+                // ends one point past it and the 2-point mark hangs off the
+                // frame's trailing edge, which lands where the offset did.
+                Rectangle()
+                    .fill(PearColor.textSecondary)
+                    .frame(width: 2, height: 9)
+                    .containerRelativeFrame(.horizontal, alignment: .trailing) { width, _ in
+                        progress.minimumFraction * width + 1
+                    }
             }
             .frame(height: 9)
             .accessibilityHidden(true)
 
             if progress.isRecommendedMet {
-                Label("Goal met", systemImage: "checkmark.circle.fill")
-                    .font(.caption2.bold())
-                    .foregroundStyle(PearColor.onAccent)
-                    .padding(.horizontal, 6)
-                    .padding(.vertical, 2)
-                    .background(PearColor.accent, in: Capsule())
+                // Laid out by hand like `MomentChip` rather than as a `Label`:
+                // the label's full-size icon carries symbol padding that made
+                // the text sit off-centre in the pill (#456).
+                HStack(spacing: 3) {
+                    Image(systemName: "checkmark.circle.fill")
+                        .imageScale(.small)
+                    Text("Goal met")
+                        .lineLimit(1)
+                }
+                .font(.caption2.bold())
+                .foregroundStyle(PearColor.onAccent)
+                .padding(.horizontal, 6)
+                .padding(.vertical, 2)
+                .background(PearColor.accent, in: Capsule())
+                .fixedSize()
+                .accessibilityLabel("Goal met")
             } else {
                 Text(MomentBreakdownCopy.waterProgress(progress, unit: unit))
                     .font(.caption2)

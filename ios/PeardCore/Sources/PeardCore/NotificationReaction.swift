@@ -59,7 +59,7 @@ public struct NotificationReaction: Equatable, Sendable {
         userID: String,
         attempts: Int = 3,
         send: (_ fields: [String: String]) async throws -> Void,
-        sleep: (_ seconds: Double) async -> Void = { try? await Task.sleep(nanoseconds: UInt64($0 * 1_000_000_000)) }
+        sleep: (_ seconds: Double) async -> Void = { try? await Task.sleep(for: .seconds($0)) }
     ) async -> Bool {
         guard !userID.isEmpty else { return false }
         let body = fields(userID: userID)

@@ -194,7 +194,7 @@ struct SquarePhotoEditor: View {
                 .frame(width: filled.size.width, height: filled.size.height)
                 .rotationEffect(.degrees(Double(edit.quarterTurns) * 90))
                 .blur(radius: PhotoSquare.backdropBlur * side / PhotoSquare.side, opaque: true)
-                .overlay(Color.black.opacity(0.25))
+                .overlay { Color.black.opacity(0.25) }
         } else {
             Color.black
         }

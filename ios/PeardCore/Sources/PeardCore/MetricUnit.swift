@@ -34,10 +34,12 @@ public enum MetricUnit: String, CaseIterable, Sendable {
         }
     }
 
-    /// The unit's full name, for spoken labels.
-    public var spokenName: String {
+    /// The unit's full name, for spoken labels. A bare count has no noun of
+    /// its own — steps, flights, glasses, a connection's custom kind — so the
+    /// caller's label supplies it; anything else reads as the wrong thing.
+    public func spokenName(label: String) -> String {
         switch self {
-        case .count: return "steps"
+        case .count: return label.lowercased()
         case .minutes: return "minutes"
         case .millilitres: return "millilitres"
         }

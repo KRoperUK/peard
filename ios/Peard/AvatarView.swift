@@ -62,7 +62,7 @@ struct AvatarView: View {
         if let image {
             Image(uiImage: image).resizable().scaledToFill()
         } else if isLoading {
-            placeholder.overlay(ProgressView().scaleEffect(0.6))
+            placeholder.overlay { ProgressView().scaleEffect(0.6) }
         } else {
             // A photo that will not load is not the same as no photo, but an error
             // glyph in a rail is noise: fall back to what the subject would have

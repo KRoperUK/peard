@@ -204,7 +204,7 @@ final class SendQueueTests: XCTestCase {
         let counter = Counter()
 
         async let first = queue.flush { _ in
-            try? await Task.sleep(nanoseconds: 50_000_000)
+            try? await Task.sleep(for: .milliseconds(50))
             await counter.increment()
         }
         async let second = queue.flush { _ in await counter.increment() }
@@ -245,11 +245,11 @@ final class SendQueueTests: XCTestCase {
 
         let flush = Task {
             await queue.flush { _ in
-                try? await Task.sleep(nanoseconds: 5_000_000_000)
+                try? await Task.sleep(for: .seconds(5))
                 throw APIError.transport("The network connection was lost.")
             }
         }
-        try? await Task.sleep(nanoseconds: 50_000_000)
+        try? await Task.sleep(for: .milliseconds(50))
         flush.cancel()
         let result = await flush.value
 

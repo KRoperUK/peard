@@ -145,11 +145,11 @@ struct AuthView: View {
             label(for: .google, title: String(localized: "G   Continue with Google"), tint: Color(rgb: 0x333333))
         }
         .buttonStyle(.plain)
-        .background(
+        .background {
             RoundedRectangle(cornerRadius: 12)
                 .fill(.white)
                 .strokeBorder(Color(rgb: 0xDDDDDD))
-        )
+        }
         .disabled(busy != nil)
         .accessibilityLabel("Continue with Google")
     }
@@ -164,7 +164,7 @@ struct AuthView: View {
                 .foregroundStyle(PearColor.textPrimary)
                 .padding(14)
                 .background(PearColor.surface, in: RoundedRectangle(cornerRadius: 12))
-                .overlay(RoundedRectangle(cornerRadius: 12).strokeBorder(PearColor.divider))
+                .overlay { RoundedRectangle(cornerRadius: 12).strokeBorder(PearColor.divider) }
 
             SecureField("", text: $password, prompt: Text("Password").foregroundStyle(PearColor.textTertiary))
                 // `.newPassword` on sign-up so the keychain offers to generate
@@ -174,7 +174,7 @@ struct AuthView: View {
                 .foregroundStyle(PearColor.textPrimary)
                 .padding(14)
                 .background(PearColor.surface, in: RoundedRectangle(cornerRadius: 12))
-                .overlay(RoundedRectangle(cornerRadius: 12).strokeBorder(PearColor.divider))
+                .overlay { RoundedRectangle(cornerRadius: 12).strokeBorder(PearColor.divider) }
 
             if emailMode == .signUp {
                 // Stated up front rather than discovered by being rejected:
@@ -229,10 +229,10 @@ struct AuthView: View {
                 .font(.footnote.bold())
         }
         .buttonStyle(.plain)
-        .background(
+        .background {
             RoundedRectangle(cornerRadius: 12)
                 .strokeBorder(PearColor.accent, style: StrokeStyle(lineWidth: 1, dash: [4]))
-        )
+        }
         .disabled(busy != nil)
     }
     #endif

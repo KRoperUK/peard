@@ -240,7 +240,7 @@ struct PearWidgetEntryView: View {
     /// twice.
     private var unreadBadge: some View {
         Text(entry.unreadCount > 9 ? "9+" : "\(entry.unreadCount)")
-            .font(.system(size: 10, weight: .bold))
+            .font(.caption2.bold())
             .foregroundStyle(PearColor.onAccent)
             .monospacedDigit()
             .padding(.horizontal, 4)
@@ -300,7 +300,7 @@ struct PearWidgetEntryView: View {
                     Image(systemName: symbol)
                         .font(.caption.bold())
                         .foregroundStyle(pendingLog.outcome == .failed ? PearColor.error : PearColor.accent)
-                        .background(Circle().fill(PearColor.background))
+                        .background { Circle().fill(PearColor.background) }
                         .offset(x: 6, y: 4)
                 }
             }

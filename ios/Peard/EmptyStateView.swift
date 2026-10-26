@@ -15,10 +15,12 @@ struct EmptyStateView: View {
     var actionTitle: String?
     var action: (() -> Void)?
 
+    @ScaledMetric(relativeTo: .title) private var symbolSize: CGFloat = 40
+
     var body: some View {
         VStack(spacing: 12) {
             Image(systemName: symbol)
-                .font(.system(size: 40, weight: .regular))
+                .font(.system(size: symbolSize, weight: .regular))
                 .foregroundStyle(PearColor.accent)
                 .padding(18)
                 .background(PearColor.accent.opacity(0.12), in: Circle())
@@ -49,6 +51,8 @@ struct EmptyStateView: View {
         .frame(maxWidth: .infinity)
         .padding(.vertical, 28)
         .padding(.horizontal, 24)
-        .accessibilityElement(children: .combine)
+        // Contain, never combine: combining would merge the action button into
+        // the text, and VoiceOver could no longer activate it (#452).
+        .accessibilityElement(children: .contain)
     }
 }

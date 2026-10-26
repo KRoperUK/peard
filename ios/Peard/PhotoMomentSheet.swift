@@ -157,7 +157,7 @@ struct PhotoMomentSheet: View {
                 Image(systemName: "rotate.right")
                     .font(.body.weight(.medium))
                     .foregroundStyle(PearColor.textPrimary)
-                    .frame(width: 44, height: 32)
+                    .frame(minWidth: 44, minHeight: 44)
                     .background(PearColor.surface, in: RoundedRectangle(cornerRadius: 8))
             }
             .buttonStyle(.plain)
@@ -174,7 +174,7 @@ struct PhotoMomentSheet: View {
                     Image(systemName: "arrow.counterclockwise")
                         .font(.body.weight(.medium))
                         .foregroundStyle(PearColor.textPrimary)
-                        .frame(width: 44, height: 32)
+                        .frame(minWidth: 44, minHeight: 44)
                         .background(PearColor.surface, in: RoundedRectangle(cornerRadius: 8))
                 }
                 .buttonStyle(.plain)
@@ -221,7 +221,8 @@ struct PhotoMomentSheet: View {
                 .accessibilityLabel("Caption")
 
             if caption.count > 200 {
-                Text("\(PostNote.limit - caption.count) characters left")
+                let left = PostNote.limit - caption.count
+                Text(left == 1 ? String(localized: "1 character left") : String(localized: "\(left) characters left"))
                     .font(.caption)
                     .foregroundStyle(PearColor.textTertiary)
             }

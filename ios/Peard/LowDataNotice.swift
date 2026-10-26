@@ -31,6 +31,8 @@ struct LowDataNotice: View {
                 Image(systemName: "xmark")
                     .font(.footnote.bold())
                     .foregroundStyle(PearColor.textTertiary)
+                    .frame(minWidth: 44, minHeight: 44)
+                    .contentShape(Rectangle())
             }
             .buttonStyle(.plain)
             .accessibilityLabel("Dismiss")

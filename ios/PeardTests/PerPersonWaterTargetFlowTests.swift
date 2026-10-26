@@ -69,12 +69,12 @@ final class PerPersonWaterTargetFlowTests: XCTestCase {
     /// for a guess at how long it takes.
     private func eventually(_ condition: () -> Bool) async {
         for _ in 0..<100 where !condition() {
-            try? await Task.sleep(nanoseconds: 20_000_000)
+            try? await Task.sleep(for: .milliseconds(20))
         }
     }
 
     private func settle() async {
-        try? await Task.sleep(nanoseconds: 150_000_000)
+        try? await Task.sleep(for: .milliseconds(150))
     }
 
     // MARK: Writing your own

@@ -18,32 +18,36 @@ struct ReplyChip: View {
     let onOpen: (Post) -> Void
 
     var body: some View {
-        HStack(spacing: 4) {
-            Image(systemName: "arrowshape.turn.up.left.fill")
-                .imageScale(.small)
-            if let original, let path = original.mediaThumbnailPath() {
-                ProtectedImage(serverURL: serverURL, path: path) {
-                    Color.clear
-                } failure: {
-                    Text("📷").font(.caption2)
-                }
-                .scaledToFill()
-                .frame(width: 18, height: 18)
-                .clipShape(RoundedRectangle(cornerRadius: 4))
-            }
-            Text(title)
-                .lineLimit(1)
-        }
-        .font(.caption2.bold())
-        .foregroundStyle(PearColor.textSecondary)
-        .padding(.horizontal, 6)
-        .padding(.vertical, 2)
-        .background(PearColor.surface, in: Capsule())
-        .overlay(Capsule().strokeBorder(PearColor.divider))
-        .contentShape(Capsule())
-        .onTapGesture {
+        Button {
             if let original, original.hasMedia { onOpen(original) }
+        } label: {
+            HStack(spacing: 4) {
+                Image(systemName: "arrowshape.turn.up.left.fill")
+                    .imageScale(.small)
+                if let original, let path = original.mediaThumbnailPath() {
+                    ProtectedImage(serverURL: serverURL, path: path) {
+                        Color.clear
+                    } failure: {
+                        Text("📷").font(.caption)
+                    }
+                    .scaledToFill()
+                    .frame(width: 18, height: 18)
+                    .clipShape(RoundedRectangle(cornerRadius: 4))
+                }
+                Text(title)
+                    .lineLimit(1)
+            }
+            .font(.caption.bold())
+            .foregroundStyle(PearColor.textSecondary)
+            .padding(.horizontal, 6)
+            .padding(.vertical, 2)
+            .background(PearColor.surface, in: Capsule())
+            .overlay { Capsule().strokeBorder(PearColor.divider) }
+            // The pill stays compact; the 44 points are tap area, not chrome.
+            .frame(minHeight: 44)
         }
+        .buttonStyle(.plain)
+        .contentShape(Capsule())
         .accessibilityElement(children: .ignore)
         .accessibilityLabel(title)
     }

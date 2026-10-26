@@ -9,14 +9,11 @@ import SwiftUI
 /// sent in millilitres whichever is chosen, so nothing already logged moves and
 /// no past total changes.
 struct WaterUnitSection: View {
-    let app: AppModel
+    @Bindable var app: AppModel
 
     var body: some View {
         Section {
-            Picker("Water units", selection: Binding(
-                get: { app.waterUnit },
-                set: { app.waterUnit = $0 }
-            )) {
+            Picker("Water units", selection: $app.waterUnit) {
                 ForEach(WaterUnit.allCases, id: \.self) { unit in
                     Text(unit.symbol).tag(unit)
                 }

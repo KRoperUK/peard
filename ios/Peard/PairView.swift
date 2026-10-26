@@ -115,10 +115,10 @@ struct PairView: View {
                     .foregroundStyle(PearColor.accent)
                     .padding(.vertical, 10)
                     .padding(.horizontal, 20)
-                    .overlay(
+                    .overlay {
                         RoundedRectangle(cornerRadius: 10)
                             .strokeBorder(PearColor.accent)
-                    )
+                    }
             }
         } else {
             Button {
@@ -142,7 +142,7 @@ struct PairView: View {
                 .foregroundStyle(PearColor.textPrimary)
                 .padding(14)
                 .background(PearColor.surface, in: RoundedRectangle(cornerRadius: 12))
-                .overlay(RoundedRectangle(cornerRadius: 12).strokeBorder(PearColor.divider))
+                .overlay { RoundedRectangle(cornerRadius: 12).strokeBorder(PearColor.divider) }
                 .accessibilityLabel("Pairing code")
                 .onChange(of: code) { _, newValue in
                     // Requirement 10.3 — exactly six upper-case characters.

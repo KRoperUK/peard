@@ -111,9 +111,12 @@ enum ContactsReader {
     /// identifiable by, because "A contact" repeated eleven times is a list
     /// nobody can pick from.
     private static func displayName(for contact: CNContact) -> String {
-        let name = [contact.givenName, contact.familyName]
-            .filter { !$0.isEmpty }
-            .joined(separator: " ")
+        // Structured, not interpolated: the formatter orders given and family
+        // names for the locale instead of assuming "given family".
+        var components = PersonNameComponents()
+        if !contact.givenName.isEmpty { components.givenName = contact.givenName }
+        if !contact.familyName.isEmpty { components.familyName = contact.familyName }
+        let name = PersonNameComponentsFormatter().string(from: components)
         if !name.isEmpty { return name }
         if !contact.organizationName.isEmpty { return contact.organizationName }
         if let email = contact.emailAddresses.first { return String(email.value) }

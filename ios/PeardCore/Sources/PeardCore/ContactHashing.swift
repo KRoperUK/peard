@@ -45,6 +45,17 @@ public enum ContactHashing {
     }
 
     private static func hash(_ value: String) -> String {
-        SHA256.hash(data: Data(value.utf8)).map { String(format: "%02x", $0) }.joined()
+        SHA256.hash(data: Data(value.utf8)).hexString
+    }
+}
+
+/// Lower-case hexadecimal for a byte sequence: digests and device tokens.
+/// A nibble table rather than `String(format:)` per byte, which pays the
+/// formatter's price on every one of the thirty-two.
+private let hexDigits = Array("0123456789abcdef")
+
+extension Sequence where Element == UInt8 {
+    public var hexString: String {
+        String(flatMap { [hexDigits[Int($0 >> 4)], hexDigits[Int($0 & 0xF)]] })
     }
 }

@@ -158,7 +158,7 @@ final class LiveActivityCoordinator {
     }
 
     private static func hex(_ data: Data) -> String {
-        data.map { String(format: "%02x", $0) }.joined()
+        data.hexString
     }
 
     private struct Identified: Codable, Hashable, Sendable { let id: String }
