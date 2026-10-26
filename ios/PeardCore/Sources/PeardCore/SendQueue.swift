@@ -172,7 +172,7 @@ public actor SendQueue {
     /// For editing what a send says before it goes (#313). The transform must
     /// return a send with the same `id`: that is what the photo file, the
     /// timeline row and the server's idempotency key are all keyed on.
-    public func update(id: String, _ transform: (PendingSend) -> PendingSend) async {
+    public func update(id: String, _ transform: @Sendable (PendingSend) -> PendingSend) async {
         guard let index = sends.firstIndex(where: { $0.id == id }) else { return }
         sends[index] = transform(sends[index])
         persist()

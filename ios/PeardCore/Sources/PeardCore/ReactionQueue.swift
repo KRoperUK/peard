@@ -143,9 +143,9 @@ public actor ReactionQueue {
     @discardableResult
     public func drain(
         now: Date = Date(),
-        send: (_ fields: [String: String]) async throws -> Void
+        send: @Sendable (_ fields: [String: String]) async throws -> Void
     ) async -> Int {
-        var pending = store.loadPendingReactions().sorted { $0.tappedAt < $1.tappedAt }
+        let pending = store.loadPendingReactions().sorted { $0.tappedAt < $1.tappedAt }
         var delivered = 0
         var survivors: [PendingReaction] = []
         for reaction in pending {
@@ -162,7 +162,6 @@ public actor ReactionQueue {
                 survivors.append(reaction) // retryable: keep for next launch
             }
         }
-        _ = pending
         store.savePendingReactions(survivors)
         return delivered
     }

@@ -238,7 +238,12 @@ struct HistoryView: View {
     }
 
     private var timeline: some View {
-        List {
+        // Once per render, not once per row: both walk the timeline, and
+        // evaluating them inside the loop below made every render quadratic
+        // in the number of moments on screen (#448).
+        let firstNew = model.firstNewPostID
+        let stray = model.strayNewPostIDs
+        return List {
             ForEach(model.days) { day in
                 Section {
                     ForEach(day.posts) { post in
@@ -246,10 +251,10 @@ struct HistoryView: View {
                         // "seen" from "new" the way it reads on screen: the
                         // timeline is newest-first, so everything above it is
                         // what arrived while you were away.
-                        if post.id == model.firstNewPostID {
+                        if post.id == firstNew {
                             newMomentsDivider
                         }
-                        row(for: post)
+                        row(for: post, strayNewPostIDs: stray)
                     }
                 } header: {
                     Text(model.heading(for: day))
@@ -315,17 +320,13 @@ struct HistoryView: View {
         .accessibilityLabel("New since you last looked")
     }
 
-    private func row(for post: Post) -> some View {
+    private func row(for post: Post, strayNewPostIDs: Set<String>) -> some View {
         HStack(alignment: .top, spacing: 12) {
             // Only the thumbnail opens the photo, not the whole row: the row is
             // also the swipe and long-press target, and a tap that opened a
             // full-screen view from anywhere on it would fire every time
             // somebody meant to start a swipe.
-            thumbnail(for: post)
-                .onTapGesture {
-                    if post.hasMedia { viewing = post }
-                }
-                .photoZoomSource(id: post.id, in: photoZoom)
+            thumbnailButton(for: post)
 
             VStack(alignment: .leading, spacing: 2) {
                 HStack(spacing: 5) {
@@ -380,7 +381,7 @@ struct HistoryView: View {
             Spacer(minLength: 4)
 
             VStack(alignment: .trailing, spacing: 4) {
-                timeLabel(for: post)
+                timeLabel(for: post, strayNewPostIDs: strayNewPostIDs)
                 // An always-visible tap target for reacting, not only the swipe
                 // and long-press the row already offers (#363). Those are the
                 // iOS conventions a practised thumb reaches for, but they are
@@ -396,7 +397,7 @@ struct HistoryView: View {
         .padding(.vertical, 4)
         .listRowBackground(PearColor.background)
         .accessibilityElement(children: .combine)
-        .accessibilityLabel(accessibilityLabel(for: post))
+        .accessibilityLabel(accessibilityLabel(for: post, strayNewPostIDs: strayNewPostIDs))
         // The combined element swallows the thumbnail's own tap target, so
         // VoiceOver gets the photo as a named action instead of losing it.
         .accessibilityActions {
@@ -423,9 +424,9 @@ struct HistoryView: View {
         ))
     }
 
-    private func timeLabel(for post: Post) -> some View {
+    private func timeLabel(for post: Post, strayNewPostIDs: Set<String>) -> some View {
         HStack(spacing: 4) {
-            if model.strayNewPostIDs.contains(post.id) {
+            if strayNewPostIDs.contains(post.id) {
                 Circle()
                     .fill(PearColor.accent)
                     .frame(width: 6, height: 6)
@@ -466,7 +467,7 @@ struct HistoryView: View {
         .accessibilityLabel("React to this moment")
     }
 
-    private func accessibilityLabel(for post: Post) -> String {
+    private func accessibilityLabel(for post: Post, strayNewPostIDs: Set<String>) -> String {
         var parts = [model.authorLabel(for: post), model.detail(for: post)]
         if post.hasMedia { parts.append(String(localized: "photo")) }
         if post.replyTo != nil { parts.append(model.replyTitle(for: post)) }
@@ -474,12 +475,28 @@ struct HistoryView: View {
         if model.isPending(post) {
             parts.append(model.pendingIndicatorIsOffline ? String(localized: "waiting to send") : String(localized: "sending"))
         }
-        if model.strayNewPostIDs.contains(post.id) { parts.append(String(localized: "new")) }
+        if strayNewPostIDs.contains(post.id) { parts.append(String(localized: "new")) }
         if post.rewound { parts.append(RewoundChip.accessibilityLabel(loggedAt: post.created)) }
         let time = model.time(for: post)
         if !time.isEmpty { parts.append(time) }
         if let reactions = model.spokenReactions(for: post) { parts.append(reactions) }
         return parts.joined(separator: ", ")
+    }
+
+    /// A real button on photo posts rather than a tap gesture, so Switch
+    /// Control and Voice Control can activate it too (#448).
+    private func thumbnailButton(for post: Post) -> some View {
+        Group {
+            if post.hasMedia {
+                Button { viewing = post } label: {
+                    thumbnail(for: post)
+                }
+                .buttonStyle(.plain)
+            } else {
+                thumbnail(for: post)
+            }
+        }
+        .photoZoomSource(id: post.id, in: photoZoom)
     }
 
     @ViewBuilder

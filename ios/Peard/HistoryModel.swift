@@ -87,10 +87,14 @@ final class HistoryModel {
     }
 
     /// The people who could be filtered on: everybody in the connection, the
-    /// signed-in user first because "just mine" is the commonest question.
+    /// signed-in user first because "just mine" is the commonest question. A
+    /// stable partition, not a sort: "you" is not a strict weak ordering, and
+    /// anything else keeps the connection's own order.
     var filterableMembers: [Connection.Member] {
         guard let connection else { return [] }
-        return connection.members.sorted { lhs, _ in lhs.user == signedInUserID }
+        let members = connection.members
+        return members.filter { $0.user == signedInUserID }
+            + members.filter { $0.user != signedInUserID }
     }
 
     func memberLabel(_ member: Connection.Member) -> String {
@@ -489,18 +493,40 @@ final class HistoryModel {
     /// signal, online ones are on their way up. Matches the home screen's hero.
     var pendingIndicatorIsOffline: Bool { isOffline() }
 
+    /// The day and time formatters, built once: constructing one per section
+    /// and row turned every scroll into hundreds of formatter builds (#448).
+    /// The calendar is fixed for the model's life; the locale is re-read, so
+    /// a mid-session locale switch rebuilds them rather than formatting on.
+    private var formattersLocaleID: String?
+    private var dayFormatter = DateFormatter()
+    private var fullDayFormatter = DateFormatter()
+    private var timeFormatter = DateFormatter()
+
+    private func formatters() -> (day: DateFormatter, fullDay: DateFormatter, time: DateFormatter) {
+        if formattersLocaleID != Locale.current.identifier {
+            for (formatter, template) in [
+                (dayFormatter, "EEEE d MMMM"),
+                (fullDayFormatter, "d MMMM yyyy"),
+                (timeFormatter, "HH:mm"),
+            ] as [(DateFormatter, String)] {
+                formatter.calendar = calendar
+                formatter.locale = .current
+                formatter.setLocalizedDateFormatFromTemplate(template)
+            }
+            formattersLocaleID = Locale.current.identifier
+        }
+        return (dayFormatter, fullDayFormatter, timeFormatter)
+    }
+
     func heading(for day: Day) -> String {
         guard day.date != .distantPast else { return String(localized: "Undated") }
         if calendar.isDateInToday(day.date) { return String(localized: "Today") }
         if calendar.isDateInYesterday(day.date) { return String(localized: "Yesterday") }
 
-        let formatter = DateFormatter()
-        formatter.calendar = calendar
-        formatter.locale = .current
         // Drop the year for the current one: "12 March" reads better than
         // "12 March 2026" when there is only one 12 March in view.
         let sameYear = calendar.component(.year, from: day.date) == calendar.component(.year, from: Date())
-        formatter.setLocalizedDateFormatFromTemplate(sameYear ? "EEEE d MMMM" : "d MMMM yyyy")
+        let formatter = sameYear ? formatters().day : formatters().fullDay
         return formatter.string(from: day.date)
     }
 
@@ -529,11 +555,7 @@ final class HistoryModel {
 
     func time(for post: Post) -> String {
         guard post.hasTimestamp else { return "" }
-        let formatter = DateFormatter()
-        formatter.calendar = calendar
-        formatter.locale = .current
-        formatter.setLocalizedDateFormatFromTemplate("HH:mm")
-        return formatter.string(from: post.happenedAt)
+        return formatters().time.string(from: post.happenedAt)
     }
 
     // MARK: Loading

@@ -255,19 +255,29 @@ struct RecapSection: View {
         .accessibilityLabel("Busiest day, \(busiestName(busiest.date)), \(busiest.count) moments")
     }
 
+    /// Built once: the section renders the busiest day twice per recap (row
+    /// and accessibility label), and two fresh formatters per call for a
+    /// static string is pure waste (#450).
+    private static let dayParser: DateFormatter = {
+        let parser = DateFormatter()
+        parser.dateFormat = "yyyy-MM-dd"
+        parser.timeZone = .current
+        return parser
+    }()
+
+    private static let weekdayFormatter: DateFormatter = {
+        let formatter = DateFormatter()
+        formatter.locale = .current
+        formatter.setLocalizedDateFormatFromTemplate("EEEE")
+        return formatter
+    }()
+
     /// The server sends `yyyy-MM-dd` in the caller's own clock. Rendered as a
     /// weekday, which is how people remember a week — "Saturday", not "the
     /// 29th".
     private func busiestName(_ date: String) -> String {
-        let parser = DateFormatter()
-        parser.dateFormat = "yyyy-MM-dd"
-        parser.timeZone = .current
-        guard let parsed = parser.date(from: date) else { return date }
-
-        let formatter = DateFormatter()
-        formatter.locale = .current
-        formatter.setLocalizedDateFormatFromTemplate("EEEE")
-        return formatter.string(from: parsed)
+        guard let parsed = Self.dayParser.date(from: date) else { return date }
+        return Self.weekdayFormatter.string(from: parsed)
     }
 
     /// Most-logged first, as the server ranked them. Capped so a connection

@@ -187,8 +187,10 @@ public struct Post: Codable, Hashable, Sendable, Identifiable {
     /// back. `nil` for everything else, including an answer whose photo has
     /// since been deleted: the server empties the relation then.
     public let replyTo: String?
-    /// Whole millilitres, for a water moment. `nil` for every moment that has
-    /// no amount to give: the server stores those as 0, which is not an amount.
+    /// How much, in the kind's canonical unit — millilitres of water, steps,
+    /// exercise minutes — for a moment that carries one. `nil` for every
+    /// moment that has no amount to give: the server stores those as 0, which
+    /// is not an amount.
     public let amount: Int?
 
     enum CodingKeys: String, CodingKey {
@@ -196,6 +198,19 @@ public struct Post: Codable, Hashable, Sendable, Identifiable {
         case eventKind = "event_kind"
         case happenedAt = "happened_at"
         case replyTo = "reply_to"
+    }
+
+    /// The wire's sanity ceiling for an amount, mirroring the server's posts
+    /// bound: one entry cannot be absurd, but the bound is not any one
+    /// metric's — water's five litres must not drop a steps count in the
+    /// thousands (#437).
+    public static let wireAmountMaximum = 1_000_000
+
+    /// An amount worth keeping from storage or the wire: positive, and within
+    /// the wire ceiling. The server's 0 for "none" becomes nil.
+    public static func normalisedAmount(_ amount: Int?) -> Int? {
+        guard let amount, amount > 0, amount <= wireAmountMaximum else { return nil }
+        return amount
     }
 
     public init(
@@ -216,7 +231,7 @@ public struct Post: Codable, Hashable, Sendable, Identifiable {
         self.id = id
         self.pair = pair
         self.replyTo = replyTo
-        self.amount = WaterAmount.normalised(amount)
+        self.amount = Self.normalisedAmount(amount)
         self.author = author
         self.type = type
         self.eventKind = eventKind
@@ -262,7 +277,7 @@ public struct Post: Codable, Hashable, Sendable, Identifiable {
         self.replyTo = replyTo?.isEmpty == false ? replyTo : nil
         // Absent on a server predating amounts, and 0 on every moment without
         // one; neither is an amount.
-        amount = WaterAmount.normalised(try? container.decodeIfPresent(Int.self, forKey: .amount))
+        amount = Self.normalisedAmount(try? container.decodeIfPresent(Int.self, forKey: .amount))
     }
 
     /// True when this post carries a real server timestamp.

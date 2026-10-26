@@ -74,4 +74,26 @@ final class MetricAmountTests: XCTestCase {
 
         XCTAssertNil(send.amount)
     }
+
+    // MARK: Reading back
+
+    /// A steps moment of 8,000 comes back with its amount: the read path
+    /// allows up to the wire ceiling, not water's five litres (#437).
+    func testAStepAmountSurvivesTheReadBack() throws {
+        let json = Data("""
+        { "id": "p1", "pair": "pair1", "author": "me", "type": "event", "event_kind": "steps", "amount": 8000 }
+        """.utf8)
+
+        XCTAssertEqual(try JSONDecoder.peard.decode(Post.self, from: json).amount, 8000)
+    }
+
+    /// …while the wire's own sanity bound still applies on the way in: the
+    /// server could never have stored more, so more is corrupt, not an amount.
+    func testAnAbsurdAmountIsDroppedOnRead() throws {
+        let json = Data("""
+        { "id": "p1", "pair": "pair1", "author": "me", "type": "event", "event_kind": "steps", "amount": 1000001 }
+        """.utf8)
+
+        XCTAssertNil(try JSONDecoder.peard.decode(Post.self, from: json).amount)
+    }
 }

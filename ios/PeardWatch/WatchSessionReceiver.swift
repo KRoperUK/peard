@@ -36,7 +36,9 @@ final class WatchSessionReceiver: NSObject, WCSessionDelegate, @unchecked Sendab
     private func apply(_ context: [String: Any]) {
         WatchCredentials.apply(context, to: store)
         WidgetCenter.shared.reloadAllTimelines()
-        Task { @MainActor [onChange] in onChange?() }
+        // Read on the main actor, not captured here: this runs on the
+        // session's delegate queue while onChange is written from @MainActor.
+        Task { @MainActor [weak self] in self?.onChange?() }
     }
 
     // MARK: WCSessionDelegate

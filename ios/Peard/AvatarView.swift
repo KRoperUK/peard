@@ -115,13 +115,15 @@ struct AvatarView: View {
             let token = await app.fileTokens.current(),
             let fetchURL = URL(string: FileTokenStore.decorate(url.absoluteString, token: token)),
             let data = try? await APIClient.data(from: fetchURL),
-            let decoded = UIImage(data: data)
+            // Off the main actor: this loader runs there, and decoding every
+            // face on it is what made the rail stutter on first scroll (#450).
+            let decoded = await Task.detached(priority: .userInitiated) { UIImage(data: data) }.value
         else {
             // No signal, or no token: fall back to the bytes last stored for this
             // face, so the rail still draws offline (#313). A relaunch empties the
             // in-memory cache, so this is the only copy a cold offline launch has.
             if let persisted = app.sharedStore.cachedAvatar(forKey: avatarCacheKey),
-               let restored = UIImage(data: persisted) {
+               let restored = await Task.detached(priority: .userInitiated) { UIImage(data: persisted) }.value {
                 AvatarImageCache.shared.store(restored, for: url)
                 guard !Task.isCancelled else { return }
                 image = restored
