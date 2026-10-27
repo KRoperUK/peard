@@ -171,7 +171,7 @@ jobs:
         # newest keeps it so when the image adds one.
         run: scripts/select-newest-xcode && swift --version
 
-      - uses: ruby/setup-ruby@651ff0d62c5c79bed6d53ec518387aae20e72c1a # v1.329.0
+      - uses: ruby/setup-ruby@7f797815d8adceb1c412e7abefdd1ab4abc47a5f # v1.335.0
         with:
           # fastlane's supported range; the Gemfile pins fastlane itself.
           ruby-version: "3.3"
