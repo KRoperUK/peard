@@ -109,18 +109,24 @@ struct MetricProgressRow: View {
 
     /// Two-tone, mine against theirs, as a share of the full bar — the two
     /// segments split the width between them (a 100%-stacked bar), so the row
-    /// shows who contributed more without ever overflowing the card.
+    /// shows who contributed more.
+    ///
+    /// A `GeometryReader`, not container-relative frames: in a `Form` row the
+    /// "container" is the whole form, so the bars sized to the full width,
+    /// stretched the row, and pushed the readout off the card (#466).
     private var shareBar: some View {
         let gap: CGFloat = (mine > 0 && others > 0) ? 1 : 0
         let total = mine + others
         let mineFraction = total > 0 ? CGFloat(mine) / CGFloat(total) : 0
-        return HStack(spacing: gap) {
-            Capsule()
-                .fill(PearColor.accent)
-                .containerRelativeFrame(.horizontal) { width, _ in max(width - gap, 0) * mineFraction }
-            Capsule()
-                .fill(PearColor.accent.opacity(0.35))
-                .containerRelativeFrame(.horizontal) { width, _ in max(width - gap, 0) * (1 - mineFraction) }
+        return GeometryReader { geo in
+            HStack(spacing: gap) {
+                Capsule()
+                    .fill(PearColor.accent)
+                    .frame(width: max(geo.size.width - gap, 0) * mineFraction)
+                Capsule()
+                    .fill(PearColor.accent.opacity(0.35))
+                    .frame(width: max(geo.size.width - gap, 0) * (1 - mineFraction))
+            }
         }
         .frame(height: 5)
         .background(PearColor.divider.opacity(0.4), in: Capsule())
@@ -201,10 +207,15 @@ struct MetricProgressBar: View {
     }
 
     var body: some View {
-        ZStack(alignment: .leading) {
-            Capsule().fill(PearColor.divider.opacity(0.4))
-            Capsule().fill(fill)
-                .containerRelativeFrame(.horizontal) { width, _ in progress.fraction * width }
+        // A GeometryReader, not a container-relative frame: in a Form row the
+        // "container" is the whole form, so the bar sized to the full width
+        // and stretched the row (#466).
+        GeometryReader { geo in
+            ZStack(alignment: .leading) {
+                Capsule().fill(PearColor.divider.opacity(0.4))
+                Capsule().fill(fill)
+                    .frame(width: progress.fraction * geo.size.width)
+            }
         }
         .frame(height: 9)
         .accessibilityHidden(true)

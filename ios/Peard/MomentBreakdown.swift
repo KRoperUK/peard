@@ -69,18 +69,24 @@ struct MomentBreakdownRow: View {
 
     /// Two-tone, so who logged them is visible without reading the numbers.
     ///
-    /// The segments are fractions of the row, which stack layout will not do —
-    /// hence the container-relative frames rather than a `GeometryReader`.
+    /// The segments are fractions of the row, which stack layout will not do.
+    /// A `GeometryReader`, not container-relative frames: in a `Form` row the
+    /// "container" is the whole form, so the bars sized to the full width,
+    /// stretched the row, and pushed the count off the card (#466).
     private var shareBar: some View {
         let bar = BreakdownBarFractions(mine: mine, others: others, busiest: busiest)
-        return HStack(spacing: mine > 0 && others > 0 ? 1 : 0) {
-            Capsule()
-                .fill(PearColor.accent)
-                .containerRelativeFrame(.horizontal) { width, _ in bar.mine * width }
-            Capsule()
-                .fill(PearColor.accent.opacity(0.35))
-                .containerRelativeFrame(.horizontal) { width, _ in bar.others * width }
-            Spacer(minLength: 0)
+        let gap: CGFloat = mine > 0 && others > 0 ? 1 : 0
+        return GeometryReader { geo in
+            let widths = bar.widths(in: geo.size.width, gap: gap)
+            HStack(spacing: gap) {
+                Capsule()
+                    .fill(PearColor.accent)
+                    .frame(width: widths.mine)
+                Capsule()
+                    .fill(PearColor.accent.opacity(0.35))
+                    .frame(width: widths.others)
+                Spacer(minLength: 0)
+            }
         }
         .frame(height: 5)
         .background(PearColor.divider.opacity(0.4), in: Capsule())
@@ -122,6 +128,13 @@ struct BreakdownBarFractions: Equatable {
         }
         self.mine = CGFloat(max(mine, 0)) / CGFloat(busiest)
         self.others = CGFloat(max(others, 0)) / CGFloat(busiest)
+    }
+
+    /// Point widths for a row this wide, the gap taken off the top so the two
+    /// segments plus the gap never exceed the row (#466).
+    func widths(in rowWidth: CGFloat, gap: CGFloat) -> (mine: CGFloat, others: CGFloat) {
+        let available = max(rowWidth - gap, 0)
+        return (available * mine, available * others)
     }
 }
 
@@ -341,19 +354,21 @@ struct WaterProgressBar: View {
 
     var body: some View {
         VStack(alignment: .leading, spacing: 4) {
-            ZStack(alignment: .leading) {
-                Capsule().fill(PearColor.divider.opacity(0.4))
-                Capsule().fill(fill)
-                    .containerRelativeFrame(.horizontal) { width, _ in progress.fraction * width }
-                // The minimum marker sits centred on its fraction: the frame
-                // ends one point past it and the 2-point mark hangs off the
-                // frame's trailing edge, which lands where the offset did.
-                Rectangle()
-                    .fill(PearColor.textSecondary)
-                    .frame(width: 2, height: 9)
-                    .containerRelativeFrame(.horizontal, alignment: .trailing) { width, _ in
-                        progress.minimumFraction * width + 1
-                    }
+            // A GeometryReader, not container-relative frames: in a Form row
+            // the "container" is the whole form, so the bar sized to the full
+            // width and stretched the row (#466).
+            GeometryReader { geo in
+                ZStack(alignment: .leading) {
+                    Capsule().fill(PearColor.divider.opacity(0.4))
+                    Capsule().fill(fill)
+                        .frame(width: progress.fraction * geo.size.width)
+                    // The minimum marker sits centred on its fraction: one
+                    // point of the 2-point mark either side of it.
+                    Rectangle()
+                        .fill(PearColor.textSecondary)
+                        .frame(width: 2, height: 9)
+                        .offset(x: progress.minimumFraction * geo.size.width - 1)
+                }
             }
             .frame(height: 9)
             .accessibilityHidden(true)
