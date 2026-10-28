@@ -61,6 +61,7 @@ struct MomentBreakdownRow: View {
                     .foregroundStyle(PearColor.textTertiary)
             }
         }
+        // The same vertical rhythm as the totals, water and metric rows (#465).
         .padding(.vertical, 2)
         .accessibilityElement(children: .ignore)
         .accessibilityLabel(accessibilityText)
@@ -285,7 +286,7 @@ struct WaterTodaySection: View {
                         .font(.title3)
                         .frame(width: 28)
                         .accessibilityHidden(true)
-                    VStack(alignment: .leading, spacing: 6) {
+                    VStack(alignment: .leading, spacing: 5) {
                         Text(totalLabel())
                             .font(.headline)
                             .foregroundStyle(PearColor.textPrimary)
@@ -305,6 +306,8 @@ struct WaterTodaySection: View {
                         .foregroundStyle(PearColor.textTertiary)
                     }
                 }
+                // The same vertical rhythm as the metric and moment rows (#465).
+                .padding(.vertical, 2)
                 .accessibilityElement(children: .combine)
                 // The same burst a met metric goal gets (#421): hitting the water
                 // goal is the achievement water has always been missing a moment

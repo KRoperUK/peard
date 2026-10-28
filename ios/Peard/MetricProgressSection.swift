@@ -96,6 +96,7 @@ struct MetricProgressRow: View {
                 }
             }
         }
+        // The same vertical rhythm as the totals, water and moment rows (#465).
         .padding(.vertical, 2)
         // A one-shot burst and a success tick the moment this metric's goal is
         // met (#421). Reduce Motion draws no particles; the "Goal met" badge in
