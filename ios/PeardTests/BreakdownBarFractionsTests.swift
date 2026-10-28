@@ -74,4 +74,37 @@ final class BreakdownBarFractionsTests: XCTestCase {
         XCTAssertEqual(odd.mine, 0)
         XCTAssertEqual(odd.others, 0.5, accuracy: 0.0001)
     }
+
+    // MARK: The bar fits the row
+
+    /// The busiest row's two segments plus the gap between them must land
+    /// exactly on the row width — no more. #466 was reported from a
+    /// screenshot: the bars sized against the whole form, stretched their
+    /// rows, and pushed the counts off the card.
+    func testTheBusiestRowPlusItsGapFitsTheRowExactly() {
+        let loo = BreakdownBarFractions(mine: 29, others: 39, busiest: 68)
+        let widths = loo.widths(in: 300, gap: 1)
+
+        XCTAssertEqual(widths.mine + widths.others + 1, 300, accuracy: 0.0001)
+        XCTAssertEqual(widths.mine, 299 * 29.0 / 68.0, accuracy: 0.0001)
+        XCTAssertEqual(widths.others, 299 * 39.0 / 68.0, accuracy: 0.0001)
+    }
+
+    /// A single-sided row has no gap, so the whole width is the segment's.
+    func testASingleSidedRowKeepsTheFullWidth() {
+        let toot = BreakdownBarFractions(mine: 48, others: 0, busiest: 68)
+        let widths = toot.widths(in: 300, gap: 0)
+
+        XCTAssertEqual(widths.mine, 300 * 48.0 / 68.0, accuracy: 0.0001)
+        XCTAssertEqual(widths.others, 0)
+    }
+
+    /// A row narrower than the gap cannot draw backwards.
+    func testANarrowerThanGapRowDrawsNothing() {
+        let loo = BreakdownBarFractions(mine: 29, others: 39, busiest: 68)
+        let widths = loo.widths(in: 0.5, gap: 1)
+
+        XCTAssertEqual(widths.mine, 0)
+        XCTAssertEqual(widths.others, 0)
+    }
 }

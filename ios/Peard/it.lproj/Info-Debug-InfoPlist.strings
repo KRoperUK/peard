@@ -1,0 +1,18 @@
+/* Privacy - Camera Usage Description */
+"NSCameraUsageDescription" = "Scatta una foto da condividere in un momento con il tuo partner.";
+
+/* Privacy - Contacts Usage Description */
+"NSContactsUsageDescription" = "Trova gli amici già su Pear'd confrontando i tuoi contatti — solo hash unidirezionali lasciano questo dispositivo.";
+
+/* Privacy - Health Share Usage Description */
+"NSHealthShareUsageDescription" = "Pear'd legge i passi e i minuti di esercizio di oggi da Apple Health affinché l'obiettivo condiviso con la tua connessione rifletta ciò che hai realmente fatto. Non scrive mai in Health.";
+
+/* Privacy - Health Update Usage Description */
+"NSHealthUpdateUsageDescription" = "Pear'd non aggiunge né modifica mai nulla in Apple Health. Questa app legge solo i passi e i minuti di esercizio di oggi, motivo per cui l'accesso è richiesto in sola lettura.";
+
+/* Privacy - Photo Library Additions Usage Description */
+"NSPhotoLibraryAddUsageDescription" = "Salva nella tua libreria una foto che qualcuno ha condiviso con te.";
+
+/* Privacy - Photo Library Usage Description */
+"NSPhotoLibraryUsageDescription" = "Scegli una foto da condividere con il tuo partner.";
+

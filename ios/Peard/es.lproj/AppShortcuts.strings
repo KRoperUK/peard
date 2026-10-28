@@ -1,0 +1,18 @@
+/* No comment provided by engineer. */
+"Log ${kind} in ${applicationName}" = "Registrar ${kind} en ${applicationName}";
+
+/* No comment provided by engineer. */
+"Log a ${kind} in ${applicationName}" = "Registrar ${kind} en ${applicationName}";
+
+/* No comment provided by engineer. */
+"Log a ${kind} on ${applicationName}" = "Registrar ${kind} en ${applicationName}";
+
+/* No comment provided by engineer. */
+"Log a moment in ${applicationName}" = "Registrar un momento en ${applicationName}";
+
+/* No comment provided by engineer. */
+"Log a moment on ${applicationName}" = "Registrar un momento en ${applicationName}";
+
+/* No comment provided by engineer. */
+"Log something in ${applicationName}" = "Registrar algo en ${applicationName}";
+

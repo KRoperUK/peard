@@ -245,6 +245,8 @@ private struct TalliesTab: View {
                 period(String(localized: "All"), tallies.all)
             }
         }
+        // The same vertical rhythm as the water, metric and moment rows (#465).
+        .padding(.vertical, 2)
         .accessibilityElement(children: .combine)
         .accessibilityLabel(
             "\(label): \(tallies.day) today, \(tallies.week) this week, \(tallies.month) this month, \(tallies.all) all time"
