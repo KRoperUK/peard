@@ -1,0 +1,18 @@
+/* No comment provided by engineer. */
+"Log ${kind} in ${applicationName}" = "${kind} in ${applicationName} protokollieren";
+
+/* No comment provided by engineer. */
+"Log a ${kind} in ${applicationName}" = "${kind} in ${applicationName} protokollieren";
+
+/* No comment provided by engineer. */
+"Log a ${kind} on ${applicationName}" = "${kind} in ${applicationName} protokollieren";
+
+/* No comment provided by engineer. */
+"Log a moment in ${applicationName}" = "Einen Moment in ${applicationName} protokollieren";
+
+/* No comment provided by engineer. */
+"Log a moment on ${applicationName}" = "Einen Moment in ${applicationName} protokollieren";
+
+/* No comment provided by engineer. */
+"Log something in ${applicationName}" = "Etwas in ${applicationName} protokollieren";
+

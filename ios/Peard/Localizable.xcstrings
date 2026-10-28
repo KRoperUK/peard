@@ -4,7 +4,44 @@
     "" : {
 
     },
+    ". %lld days running" : {
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : ". %lld Tage in Folge"
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : ". %lld días seguidos"
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : ". %lld jours d'activité"
+          }
+        },
+        "it" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : ". %lld giorni consecutivi"
+          }
+        }
+      }
+    },
+    "“%@”" : {
+
+    },
     "%@  %@" : {
+
+    },
+    "%@ · %@" : {
+
+    },
+    "%@ · %lld" : {
 
     },
     "%@ %@" : {
@@ -12,6 +49,26 @@
     },
     "%@ %@ · %@ %@" : {
 
+    },
+    "%@ %@ · %@ %@ %@" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "new",
+            "value" : "%1$@ %2$@ · %3$@ %4$@ %5$@"
+          }
+        }
+      }
+    },
+    "%@ %@ %@ · %@ %@" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "new",
+            "value" : "%1$@ %2$@ %3$@ · %4$@ %5$@"
+          }
+        }
+      }
     },
     "%@ %lld" : {
 
@@ -244,32 +301,63 @@
       }
     },
     "%@ streak ended — best was %lld days hitting the goal" : {
-
-    },
-    "%@ to the %@ goal" : {
       "localizations" : {
         "de" : {
           "stringUnit" : {
             "state" : "needs_review",
-            "value" : "%@ zum %@ Ziel"
+            "value" : "%@-Serie beendet – Rekord waren %lld Tage, an denen das Ziel erreicht wurde"
           }
         },
         "es" : {
           "stringUnit" : {
             "state" : "needs_review",
-            "value" : "%@ a la meta de %@"
+            "value" : "Racha de %@ terminada — el récord fue de %lld días alcanzando la meta"
           }
         },
         "fr" : {
           "stringUnit" : {
             "state" : "needs_review",
-            "value" : "%@ à l'objectif de %@"
+            "value" : "Série %@ terminée — le record est de %lld jours à atteindre l'objectif"
           }
         },
         "it" : {
           "stringUnit" : {
             "state" : "needs_review",
-            "value" : "%@ all'obiettivo %@"
+            "value" : "Serie %@ terminata — il record è stato di %lld giorni raggiungendo l'obiettivo"
+          }
+        }
+      }
+    },
+    "%@ to go until your goal of %@" : {
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Noch %1$@ bis zu deinem Ziel von %2$@"
+          }
+        },
+        "en" : {
+          "stringUnit" : {
+            "state" : "new",
+            "value" : "%1$@ to go until your goal of %2$@"
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Quedan %1$@ para tu objetivo de %2$@"
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Plus que %1$@ avant votre objectif de %2$@"
+          }
+        },
+        "it" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Mancano %1$@ al tuo obiettivo di %2$@"
           }
         }
       }
@@ -302,12 +390,6 @@
         }
       }
     },
-    "%@ · %@" : {
-
-    },
-    "%@ · %lld" : {
-
-    },
     "%@, %@" : {
 
     },
@@ -339,36 +421,42 @@
         }
       }
     },
-    "%@. iOS shows its own confirmation when this changes." : {
+    "%@: %@" : {
+
+    },
+    "%@: %@ of %@" : {
       "localizations" : {
         "de" : {
           "stringUnit" : {
             "state" : "needs_review",
-            "value" : "%@. iOS zeigt eine eigene Bestätigung an, wenn sich dies ändert."
+            "value" : "%1$@: %2$@ von %3$@"
+          }
+        },
+        "en" : {
+          "stringUnit" : {
+            "state" : "new",
+            "value" : "%1$@: %2$@ of %3$@"
           }
         },
         "es" : {
           "stringUnit" : {
             "state" : "needs_review",
-            "value" : "%@. iOS muestra su propia confirmación cuando esto cambia."
+            "value" : "%1$@: %2$@ de %3$@"
           }
         },
         "fr" : {
           "stringUnit" : {
             "state" : "needs_review",
-            "value" : "%@. iOS affiche sa propre confirmation lorsque cela change."
+            "value" : "%1$@ : %2$@ sur %3$@"
           }
         },
         "it" : {
           "stringUnit" : {
             "state" : "needs_review",
-            "value" : "%@. iOS mostra la propria conferma quando questo cambia."
+            "value" : "%1$@: %2$@ di %3$@"
           }
         }
       }
-    },
-    "%@: %@" : {
-
     },
     "%@: %lld moments %@. %@." : {
       "localizations" : {
@@ -454,6 +542,34 @@
         }
       }
     },
+    "%@. iOS shows its own confirmation when this changes." : {
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "%@. iOS zeigt eine eigene Bestätigung an, wenn sich dies ändert."
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "%@. iOS muestra su propia confirmación cuando esto cambia."
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "%@. iOS affiche sa propre confirmation lorsque cela change."
+          }
+        },
+        "it" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "%@. iOS mostra la propria conferma quando questo cambia."
+          }
+        }
+      }
+    },
     "%@Last updated %@." : {
       "localizations" : {
         "de" : {
@@ -517,7 +633,60 @@
       }
     },
     "%lld days hitting your %@ goal" : {
-
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "%lld Tage %@-Ziel erreicht"
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "%lld días alcanzando tu meta de %@"
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "%lld jours à atteindre votre objectif %@"
+          }
+        },
+        "it" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "%lld giorni raggiungendo il tuo obiettivo %@"
+          }
+        }
+      }
+    },
+    "%lld days hitting your own goal" : {
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "%lld Tage eigenes Ziel erreicht"
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "%lld días alcanzando tu propio objetivo"
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "%lld jours à atteindre votre propre objectif"
+          }
+        },
+        "it" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "%lld giorni raggiungendo il tuo obiettivo"
+          }
+        }
+      }
     },
     "%lld days hitting your water goal" : {
       "localizations" : {
@@ -827,36 +996,246 @@
         }
       }
     },
-    ". %lld days running" : {
+    "🍐" : {
+
+    },
+    "💡 Dev: AAAAAA seeds a pair, BBBBBB seeds a group" : {
+      "extractionState" : "stale",
       "localizations" : {
         "de" : {
           "stringUnit" : {
             "state" : "needs_review",
-            "value" : ". %lld Tage in Folge"
+            "value" : "💡 Dev: AAAAAA seedet ein Paar, BBBBBB seedet eine Gruppe"
           }
         },
         "es" : {
           "stringUnit" : {
             "state" : "needs_review",
-            "value" : ". %lld días seguidos"
+            "value" : "💡 Dev: AAAAAA inicia un par, BBBBBB inicia un grupo"
           }
         },
         "fr" : {
           "stringUnit" : {
             "state" : "needs_review",
-            "value" : ". %lld jours d'activité"
+            "value" : "💡 Dev: AAAAAA amorce une paire, BBBBBB amorce un groupe"
           }
         },
         "it" : {
           "stringUnit" : {
             "state" : "needs_review",
-            "value" : ". %lld giorni consecutivi"
+            "value" : "💡 Dev: AAAAAA crea una coppia, BBBBBB crea un gruppo"
+          }
+        }
+      }
+    },
+    "💧" : {
+
+    },
+    "📷" : {
+
+    },
+    "📷 Has a photo" : {
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "📷 Hat ein Foto"
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "📷 Tiene una foto"
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "📷 A une photo"
+          }
+        },
+        "it" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "📷 Ha una foto"
+          }
+        }
+      }
+    },
+    "📸 saved — will send" : {
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "📸 gespeichert – wird gesendet"
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "📸 guardado — se enviará"
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "📸 enregistré — enverra"
+          }
+        },
+        "it" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "📸 salvato — invierà"
+          }
+        }
+      }
+    },
+    "📸 sending…" : {
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "📸 sendet…"
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "📸 enviando…"
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "📸 envoi…"
+          }
+        },
+        "it" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "📸 invio…"
+          }
+        }
+      }
+    },
+    "🔥" : {
+
+    },
+    "🔧 Start a test photo drop" : {
+      "extractionState" : "stale",
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "🔧 Test-Fotodrop starten"
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "🔧 Iniciar una prueba de envío de foto"
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "🔧 Lancer un test d'envoi de photo"
+          }
+        },
+        "it" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "🔧 Avvia un test di invio foto"
+          }
+        }
+      }
+    },
+    "🥤" : {
+
+    },
+    "1 character left" : {
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "1 Zeichen übrig"
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "1 carácter restante"
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "1 caractère restant"
+          }
+        },
+        "it" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "1 carattere rimanente"
           }
         }
       }
     },
     "1 day hitting your %@ goal" : {
-
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "1 Tag %@-Ziel erreicht"
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "1 día alcanzando tu meta de %@"
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "1 jour à atteindre votre objectif %@"
+          }
+        },
+        "it" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "1 giorno raggiungendo il tuo obiettivo %@"
+          }
+        }
+      }
+    },
+    "1 day hitting your own goal" : {
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "1 Tag eigenes Ziel erreicht"
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "1 día alcanzando tu propio objetivo"
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "1 jour à atteindre votre propre objectif"
+          }
+        },
+        "it" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "1 giorno raggiungendo il tuo obiettivo"
+          }
+        }
+      }
     },
     "1 day hitting your water goal" : {
       "localizations" : {
@@ -1142,6 +1521,7 @@
       }
     },
     "A daily goal for steps, exercise and the like. Your goal is shared with the connection, where it is summed with everybody else's." : {
+      "extractionState" : "stale",
       "localizations" : {
         "de" : {
           "stringUnit" : {
@@ -1169,8 +1549,33 @@
         }
       }
     },
-    "A daily goal for steps, exercise and the like. Your goal is shared with the connection, where it is summed with everybody else's. Apple Health is read-only: turning one on asks for access, and denying it leaves the metric to log by hand." : {
-
+    "A daily goal for steps, exercise and the like. Your goal is shared with the connection, where it is summed with everybody else's. Apple Health is read-only: turning one on asks for access on this device, and denying it leaves the metric to log by hand." : {
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Ein Tagesziel für Schritte, Training und dergleichen. Dein Ziel wird mit der Verbindung geteilt, wo es mit den Zielen der anderen summiert wird. Apple Health ist nur lesbar: Beim Einschalten wird der Zugriff auf diesem Gerät angefragt, und bei Ablehnung bleibt die Metrik zum manuellen Protokollieren."
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Un objetivo diario para los pasos, el ejercicio y demás. Tu objetivo se comparte con la conexión, donde se suma al de los demás. Apple Health es de solo lectura: activarlo pide acceso en este dispositivo, y denegarlo deja la métrica para registrarla a mano."
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Un objectif quotidien pour les pas, l'exercice et le reste. Votre objectif est partagé avec la connexion, où il est additionné à ceux des autres. Apple Health est en lecture seule : l'activer demande l'accès sur cet appareil, et le refuser laisse la mesure à saisir à la main."
+          }
+        },
+        "it" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Un obiettivo giornaliero per passi, esercizio e simili. Il tuo obiettivo è condiviso con la connessione, dove viene sommato a quelli degli altri. Apple Health è in sola lettura: attivarla richiede l'accesso su questo dispositivo, e negarlo lascia la metrica da registrare a mano."
+          }
+        }
+      }
     },
     "A year ago today" : {
       "localizations" : {
@@ -1733,6 +2138,62 @@
         }
       }
     },
+    "and %lld more moments" : {
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "und %lld weitere Momente"
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "y %lld momentos más"
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "et %lld moments de plus"
+          }
+        },
+        "it" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "e altri %lld momenti"
+          }
+        }
+      }
+    },
+    "and 1 more moment" : {
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "und 1 weiterer Moment"
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "y 1 momento más"
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "et 1 moment de plus"
+          }
+        },
+        "it" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "e 1 altro momento"
+          }
+        }
+      }
+    },
     "Another connection 🍐" : {
       "localizations" : {
         "de" : {
@@ -2121,6 +2582,34 @@
           "stringUnit" : {
             "state" : "needs_review",
             "value" : "Prima di accedere"
+          }
+        }
+      }
+    },
+    "best %lld" : {
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Bestwert %lld"
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "mejor %lld"
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "meilleur %lld"
+          }
+        },
+        "it" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "miglior %lld"
           }
         }
       }
@@ -2825,6 +3314,34 @@
         }
       }
     },
+    "Couldn't load your devices." : {
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Deine Geräte konnten nicht geladen werden."
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "No se pudieron cargar tus dispositivos."
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Impossible de charger vos appareils."
+          }
+        },
+        "it" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Impossibile caricare i tuoi dispositivi."
+          }
+        }
+      }
+    },
     "Couldn't reach Pear'd. Check your connection and try again." : {
       "localizations" : {
         "de" : {
@@ -2877,6 +3394,34 @@
           "stringUnit" : {
             "state" : "needs_review",
             "value" : "Impossibile rimuovere"
+          }
+        }
+      }
+    },
+    "Couldn't revoke" : {
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Konnte nicht entzogen werden"
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "No se pudo revocar"
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Révocation impossible"
+          }
+        },
+        "it" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Revoca non riuscita"
           }
         }
       }
@@ -3274,6 +3819,7 @@
       }
     },
     "Debug" : {
+      "extractionState" : "stale",
       "localizations" : {
         "de" : {
           "stringUnit" : {
@@ -3637,31 +4183,30 @@
         }
       }
     },
-    "ENTER CODE" : {
-      "comment" : "Placeholder in the invite-code field. Codes are upper case.",
+    "Double tap to try again" : {
       "localizations" : {
         "de" : {
           "stringUnit" : {
             "state" : "needs_review",
-            "value" : "CODE EINGEBEN"
+            "value" : "Zum Wiederholen zweimal tippen"
           }
         },
         "es" : {
           "stringUnit" : {
             "state" : "needs_review",
-            "value" : "INTRODUCIR CÓDIGO"
+            "value" : "Toca dos veces para reintentarlo"
           }
         },
         "fr" : {
           "stringUnit" : {
             "state" : "needs_review",
-            "value" : "SAISIR LE CODE"
+            "value" : "Touchez deux fois pour réessayer"
           }
         },
         "it" : {
           "stringUnit" : {
             "state" : "needs_review",
-            "value" : "INSERISCI CODICE"
+            "value" : "Tocca due volte per riprovare"
           }
         }
       }
@@ -3774,6 +4319,34 @@
           "stringUnit" : {
             "state" : "needs_review",
             "value" : "Modifica momento in coda"
+          }
+        }
+      }
+    },
+    "edited" : {
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "bearbeitet"
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "editado"
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "modifié"
+          }
+        },
+        "it" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "modificato"
           }
         }
       }
@@ -3914,6 +4487,35 @@
           "stringUnit" : {
             "state" : "needs_review",
             "value" : "Abilita l'accesso alla fotocamera in Impostazioni per condividere un momento."
+          }
+        }
+      }
+    },
+    "ENTER CODE" : {
+      "comment" : "Placeholder in the invite-code field. Codes are upper case.",
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "CODE EINGEBEN"
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "INTRODUCIR CÓDIGO"
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "SAISIR LE CODE"
+          }
+        },
+        "it" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "INSERISCI CODICE"
           }
         }
       }
@@ -5433,8 +6035,33 @@
         }
       }
     },
-    "Log ${moment}" : {
-
+    "Loading…" : {
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Wird geladen…"
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Cargando…"
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Chargement…"
+          }
+        },
+        "it" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Caricamento…"
+          }
+        }
+      }
     },
     "Log %@" : {
       "localizations" : {
@@ -5492,37 +6119,6 @@
         }
       }
     },
-    "Log Any Moment" : {
-      "localizations" : {
-        "de" : {
-          "stringUnit" : {
-            "state" : "needs_review",
-            "value" : "Jeden Moment protokollieren"
-          }
-        },
-        "es" : {
-          "stringUnit" : {
-            "state" : "needs_review",
-            "value" : "Registrar cualquier momento"
-          }
-        },
-        "fr" : {
-          "stringUnit" : {
-            "state" : "needs_review",
-            "value" : "Enregistrer n'importe quel moment"
-          }
-        },
-        "it" : {
-          "stringUnit" : {
-            "state" : "needs_review",
-            "value" : "Registra qualsiasi momento"
-          }
-        }
-      }
-    },
-    "Log a ${kind}" : {
-
-    },
     "Log a Moment" : {
       "localizations" : {
         "de" : {
@@ -5547,6 +6143,34 @@
           "stringUnit" : {
             "state" : "needs_review",
             "value" : "Registra un momento"
+          }
+        }
+      }
+    },
+    "Log Any Moment" : {
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Jeden Moment protokollieren"
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Registrar cualquier momento"
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Enregistrer n'importe quel moment"
+          }
+        },
+        "it" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Registra qualsiasi momento"
           }
         }
       }
@@ -5635,34 +6259,6 @@
         }
       }
     },
-    "Low Data Mode is on: smaller photos, no background refresh." : {
-      "localizations" : {
-        "de" : {
-          "stringUnit" : {
-            "state" : "needs_review",
-            "value" : "Datensparmodus ist aktiviert: kleinere Fotos, keine Hintergrundaktualisierung."
-          }
-        },
-        "es" : {
-          "stringUnit" : {
-            "state" : "needs_review",
-            "value" : "Modo de datos bajos activado: fotos más pequeñas, sin actualización en segundo plano."
-          }
-        },
-        "fr" : {
-          "stringUnit" : {
-            "state" : "needs_review",
-            "value" : "Le mode faible consommation est activé : photos plus petites, pas de rafraîchissement en arrière-plan."
-          }
-        },
-        "it" : {
-          "stringUnit" : {
-            "state" : "needs_review",
-            "value" : "Modalità Dati Ridotti attiva: foto più piccole, nessun aggiornamento in background."
-          }
-        }
-      }
-    },
     "Low data" : {
       "localizations" : {
         "de" : {
@@ -5715,6 +6311,34 @@
           "stringUnit" : {
             "state" : "needs_review",
             "value" : "Dati limitati attivi: foto più piccole, nessun aggiornamento in background."
+          }
+        }
+      }
+    },
+    "Low Data Mode is on: smaller photos, no background refresh." : {
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Datensparmodus ist aktiviert: kleinere Fotos, keine Hintergrundaktualisierung."
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Modo de datos bajos activado: fotos más pequeñas, sin actualización en segundo plano."
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Le mode faible consommation est activé : photos plus petites, pas de rafraîchissement en arrière-plan."
+          }
+        },
+        "it" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Modalità Dati Ridotti attiva: foto più piccole, nessun aggiornamento in background."
           }
         }
       }
@@ -5889,6 +6513,35 @@
         }
       }
     },
+    "moment" : {
+      "comment" : "Singular noun shown beside a count of moments.",
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Moment"
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "momento"
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "moment"
+          }
+        },
+        "it" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "momento"
+          }
+        }
+      }
+    },
     "Moment" : {
       "localizations" : {
         "de" : {
@@ -6053,6 +6706,35 @@
           "stringUnit" : {
             "state" : "needs_review",
             "value" : "Nota momento"
+          }
+        }
+      }
+    },
+    "moments" : {
+      "comment" : "Plural noun shown beside a count of moments.",
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Momente"
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "momentos"
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "moments"
+          }
+        },
+        "it" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "momenti"
           }
         }
       }
@@ -6309,6 +6991,34 @@
         }
       }
     },
+    "muted" : {
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "stummgeschaltet"
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "silenciado"
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "muet"
+          }
+        },
+        "it" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "silenzioso"
+          }
+        }
+      }
+    },
     "Muted groups still appear here and in the widget — they just stop making a noise." : {
       "localizations" : {
         "de" : {
@@ -6445,6 +7155,34 @@
           "stringUnit" : {
             "state" : "needs_review",
             "value" : "Dai un nome — passeggiata col cane, palestra, tè…"
+          }
+        }
+      }
+    },
+    "new" : {
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "neu"
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "nuevo"
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "nouveau"
+          }
+        },
+        "it" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "nuovo"
           }
         }
       }
@@ -6590,6 +7328,62 @@
         }
       }
     },
+    "No dates recorded" : {
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Keine Daten aufgezeichnet"
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Sin fechas registradas"
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Aucune date enregistrée"
+          }
+        },
+        "it" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Nessuna data registrata"
+          }
+        }
+      }
+    },
+    "No devices or widgets are signed in." : {
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Keine Geräte oder Widgets angemeldet."
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Ningún dispositivo ni widget ha iniciado sesión."
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Aucun appareil ou widget connecté."
+          }
+        },
+        "it" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Nessun dispositivo o widget ha effettuato l'accesso."
+          }
+        }
+      }
+    },
     "No moments for %@ in this connection." : {
       "localizations" : {
         "de" : {
@@ -6646,7 +7440,36 @@
         }
       }
     },
+    "No moments yet" : {
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Noch keine Momente"
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Aún no hay momentos"
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Aucun moment pour l'instant"
+          }
+        },
+        "it" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Ancora nessun momento"
+          }
+        }
+      }
+    },
     "No moments yet — send a pear!" : {
+      "extractionState" : "stale",
       "localizations" : {
         "de" : {
           "stringUnit" : {
@@ -6698,6 +7521,62 @@
           "stringUnit" : {
             "state" : "needs_review",
             "value" : "Nessuno nei tuoi contatti corrisponde a “%@”."
+          }
+        }
+      }
+    },
+    "none %@" : {
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "keine %@"
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "ninguno %@"
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "aucun %@"
+          }
+        },
+        "it" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "nessuno %@"
+          }
+        }
+      }
+    },
+    "none today" : {
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "heute nichts"
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "nada hoy"
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "rien aujourd'hui"
+          }
+        },
+        "it" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "niente oggi"
           }
         }
       }
@@ -6926,6 +7805,34 @@
         }
       }
     },
+    "Nothing logged yet" : {
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Noch nichts protokolliert"
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Nada registrado todavía"
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Rien d'enregistré pour l'instant"
+          }
+        },
+        "it" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Nulla ancora registrato"
+          }
+        }
+      }
+    },
     "Nothing matches that" : {
       "localizations" : {
         "de" : {
@@ -6982,35 +7889,6 @@
         }
       }
     },
-    "OK" : {
-      "comment" : "Dismisses an alert.",
-      "localizations" : {
-        "de" : {
-          "stringUnit" : {
-            "state" : "needs_review",
-            "value" : "OK"
-          }
-        },
-        "es" : {
-          "stringUnit" : {
-            "state" : "needs_review",
-            "value" : "OK"
-          }
-        },
-        "fr" : {
-          "stringUnit" : {
-            "state" : "needs_review",
-            "value" : "OK"
-          }
-        },
-        "it" : {
-          "stringUnit" : {
-            "state" : "needs_review",
-            "value" : "OK"
-          }
-        }
-      }
-    },
     "Off now." : {
       "localizations" : {
         "de" : {
@@ -7063,6 +7941,63 @@
           "stringUnit" : {
             "state" : "needs_review",
             "value" : "Offerto come chip quando si registra l'acqua. Fino a %lld; \"Altro\" è sempre presente."
+          }
+        }
+      }
+    },
+    "OK" : {
+      "comment" : "Dismisses an alert.",
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "OK"
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "OK"
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "OK"
+          }
+        },
+        "it" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "OK"
+          }
+        }
+      }
+    },
+    "older than this app" : {
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "älter als diese App"
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "más antiguo que esta app"
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "plus ancien que cette app"
+          }
+        },
+        "it" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "più vecchio di questa app"
           }
         }
       }
@@ -7151,34 +8086,6 @@
         }
       }
     },
-    "Open Settings" : {
-      "localizations" : {
-        "de" : {
-          "stringUnit" : {
-            "state" : "needs_review",
-            "value" : "Einstellungen öffnen"
-          }
-        },
-        "es" : {
-          "stringUnit" : {
-            "state" : "needs_review",
-            "value" : "Abrir Ajustes"
-          }
-        },
-        "fr" : {
-          "stringUnit" : {
-            "state" : "needs_review",
-            "value" : "Ouvrir les réglages"
-          }
-        },
-        "it" : {
-          "stringUnit" : {
-            "state" : "needs_review",
-            "value" : "Apri Impostazioni"
-          }
-        }
-      }
-    },
     "Open photo" : {
       "localizations" : {
         "de" : {
@@ -7203,6 +8110,34 @@
           "stringUnit" : {
             "state" : "needs_review",
             "value" : "Apri foto"
+          }
+        }
+      }
+    },
+    "Open Settings" : {
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Einstellungen öffnen"
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Abrir Ajustes"
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Ouvrir les réglages"
+          }
+        },
+        "it" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Apri Impostazioni"
           }
         }
       }
@@ -7431,6 +8366,62 @@
         }
       }
     },
+    "Others" : {
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Andere"
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Otros"
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Autres"
+          }
+        },
+        "it" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Altri"
+          }
+        }
+      }
+    },
+    "owner" : {
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Besitzer"
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "propietario"
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "propriétaire"
+          }
+        },
+        "it" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "proprietario"
+          }
+        }
+      }
+    },
     "Pairing code" : {
       "localizations" : {
         "de" : {
@@ -7515,6 +8506,35 @@
         }
       }
     },
+    "Pear up 🍐" : {
+      "comment" : "Heading when joining or starting a first connection. 'Pear' is a pun on 'pair'.",
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Pear up 🍐"
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Haz un Pear 🍐"
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Connectez-vous 🍐"
+          }
+        },
+        "it" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Fai Pear up 🍐"
+          }
+        }
+      }
+    },
     "Pear up on Pear'd 🍐" : {
       "localizations" : {
         "de" : {
@@ -7571,35 +8591,6 @@
         }
       }
     },
-    "Pear up 🍐" : {
-      "comment" : "Heading when joining or starting a first connection. 'Pear' is a pun on 'pair'.",
-      "localizations" : {
-        "de" : {
-          "stringUnit" : {
-            "state" : "needs_review",
-            "value" : "Pear up 🍐"
-          }
-        },
-        "es" : {
-          "stringUnit" : {
-            "state" : "needs_review",
-            "value" : "Haz un Pear 🍐"
-          }
-        },
-        "fr" : {
-          "stringUnit" : {
-            "state" : "needs_review",
-            "value" : "Connectez-vous 🍐"
-          }
-        },
-        "it" : {
-          "stringUnit" : {
-            "state" : "needs_review",
-            "value" : "Fai Pear up 🍐"
-          }
-        }
-      }
-    },
     "Pear'd" : {
       "localizations" : {
         "de" : {
@@ -7624,6 +8615,35 @@
           "stringUnit" : {
             "state" : "needs_review",
             "value" : "Pear'd"
+          }
+        }
+      }
+    },
+    "Pear'd 🍐" : {
+      "comment" : "App name with an emoji. Keep the pear.",
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Pear'd 🍐"
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Pear'd 🍐"
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Pear'd 🍐"
+          }
+        },
+        "it" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Pear'd 🍐"
           }
         }
       }
@@ -7768,35 +8788,6 @@
         }
       }
     },
-    "Pear'd 🍐" : {
-      "comment" : "App name with an emoji. Keep the pear.",
-      "localizations" : {
-        "de" : {
-          "stringUnit" : {
-            "state" : "needs_review",
-            "value" : "Pear'd 🍐"
-          }
-        },
-        "es" : {
-          "stringUnit" : {
-            "state" : "needs_review",
-            "value" : "Pear'd 🍐"
-          }
-        },
-        "fr" : {
-          "stringUnit" : {
-            "state" : "needs_review",
-            "value" : "Pear'd 🍐"
-          }
-        },
-        "it" : {
-          "stringUnit" : {
-            "state" : "needs_review",
-            "value" : "Pear'd 🍐"
-          }
-        }
-      }
-    },
     "Period" : {
       "localizations" : {
         "de" : {
@@ -7853,6 +8844,34 @@
         }
       }
     },
+    "photo" : {
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Foto"
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "foto"
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "photo"
+          }
+        },
+        "it" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "foto"
+          }
+        }
+      }
+    },
     "Photo" : {
       "localizations" : {
         "de" : {
@@ -7877,6 +8896,34 @@
           "stringUnit" : {
             "state" : "needs_review",
             "value" : "Foto"
+          }
+        }
+      }
+    },
+    "Photo failed to load" : {
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Foto konnte nicht geladen werden"
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "No se pudo cargar la foto"
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "La photo n'a pas pu se charger"
+          }
+        },
+        "it" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Caricamento della foto non riuscito"
           }
         }
       }
@@ -8021,7 +9068,7 @@
         }
       }
     },
-    "Privacy Policy" : {
+    "Privacy policy" : {
       "localizations" : {
         "de" : {
           "stringUnit" : {
@@ -8049,7 +9096,7 @@
         }
       }
     },
-    "Privacy policy" : {
+    "Privacy Policy" : {
       "localizations" : {
         "de" : {
           "stringUnit" : {
@@ -8101,6 +9148,34 @@
           "stringUnit" : {
             "state" : "needs_review",
             "value" : "Riporta la foto allo stato originale"
+          }
+        }
+      }
+    },
+    "React to this moment" : {
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Auf diesen Moment reagieren"
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Reaccionar a este momento"
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Réagir à ce moment"
+          }
+        },
+        "it" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Reagisci a questo momento"
           }
         }
       }
@@ -8441,6 +9516,62 @@
         }
       }
     },
+    "replied" : {
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "antwortete"
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "respondió"
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "a répondu"
+          }
+        },
+        "it" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "ha risposto"
+          }
+        }
+      }
+    },
+    "replied with a photo" : {
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "antwortete mit einem Foto"
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "respondió con una foto"
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "a répondu avec une photo"
+          }
+        },
+        "it" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "ha risposto con una foto"
+          }
+        }
+      }
+    },
     "Reply" : {
       "comment" : "Notification action: reply to a moment with a note.",
       "localizations" : {
@@ -8582,6 +9713,90 @@
         }
       }
     },
+    "replying to %@'s photo" : {
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "antwortet auf das Foto von %@"
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "respondiendo a la foto de %@"
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "répond à la photo de %@"
+          }
+        },
+        "it" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "rispondendo alla foto di %@"
+          }
+        }
+      }
+    },
+    "replying to a photo" : {
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "antwortet auf ein Foto"
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "respondiendo a una foto"
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "répond à une photo"
+          }
+        },
+        "it" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "rispondendo a una foto"
+          }
+        }
+      }
+    },
+    "replying to your photo" : {
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "antwortet auf dein Foto"
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "respondiendo a tu foto"
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "répond à votre photo"
+          }
+        },
+        "it" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "rispondendo alla tua foto"
+          }
+        }
+      }
+    },
     "Reset" : {
       "localizations" : {
         "de" : {
@@ -8690,6 +9905,118 @@
           "stringUnit" : {
             "state" : "needs_review",
             "value" : "Tentativo %lld in corso"
+          }
+        }
+      }
+    },
+    "Revoke" : {
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Entziehen"
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Revocar"
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Révoquer"
+          }
+        },
+        "it" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Revoca"
+          }
+        }
+      }
+    },
+    "Revoke %@" : {
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "%@ entziehen"
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Revocar %@"
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Révoquer %@"
+          }
+        },
+        "it" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Revoca %@"
+          }
+        }
+      }
+    },
+    "Revoke %@?" : {
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "%@ entziehen?"
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "¿Revocar %@?"
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Révoquer %@ ?"
+          }
+        },
+        "it" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Revocare %@?"
+          }
+        }
+      }
+    },
+    "Revoke access?" : {
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Zugriff entziehen?"
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "¿Revocar el acceso?"
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Révoquer l'accès ?"
+          }
+        },
+        "it" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Revocare l'accesso?"
           }
         }
       }
@@ -9195,6 +10522,34 @@
           "stringUnit" : {
             "state" : "needs_review",
             "value" : "Finestra di invio"
+          }
+        }
+      }
+    },
+    "sending" : {
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "sendet"
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "enviando"
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "envoi"
+          }
+        },
+        "it" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "invio"
           }
         }
       }
@@ -9731,6 +11086,34 @@
         }
       }
     },
+    "shared a moment" : {
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "teilte einen Moment"
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "compartió un momento"
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "a partagé un moment"
+          }
+        },
+        "it" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "ha condiviso un momento"
+          }
+        }
+      }
+    },
     "Show everything" : {
       "localizations" : {
         "de" : {
@@ -9783,6 +11166,34 @@
           "stringUnit" : {
             "state" : "needs_review",
             "value" : "Mostra l'intera foto"
+          }
+        }
+      }
+    },
+    "showing" : {
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "zeigt"
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "mostrando"
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "montrant"
+          }
+        },
+        "it" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "mostrando"
           }
         }
       }
@@ -9927,6 +11338,34 @@
         }
       }
     },
+    "Signed-in devices & widgets" : {
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Angemeldete Geräte und Widgets"
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Dispositivos y widgets con sesión iniciada"
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Appareils et widgets connectés"
+          }
+        },
+        "it" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Dispositivi e widget con accesso effettuato"
+          }
+        }
+      }
+    },
     "Signing in sends your email" : {
       "localizations" : {
         "de" : {
@@ -10040,6 +11479,7 @@
       }
     },
     "Starts the photo-drop Live Activity on this phone without a push. Lock the screen to see it." : {
+      "extractionState" : "stale",
       "localizations" : {
         "de" : {
           "stringUnit" : {
@@ -10264,7 +11704,64 @@
         }
       }
     },
+    "Tap a moment below to send your first pear." : {
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Tippe unten auf einen Moment, um deine erste Birne zu senden."
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Toca un momento abajo para enviar tu primera pera."
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Touchez un moment ci-dessous pour envoyer votre première poire."
+          }
+        },
+        "it" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Tocca un momento qui sotto per inviare la tua prima pera."
+          }
+        }
+      }
+    },
+    "Tap a moment on the home screen to start." : {
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Tippe zum Start auf einen Moment auf dem Startbildschirm."
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Toca un momento en la pantalla de inicio para empezar."
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Touchez un moment sur l'écran d'accueil pour commencer."
+          }
+        },
+        "it" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Tocca un momento nella schermata principale per iniziare."
+          }
+        }
+      }
+    },
     "Tap one on the home screen to start." : {
+      "extractionState" : "stale",
       "localizations" : {
         "de" : {
           "stringUnit" : {
@@ -10372,6 +11869,34 @@
           "stringUnit" : {
             "state" : "needs_review",
             "value" : "Quell'email e password non corrispondono a un account. Controllale, o crea un account invece."
+          }
+        }
+      }
+    },
+    "that filter" : {
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "dieser Filter"
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "ese filtro"
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "ce filtre"
+          }
+        },
+        "it" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "quel filtro"
           }
         }
       }
@@ -10740,6 +12265,34 @@
         }
       }
     },
+    "This device" : {
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Dieses Gerät"
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Este dispositivo"
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Cet appareil"
+          }
+        },
+        "it" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Questo dispositivo"
+          }
+        }
+      }
+    },
     "This device can't change the app icon." : {
       "localizations" : {
         "de" : {
@@ -10820,6 +12373,34 @@
           "stringUnit" : {
             "state" : "needs_review",
             "value" : "Questo cancella il tuo profilo, i tuoi momenti e ogni connessione in cui ti trovi, ora e per sempre. Esporta i tuoi dati prima se vuoi una copia. Non può essere annullato."
+          }
+        }
+      }
+    },
+    "This is the widget on this device. It stops updating until you next open the app." : {
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Dies ist das Widget auf diesem Gerät. Es wird erst wieder aktualisiert, wenn du die App das nächste Mal öffnest."
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Este es el widget de este dispositivo. Dejará de actualizarse hasta que vuelvas a abrir la app."
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Ceci est le widget de cet appareil. Il ne se met plus à jour jusqu'à votre prochaine ouverture de l'app."
+          }
+        },
+        "it" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Questo è il widget su questo dispositivo. Smette di aggiornarsi finché non riapri l'app."
           }
         }
       }
@@ -11132,6 +12713,146 @@
         }
       }
     },
+    "Track" : {
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Tracken"
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Seguir"
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Suivre"
+          }
+        },
+        "it" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Traccia"
+          }
+        }
+      }
+    },
+    "Track %@" : {
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "%@ tracken"
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Seguir %@"
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Suivre %@"
+          }
+        },
+        "it" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Traccia %@"
+          }
+        }
+      }
+    },
+    "Track %@ too" : {
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "%@ auch tracken"
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Seguir %@ también"
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Suivre %@ aussi"
+          }
+        },
+        "it" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Traccia anche %@"
+          }
+        }
+      }
+    },
+    "Track it too to add your own goal and connect Apple Health." : {
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Tracke ihn auch, um dein eigenes Ziel hinzuzufügen und Apple Health zu verbinden."
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Síguelo también para añadir tu propio objetivo y conectar Apple Health."
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Suivez-le aussi pour ajouter votre propre objectif et connecter Apple Health."
+          }
+        },
+        "it" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Traccialo anche tu per aggiungere il tuo obiettivo e collegare Apple Health."
+          }
+        }
+      }
+    },
+    "Track it too to add your own goal." : {
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Tracke ihn auch, um dein eigenes Ziel hinzuzufügen."
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Síguelo también para añadir tu propio objetivo."
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Suivez-le aussi pour ajouter votre propre objectif."
+          }
+        },
+        "it" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Traccialo anche tu per aggiungere il tuo obiettivo."
+          }
+        }
+      }
+    },
     "Track water" : {
       "localizations" : {
         "de" : {
@@ -11156,6 +12877,34 @@
           "stringUnit" : {
             "state" : "needs_review",
             "value" : "Traccia l'acqua"
+          }
+        }
+      }
+    },
+    "Tracked by your connection" : {
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Von deiner Verbindung getrackt"
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Seguido por tu conexión"
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Suivi par votre connexion"
+          }
+        },
+        "it" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Tracciato dalla tua connessione"
           }
         }
       }
@@ -11270,6 +13019,34 @@
           "stringUnit" : {
             "state" : "needs_review",
             "value" : "Disaccoppiare?"
+          }
+        }
+      }
+    },
+    "unavailable" : {
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "nicht verfügbar"
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "no disponible"
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "indisponible"
+          }
+        },
+        "it" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "non disponibile"
           }
         }
       }
@@ -11527,6 +13304,34 @@
         }
       }
     },
+    "waiting" : {
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "wartet"
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "esperando"
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "en attente"
+          }
+        },
+        "it" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "in attesa"
+          }
+        }
+      }
+    },
     "Waiting for signal" : {
       "localizations" : {
         "de" : {
@@ -11579,6 +13384,34 @@
           "stringUnit" : {
             "state" : "needs_review",
             "value" : "In attesa su questo telefono finché il server non lo accetta."
+          }
+        }
+      }
+    },
+    "waiting to send" : {
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "wartet auf Versand"
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "esperando para enviar"
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "en attente d'envoi"
+          }
+        },
+        "it" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "in attesa di invio"
           }
         }
       }
@@ -12003,6 +13836,35 @@
         }
       }
     },
+    "you" : {
+      "comment" : "Lower-case 'you' in a spoken list of who reacted, e.g. 'Heart from Sam and you'.",
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "du"
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "tú"
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "vous"
+          }
+        },
+        "it" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "tu"
+          }
+        }
+      }
+    },
     "You" : {
       "comment" : "Label for the signed-in person in a tally or filter.",
       "localizations" : {
@@ -12340,6 +14202,34 @@
         }
       }
     },
+    "Your own water streak ended — best was %lld days" : {
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Deine eigene Wasser-Serie ist beendet – Rekord waren %lld Tage"
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Tu racha personal de agua terminó — el récord fue de %lld días"
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Votre série d'eau personnelle est terminée — le record était de %lld jours"
+          }
+        },
+        "it" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "La tua serie d'acqua personale è terminata — il record è stato di %lld giorni"
+          }
+        }
+      }
+    },
     "Your phone number" : {
       "localizations" : {
         "de" : {
@@ -12396,860 +14286,30 @@
         }
       }
     },
-    "and %lld more moments" : {
+    "Zoom" : {
       "localizations" : {
         "de" : {
           "stringUnit" : {
             "state" : "needs_review",
-            "value" : "und %lld weitere Momente"
+            "value" : "Zoom"
           }
         },
         "es" : {
           "stringUnit" : {
             "state" : "needs_review",
-            "value" : "y %lld momentos más"
+            "value" : "Zoom"
           }
         },
         "fr" : {
           "stringUnit" : {
             "state" : "needs_review",
-            "value" : "et %lld moments de plus"
+            "value" : "Zoom"
           }
         },
         "it" : {
           "stringUnit" : {
             "state" : "needs_review",
-            "value" : "e altri %lld momenti"
-          }
-        }
-      }
-    },
-    "and 1 more moment" : {
-      "localizations" : {
-        "de" : {
-          "stringUnit" : {
-            "state" : "needs_review",
-            "value" : "und 1 weiterer Moment"
-          }
-        },
-        "es" : {
-          "stringUnit" : {
-            "state" : "needs_review",
-            "value" : "y 1 momento más"
-          }
-        },
-        "fr" : {
-          "stringUnit" : {
-            "state" : "needs_review",
-            "value" : "et 1 moment de plus"
-          }
-        },
-        "it" : {
-          "stringUnit" : {
-            "state" : "needs_review",
-            "value" : "e 1 altro momento"
-          }
-        }
-      }
-    },
-    "best %lld" : {
-      "localizations" : {
-        "de" : {
-          "stringUnit" : {
-            "state" : "needs_review",
-            "value" : "Bestwert %lld"
-          }
-        },
-        "es" : {
-          "stringUnit" : {
-            "state" : "needs_review",
-            "value" : "mejor %lld"
-          }
-        },
-        "fr" : {
-          "stringUnit" : {
-            "state" : "needs_review",
-            "value" : "meilleur %lld"
-          }
-        },
-        "it" : {
-          "stringUnit" : {
-            "state" : "needs_review",
-            "value" : "miglior %lld"
-          }
-        }
-      }
-    },
-    "edited" : {
-      "localizations" : {
-        "de" : {
-          "stringUnit" : {
-            "state" : "needs_review",
-            "value" : "bearbeitet"
-          }
-        },
-        "es" : {
-          "stringUnit" : {
-            "state" : "needs_review",
-            "value" : "editado"
-          }
-        },
-        "fr" : {
-          "stringUnit" : {
-            "state" : "needs_review",
-            "value" : "modifié"
-          }
-        },
-        "it" : {
-          "stringUnit" : {
-            "state" : "needs_review",
-            "value" : "modificato"
-          }
-        }
-      }
-    },
-    "moment" : {
-      "comment" : "Singular noun shown beside a count of moments.",
-      "localizations" : {
-        "de" : {
-          "stringUnit" : {
-            "state" : "needs_review",
-            "value" : "Moment"
-          }
-        },
-        "es" : {
-          "stringUnit" : {
-            "state" : "needs_review",
-            "value" : "momento"
-          }
-        },
-        "fr" : {
-          "stringUnit" : {
-            "state" : "needs_review",
-            "value" : "moment"
-          }
-        },
-        "it" : {
-          "stringUnit" : {
-            "state" : "needs_review",
-            "value" : "momento"
-          }
-        }
-      }
-    },
-    "moments" : {
-      "comment" : "Plural noun shown beside a count of moments.",
-      "localizations" : {
-        "de" : {
-          "stringUnit" : {
-            "state" : "needs_review",
-            "value" : "Momente"
-          }
-        },
-        "es" : {
-          "stringUnit" : {
-            "state" : "needs_review",
-            "value" : "momentos"
-          }
-        },
-        "fr" : {
-          "stringUnit" : {
-            "state" : "needs_review",
-            "value" : "moments"
-          }
-        },
-        "it" : {
-          "stringUnit" : {
-            "state" : "needs_review",
-            "value" : "momenti"
-          }
-        }
-      }
-    },
-    "muted" : {
-      "localizations" : {
-        "de" : {
-          "stringUnit" : {
-            "state" : "needs_review",
-            "value" : "stummgeschaltet"
-          }
-        },
-        "es" : {
-          "stringUnit" : {
-            "state" : "needs_review",
-            "value" : "silenciado"
-          }
-        },
-        "fr" : {
-          "stringUnit" : {
-            "state" : "needs_review",
-            "value" : "muet"
-          }
-        },
-        "it" : {
-          "stringUnit" : {
-            "state" : "needs_review",
-            "value" : "silenzioso"
-          }
-        }
-      }
-    },
-    "new" : {
-      "localizations" : {
-        "de" : {
-          "stringUnit" : {
-            "state" : "needs_review",
-            "value" : "neu"
-          }
-        },
-        "es" : {
-          "stringUnit" : {
-            "state" : "needs_review",
-            "value" : "nuevo"
-          }
-        },
-        "fr" : {
-          "stringUnit" : {
-            "state" : "needs_review",
-            "value" : "nouveau"
-          }
-        },
-        "it" : {
-          "stringUnit" : {
-            "state" : "needs_review",
-            "value" : "nuovo"
-          }
-        }
-      }
-    },
-    "none %@" : {
-      "localizations" : {
-        "de" : {
-          "stringUnit" : {
-            "state" : "needs_review",
-            "value" : "keine %@"
-          }
-        },
-        "es" : {
-          "stringUnit" : {
-            "state" : "needs_review",
-            "value" : "ninguno %@"
-          }
-        },
-        "fr" : {
-          "stringUnit" : {
-            "state" : "needs_review",
-            "value" : "aucun %@"
-          }
-        },
-        "it" : {
-          "stringUnit" : {
-            "state" : "needs_review",
-            "value" : "nessuno %@"
-          }
-        }
-      }
-    },
-    "older than this app" : {
-      "localizations" : {
-        "de" : {
-          "stringUnit" : {
-            "state" : "needs_review",
-            "value" : "älter als diese App"
-          }
-        },
-        "es" : {
-          "stringUnit" : {
-            "state" : "needs_review",
-            "value" : "más antiguo que esta app"
-          }
-        },
-        "fr" : {
-          "stringUnit" : {
-            "state" : "needs_review",
-            "value" : "plus ancien que cette app"
-          }
-        },
-        "it" : {
-          "stringUnit" : {
-            "state" : "needs_review",
-            "value" : "più vecchio di questa app"
-          }
-        }
-      }
-    },
-    "owner" : {
-      "localizations" : {
-        "de" : {
-          "stringUnit" : {
-            "state" : "needs_review",
-            "value" : "Besitzer"
-          }
-        },
-        "es" : {
-          "stringUnit" : {
-            "state" : "needs_review",
-            "value" : "propietario"
-          }
-        },
-        "fr" : {
-          "stringUnit" : {
-            "state" : "needs_review",
-            "value" : "propriétaire"
-          }
-        },
-        "it" : {
-          "stringUnit" : {
-            "state" : "needs_review",
-            "value" : "proprietario"
-          }
-        }
-      }
-    },
-    "photo" : {
-      "localizations" : {
-        "de" : {
-          "stringUnit" : {
-            "state" : "needs_review",
-            "value" : "Foto"
-          }
-        },
-        "es" : {
-          "stringUnit" : {
-            "state" : "needs_review",
-            "value" : "foto"
-          }
-        },
-        "fr" : {
-          "stringUnit" : {
-            "state" : "needs_review",
-            "value" : "photo"
-          }
-        },
-        "it" : {
-          "stringUnit" : {
-            "state" : "needs_review",
-            "value" : "foto"
-          }
-        }
-      }
-    },
-    "replied" : {
-      "localizations" : {
-        "de" : {
-          "stringUnit" : {
-            "state" : "needs_review",
-            "value" : "antwortete"
-          }
-        },
-        "es" : {
-          "stringUnit" : {
-            "state" : "needs_review",
-            "value" : "respondió"
-          }
-        },
-        "fr" : {
-          "stringUnit" : {
-            "state" : "needs_review",
-            "value" : "a répondu"
-          }
-        },
-        "it" : {
-          "stringUnit" : {
-            "state" : "needs_review",
-            "value" : "ha risposto"
-          }
-        }
-      }
-    },
-    "replied with a photo" : {
-      "localizations" : {
-        "de" : {
-          "stringUnit" : {
-            "state" : "needs_review",
-            "value" : "antwortete mit einem Foto"
-          }
-        },
-        "es" : {
-          "stringUnit" : {
-            "state" : "needs_review",
-            "value" : "respondió con una foto"
-          }
-        },
-        "fr" : {
-          "stringUnit" : {
-            "state" : "needs_review",
-            "value" : "a répondu avec une photo"
-          }
-        },
-        "it" : {
-          "stringUnit" : {
-            "state" : "needs_review",
-            "value" : "ha risposto con una foto"
-          }
-        }
-      }
-    },
-    "replying to %@'s photo" : {
-      "localizations" : {
-        "de" : {
-          "stringUnit" : {
-            "state" : "needs_review",
-            "value" : "antwortet auf das Foto von %@"
-          }
-        },
-        "es" : {
-          "stringUnit" : {
-            "state" : "needs_review",
-            "value" : "respondiendo a la foto de %@"
-          }
-        },
-        "fr" : {
-          "stringUnit" : {
-            "state" : "needs_review",
-            "value" : "répond à la photo de %@"
-          }
-        },
-        "it" : {
-          "stringUnit" : {
-            "state" : "needs_review",
-            "value" : "rispondendo alla foto di %@"
-          }
-        }
-      }
-    },
-    "replying to a photo" : {
-      "localizations" : {
-        "de" : {
-          "stringUnit" : {
-            "state" : "needs_review",
-            "value" : "antwortet auf ein Foto"
-          }
-        },
-        "es" : {
-          "stringUnit" : {
-            "state" : "needs_review",
-            "value" : "respondiendo a una foto"
-          }
-        },
-        "fr" : {
-          "stringUnit" : {
-            "state" : "needs_review",
-            "value" : "répond à une photo"
-          }
-        },
-        "it" : {
-          "stringUnit" : {
-            "state" : "needs_review",
-            "value" : "rispondendo a una foto"
-          }
-        }
-      }
-    },
-    "replying to your photo" : {
-      "localizations" : {
-        "de" : {
-          "stringUnit" : {
-            "state" : "needs_review",
-            "value" : "antwortet auf dein Foto"
-          }
-        },
-        "es" : {
-          "stringUnit" : {
-            "state" : "needs_review",
-            "value" : "respondiendo a tu foto"
-          }
-        },
-        "fr" : {
-          "stringUnit" : {
-            "state" : "needs_review",
-            "value" : "répond à votre photo"
-          }
-        },
-        "it" : {
-          "stringUnit" : {
-            "state" : "needs_review",
-            "value" : "rispondendo alla tua foto"
-          }
-        }
-      }
-    },
-    "sending" : {
-      "localizations" : {
-        "de" : {
-          "stringUnit" : {
-            "state" : "needs_review",
-            "value" : "sendet"
-          }
-        },
-        "es" : {
-          "stringUnit" : {
-            "state" : "needs_review",
-            "value" : "enviando"
-          }
-        },
-        "fr" : {
-          "stringUnit" : {
-            "state" : "needs_review",
-            "value" : "envoi"
-          }
-        },
-        "it" : {
-          "stringUnit" : {
-            "state" : "needs_review",
-            "value" : "invio"
-          }
-        }
-      }
-    },
-    "shared a moment" : {
-      "localizations" : {
-        "de" : {
-          "stringUnit" : {
-            "state" : "needs_review",
-            "value" : "teilte einen Moment"
-          }
-        },
-        "es" : {
-          "stringUnit" : {
-            "state" : "needs_review",
-            "value" : "compartió un momento"
-          }
-        },
-        "fr" : {
-          "stringUnit" : {
-            "state" : "needs_review",
-            "value" : "a partagé un moment"
-          }
-        },
-        "it" : {
-          "stringUnit" : {
-            "state" : "needs_review",
-            "value" : "ha condiviso un momento"
-          }
-        }
-      }
-    },
-    "showing" : {
-      "localizations" : {
-        "de" : {
-          "stringUnit" : {
-            "state" : "needs_review",
-            "value" : "zeigt"
-          }
-        },
-        "es" : {
-          "stringUnit" : {
-            "state" : "needs_review",
-            "value" : "mostrando"
-          }
-        },
-        "fr" : {
-          "stringUnit" : {
-            "state" : "needs_review",
-            "value" : "montrant"
-          }
-        },
-        "it" : {
-          "stringUnit" : {
-            "state" : "needs_review",
-            "value" : "mostrando"
-          }
-        }
-      }
-    },
-    "that filter" : {
-      "localizations" : {
-        "de" : {
-          "stringUnit" : {
-            "state" : "needs_review",
-            "value" : "dieser Filter"
-          }
-        },
-        "es" : {
-          "stringUnit" : {
-            "state" : "needs_review",
-            "value" : "ese filtro"
-          }
-        },
-        "fr" : {
-          "stringUnit" : {
-            "state" : "needs_review",
-            "value" : "ce filtre"
-          }
-        },
-        "it" : {
-          "stringUnit" : {
-            "state" : "needs_review",
-            "value" : "quel filtro"
-          }
-        }
-      }
-    },
-    "unavailable" : {
-      "localizations" : {
-        "de" : {
-          "stringUnit" : {
-            "state" : "needs_review",
-            "value" : "nicht verfügbar"
-          }
-        },
-        "es" : {
-          "stringUnit" : {
-            "state" : "needs_review",
-            "value" : "no disponible"
-          }
-        },
-        "fr" : {
-          "stringUnit" : {
-            "state" : "needs_review",
-            "value" : "indisponible"
-          }
-        },
-        "it" : {
-          "stringUnit" : {
-            "state" : "needs_review",
-            "value" : "non disponibile"
-          }
-        }
-      }
-    },
-    "waiting" : {
-      "localizations" : {
-        "de" : {
-          "stringUnit" : {
-            "state" : "needs_review",
-            "value" : "wartet"
-          }
-        },
-        "es" : {
-          "stringUnit" : {
-            "state" : "needs_review",
-            "value" : "esperando"
-          }
-        },
-        "fr" : {
-          "stringUnit" : {
-            "state" : "needs_review",
-            "value" : "en attente"
-          }
-        },
-        "it" : {
-          "stringUnit" : {
-            "state" : "needs_review",
-            "value" : "in attesa"
-          }
-        }
-      }
-    },
-    "waiting to send" : {
-      "localizations" : {
-        "de" : {
-          "stringUnit" : {
-            "state" : "needs_review",
-            "value" : "wartet auf Versand"
-          }
-        },
-        "es" : {
-          "stringUnit" : {
-            "state" : "needs_review",
-            "value" : "esperando para enviar"
-          }
-        },
-        "fr" : {
-          "stringUnit" : {
-            "state" : "needs_review",
-            "value" : "en attente d'envoi"
-          }
-        },
-        "it" : {
-          "stringUnit" : {
-            "state" : "needs_review",
-            "value" : "in attesa di invio"
-          }
-        }
-      }
-    },
-    "you" : {
-      "comment" : "Lower-case 'you' in a spoken list of who reacted, e.g. 'Heart from Sam and you'.",
-      "localizations" : {
-        "de" : {
-          "stringUnit" : {
-            "state" : "needs_review",
-            "value" : "du"
-          }
-        },
-        "es" : {
-          "stringUnit" : {
-            "state" : "needs_review",
-            "value" : "tú"
-          }
-        },
-        "fr" : {
-          "stringUnit" : {
-            "state" : "needs_review",
-            "value" : "vous"
-          }
-        },
-        "it" : {
-          "stringUnit" : {
-            "state" : "needs_review",
-            "value" : "tu"
-          }
-        }
-      }
-    },
-    "“%@”" : {
-
-    },
-    "🍐" : {
-
-    },
-    "💡 Dev: AAAAAA seeds a pair, BBBBBB seeds a group" : {
-      "localizations" : {
-        "de" : {
-          "stringUnit" : {
-            "state" : "needs_review",
-            "value" : "💡 Dev: AAAAAA seedet ein Paar, BBBBBB seedet eine Gruppe"
-          }
-        },
-        "es" : {
-          "stringUnit" : {
-            "state" : "needs_review",
-            "value" : "💡 Dev: AAAAAA inicia un par, BBBBBB inicia un grupo"
-          }
-        },
-        "fr" : {
-          "stringUnit" : {
-            "state" : "needs_review",
-            "value" : "💡 Dev: AAAAAA amorce une paire, BBBBBB amorce un groupe"
-          }
-        },
-        "it" : {
-          "stringUnit" : {
-            "state" : "needs_review",
-            "value" : "💡 Dev: AAAAAA crea una coppia, BBBBBB crea un gruppo"
-          }
-        }
-      }
-    },
-    "💧" : {
-
-    },
-    "📷" : {
-
-    },
-    "📷 Has a photo" : {
-      "localizations" : {
-        "de" : {
-          "stringUnit" : {
-            "state" : "needs_review",
-            "value" : "📷 Hat ein Foto"
-          }
-        },
-        "es" : {
-          "stringUnit" : {
-            "state" : "needs_review",
-            "value" : "📷 Tiene una foto"
-          }
-        },
-        "fr" : {
-          "stringUnit" : {
-            "state" : "needs_review",
-            "value" : "📷 A une photo"
-          }
-        },
-        "it" : {
-          "stringUnit" : {
-            "state" : "needs_review",
-            "value" : "📷 Ha una foto"
-          }
-        }
-      }
-    },
-    "📸 saved — will send" : {
-      "localizations" : {
-        "de" : {
-          "stringUnit" : {
-            "state" : "needs_review",
-            "value" : "📸 gespeichert – wird gesendet"
-          }
-        },
-        "es" : {
-          "stringUnit" : {
-            "state" : "needs_review",
-            "value" : "📸 guardado — se enviará"
-          }
-        },
-        "fr" : {
-          "stringUnit" : {
-            "state" : "needs_review",
-            "value" : "📸 enregistré — enverra"
-          }
-        },
-        "it" : {
-          "stringUnit" : {
-            "state" : "needs_review",
-            "value" : "📸 salvato — invierà"
-          }
-        }
-      }
-    },
-    "📸 sending…" : {
-      "localizations" : {
-        "de" : {
-          "stringUnit" : {
-            "state" : "needs_review",
-            "value" : "📸 sendet…"
-          }
-        },
-        "es" : {
-          "stringUnit" : {
-            "state" : "needs_review",
-            "value" : "📸 enviando…"
-          }
-        },
-        "fr" : {
-          "stringUnit" : {
-            "state" : "needs_review",
-            "value" : "📸 envoi…"
-          }
-        },
-        "it" : {
-          "stringUnit" : {
-            "state" : "needs_review",
-            "value" : "📸 invio…"
-          }
-        }
-      }
-    },
-    "🔥" : {
-
-    },
-    "🔧 Start a test photo drop" : {
-      "localizations" : {
-        "de" : {
-          "stringUnit" : {
-            "state" : "needs_review",
-            "value" : "🔧 Test-Fotodrop starten"
-          }
-        },
-        "es" : {
-          "stringUnit" : {
-            "state" : "needs_review",
-            "value" : "🔧 Iniciar una prueba de envío de foto"
-          }
-        },
-        "fr" : {
-          "stringUnit" : {
-            "state" : "needs_review",
-            "value" : "🔧 Lancer un test d'envoi de photo"
-          }
-        },
-        "it" : {
-          "stringUnit" : {
-            "state" : "needs_review",
-            "value" : "🔧 Avvia un test di invio foto"
+            "value" : "Zoom"
           }
         }
       }
