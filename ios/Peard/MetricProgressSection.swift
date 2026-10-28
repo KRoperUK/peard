@@ -175,16 +175,20 @@ struct MetricProgressRow: View {
 
     /// What is left, in the metric's own unit — or that the goal is met. Whole
     /// sentences rather than a pluralised noun, as the rest of the copy does.
+    /// The goal reads bare ("your goal of 20,000"): the row above already says
+    /// steps, so repeating the unit reads twice (#467).
     static func detail(
         _ progress: MetricProgress,
         definition: MetricDefinition,
         locale: Locale = .current
     ) -> String {
         if progress.isGoalMet {
-            return String(localized: "Goal met · \(definition.readout(progress.goal, locale: locale))")
+            // The same key the water badge and the complications use, so the
+            // met state reads one way everywhere.
+            return String(localized: "Goal met")
         }
         return String(
-            localized: "\(definition.readout(progress.remaining, locale: locale)) to the \(definition.readout(progress.goal, locale: locale)) goal"
+            localized: "\(definition.readout(progress.remaining, locale: locale)) to go until your goal of \(progress.goal.formatted(.number.locale(locale)))"
         )
     }
 }

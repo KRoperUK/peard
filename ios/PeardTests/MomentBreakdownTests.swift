@@ -269,24 +269,27 @@ final class MomentBreakdownTests: XCTestCase {
 
     // MARK: Generic metrics (#390)
 
-    /// A tracked metric says what is left in its own unit, not in millilitres.
+    /// A tracked metric says what is left in its own unit, not in millilitres —
+    /// and the goal reads bare, because the row above already says steps (#467).
     func testAMetricRowSaysWhatIsLeftInItsOwnUnit() {
         let steps = MetricCatalogue.steps
         let progress = steps.progress(amount: 6000, goal: 10_000)
 
         XCTAssertEqual(
             MetricProgressRow.detail(progress, definition: steps, locale: gb),
-            "4,000 steps to the 10,000 steps goal"
+            "4,000 steps to go until your goal of 10,000"
         )
     }
 
+    /// Met reads the same bare "Goal met" as the water badge and the
+    /// complications, not "Goal met · <amount>" (#467).
     func testAMetMetricRowSaysTheGoalIsMet() {
         let exercise = MetricCatalogue.exercise
         let progress = exercise.progress(amount: 45, goal: 30)
 
         XCTAssertEqual(
             MetricProgressRow.detail(progress, definition: exercise, locale: gb),
-            "Goal met · 30 min"
+            "Goal met"
         )
     }
 
