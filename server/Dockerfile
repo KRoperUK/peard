@@ -26,7 +26,7 @@
 # Digest-pinned (the repo's convention): the tag is kept in the comment so
 # Dependabot can still see and bump it, but the build resolves the exact image
 # by digest so a retag upstream cannot change what we build.
-FROM golang:1.27.3-alpine@sha256:b8c9b82affbbb82a020bbcf998dad2ba9516944ac7e883524642a481a9505e9c AS commit
+FROM golang:1.27.3-alpine@sha256:fa3d596898d9f126af7c01d14ee7597bab3f39cccf392ef36b69fe77cd681f18 AS commit
 
 WORKDIR /repo
 
@@ -49,7 +49,7 @@ RUN git config --global --add safe.directory /repo; \
     cat /commit.txt
 
 # --- build ------------------------------------------------------------------
-FROM golang:1.27.3-alpine@sha256:b8c9b82affbbb82a020bbcf998dad2ba9516944ac7e883524642a481a9505e9c AS build
+FROM golang:1.27.3-alpine@sha256:fa3d596898d9f126af7c01d14ee7597bab3f39cccf392ef36b69fe77cd681f18 AS build
 
 WORKDIR /src
 
@@ -78,7 +78,7 @@ RUN CGO_ENABLED=0 GOOS=linux go build -trimpath \
 
 # --- runtime ----------------------------------------------------------------
 # Digest-pinned; the tag stays in the comment for Dependabot.
-FROM alpine:3.24@sha256:be2656061b536c1883c4034790e21d0a09c5aaaf51968b89368a3c0371ea2c9a
+FROM alpine:3.24@sha256:f59abe656b692d901e184be3445e084786602108599d2a51d229c0f5a48c71bf
 
 # ca-certificates is required, not optional: the server makes outbound TLS calls
 # to Apple's JWKS (identity-token and notification verification), to APNs, and to
