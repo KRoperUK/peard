@@ -168,6 +168,28 @@ async function asc(token, path, opts = {}) {
   return res;
 }
 
+// App Store Connect refuses every endpoint while the account's agreements are
+// out of force, answering with the same opaque 403 JSON wherever the call
+// happened to land. That reads like a bug in this repo — it cost nine days of
+// silent red runs — so name it: the fix is in App Store Connect, and nothing
+// has been lost meanwhile.
+const REQUIRED_AGREEMENT = 'FORBIDDEN.REQUIRED_AGREEMENTS_MISSING_OR_EXPIRED';
+
+function ascError({ status, body, what }) {
+  const expired = body.includes(REQUIRED_AGREEMENT);
+  const err = new Error(
+    expired
+      ? `${what} failed (403 ${REQUIRED_AGREEMENT}): an App Store Connect agreement is missing ` +
+        'or has expired. Accept it in App Store Connect → Business → Agreements, Tax, and ' +
+        'Banking, then re-run this workflow. Nothing has been lost: submissions are only ' +
+        `removed from App Store Connect after they become issues. Response: ${body}`
+      : `${what} failed (${status}): ${body}`,
+  );
+  err.status = status;
+  err.agreementExpired = expired;
+  return err;
+}
+
 // Page through an ASC collection, retrying transient 5xx per page, up to `limit`
 // data rows. Returns the rows with a `.included` array carrying every sideloaded
 // resource seen across pages.
@@ -183,10 +205,7 @@ async function fetchPaged(token, startPath, limit) {
       await sleep(2 ** attempt * 1000);
     }
     if (!res.ok) {
-      const body = await res.text();
-      const err = new Error(`HTTP ${res.status}: ${body}`);
-      err.status = res.status;
-      throw err;
+      throw ascError({ status: res.status, body: await res.text(), what: 'App Store Connect request' });
     }
     const json = await res.json();
     out.push(...(json.data || []));
@@ -201,7 +220,7 @@ async function fetchPaged(token, startPath, limit) {
 async function resolveAppId(token, bundleId, core) {
   const res = await asc(token, `/v1/apps?filter[bundleId]=${encodeURIComponent(bundleId)}&fields[apps]=bundleId&limit=1`);
   if (!res.ok) {
-    throw new Error(`app lookup failed (${res.status}): ${await res.text()}`);
+    throw ascError({ status: res.status, body: await res.text(), what: 'app lookup' });
   }
   const json = await res.json();
   const app = json.data?.[0];
@@ -477,4 +496,5 @@ module.exports = {
   stripLeadingLabel,
   triageJson,
   asc,
+  ascError,
 };
