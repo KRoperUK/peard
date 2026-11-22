@@ -243,7 +243,7 @@ async function listRecentBuilds(token, appId, buildLimit, core) {
     });
     const res = await shared.asc(token, `/v1/builds?${params.toString()}`);
     if (!res.ok) {
-        throw new Error(`list builds failed (${res.status}): ${await res.text()}`);
+        throw shared.ascError({ status: res.status, body: await res.text(), what: 'list builds' });
     }
     const json = await res.json();
     return json.data || [];
@@ -281,6 +281,7 @@ async function listSignatures(token, builds, limit, core) {
             all.push(...data);
             included.push(build, ...(data.included || []));
         } catch (err) {
+            if (err.agreementExpired) throw err;
             if (err.status === 404) {
                 noData++;
                 core.info(`build ${buildLabel(build)}: no diagnostics collected yet (404) — skipping.`);
