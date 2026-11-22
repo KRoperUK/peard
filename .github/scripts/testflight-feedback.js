@@ -190,6 +190,9 @@ async function listSubmissions(token, appId, limit, core) {
       sliced.included = data.included;
       return sliced;
     } catch (err) {
+      // An expired agreement fails all three queries identically; retrying only
+      // buries the instruction and delays the real message.
+      if (err.agreementExpired) throw err;
       lastErr = err;
       core.info(`Feedback query #${i + 1} failed (${err.message.slice(0, 120)}) — trying simpler.`);
     }

@@ -345,6 +345,27 @@ test('a comment that is only a label keeps it', () => {
   assert.strictEqual(shared.stripLeadingLabel('Bug.'), 'Bug.');
 });
 
+// ---- App Store Connect errors ---------------------------------------------
+
+test('an expired agreement is reported as an App Store Connect action, not a bug', () => {
+  const err = shared.ascError({
+    status: 403,
+    what: 'list builds',
+    body: '{"errors":[{"code":"FORBIDDEN.REQUIRED_AGREEMENTS_MISSING_OR_EXPIRED"}]}',
+  });
+  assert.strictEqual(err.agreementExpired, true);
+  assert.strictEqual(err.status, 403);
+  assert.match(err.message, /^list builds failed/);
+  assert.match(err.message, /Business → Agreements, Tax, and Banking/);
+  assert.match(err.message, /Nothing has been lost/);
+});
+
+test('any other ASC failure keeps the plain status and body', () => {
+  const err = shared.ascError({ status: 500, what: 'list builds', body: 'boom' });
+  assert.strictEqual(err.agreementExpired, false);
+  assert.strictEqual(err.message, 'list builds failed (500): boom');
+});
+
 // ---- misc -----------------------------------------------------------------
 
 test('quote prefixes every line', () => {
